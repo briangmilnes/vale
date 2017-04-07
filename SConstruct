@@ -32,12 +32,13 @@ envDict = {'TARGET_ARCH':target_arch,
 env = Environment(**envDict)
 if sys.platform == 'win32':
   env.Replace(CCPDBFLAGS='/Zi /Fd${TARGET.base}.pdb')
-  env.Append(CCFLAGS=['/Ox', '/Gz'])
+  # Use kremlib.h without primitive support for uint128_t.
+  env.Append(CCFLAGS=['/Ox', '/Gz', '/D', 'NOUINT128'])
   env.Append(LINKFLAGS=['/DEBUG'])
   if os.getenv('PLATFORM')=='X64':
     env['AS'] = 'ml64'
 else:
-  env.Append(CCFLAGS=['-O3', '-flto', '-g'])
+  env.Append(CCFLAGS=['-O3', '-flto', '-g', '-DNOUINT128'])
   env['MONO'] = 'mono'
 
 # Convert NUMBER_OF_PROCESSORS into '-j n'.
