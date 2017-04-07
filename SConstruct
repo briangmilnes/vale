@@ -33,7 +33,7 @@ env = Environment(**envDict)
 if sys.platform == 'win32':
   env.Replace(CCPDBFLAGS='/Zi /Fd${TARGET.base}.pdb')
   # Use kremlib.h without primitive support for uint128_t.
-  env.Append(CCFLAGS=['/Ox', '/Gz', '/D', 'NOUINT128'])
+  env.Append(CCFLAGS=['/Ox', '/Gz', '/DNOUINT128'])
   env.Append(LINKFLAGS=['/DEBUG'])
   if os.getenv('PLATFORM')=='X64':
     env['AS'] = 'ml64'
