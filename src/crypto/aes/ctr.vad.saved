@@ -1,0 +1,92 @@
+// x86 version.
+// See testctr.c for calling conventions.
+
+include "../../arch/x86/decls.vad"
+include{:verbatim} "../../arch/x86/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+
+#verbatim
+module CTR {
+
+import opened x86_def_s
+import opened x86_vale_i
+import opened x86_print_s
+import opened dafny_wrappers_i
+import opened x86_decls_i
+
+#endverbatim
+
+// There seem to be three ways to do this job:
+// (1) Pass two pointers to 128 bit counters, one input and one output.
+// (2) Pass one point to a 128 bit counter and update it in place.
+// (3) Pass one or two 128 bit registers.
+//  TODO what size registers?
+// We'll try (1) first as it's the most complicated and I learn the
+// most. If we want to pass arguments in registers, we'd just do it
+// in Vale.
+
+// And we have two calling conventions, 
+
+// Starting with https://en.wikipedia.org/wiki/X86_calling_conventions.
+// So this is cdecl style on x64.
+// We'll come back to making it windows safe.
+// TODO this is currently assuming it's getting words in in network standard order.
+// It need not assume this.
+// Change.
+
+procedure {:refined} CTR128Increment64(
+   inline taint:taint,
+   ghost  in_ctr_heap_id: heaplet_id,
+   ghost  out_ctr_heap_id: heaplet_id
+)
+   reads
+        stack;
+
+   modifies
+      mem; eax; ecx; edx; efl;
+
+   requires
+    HasStackSlots(stack, 2); 
+    let in_ctr_ptr  := stack[0][0] in
+     ValidSrcAddrs(mem, in_ctr_heap_id, in_ctr_ptr, 32, taint, 4); //TODO what are these sizes?
+    let out_ctr_ptr := stack[0][1] in
+     ValidDstAddrs(mem, out_ctr_heap_id, out_ctr_ptr, 32, 4);
+
+   ensures 
+//     HasStackSlots(stack, 2); 
+//     let in_ctr_ptr  := old(stack[0][0]) in
+//       ValidSrcAddr(mem,  in_ctr_heap_id,  in_ctr_ptr, 128, taint); //TODO what are these sizes?     
+//     let out_ctr_ptr := old(stack[0][1]) in
+//     ValidDstAddrs(mem, out_ctr_heap_id, out_ctr_ptr, 128, 128);
+     // TODO predicate on the output of the counter.
+     // TODO Is the counter public?
+
+{
+    ghost var in_ctr_ptr  := stack[0][0];
+    ghost var out_ctr_ptr := stack[0][1];
+    // TODO can't read status register as no instruction.
+    // See if I can read CF, carry flag.
+    LoadStack(eax, 0);                                  // eax := in_ctr_ptr.
+    // LoadStack(ecx, 1);                                  // ecx := out_ctr_ptr.
+
+    // move the IV half of the counter from in_ctr_ptr to out_ctr_ptr.
+    //Store(ecx, eax, 0, Secret, out_ctr_heap_id);
+    //Store(ecx, eax, 4, Secret, out_ctr_heap_id);
+
+    // read the counter's 64 bits into two registers.
+    //Load(ecx, eax, 8, taint, in_ctr_heap_id);
+    //Load(edx, eax, 12, taint, in_ctr_heap_id);
+    //Add32(edx,1); // TODO carry.
+    
+    // Store(ebx, ecx, 0, Secret, out_ctr_heap_id);
+    // Store(ebx, edx, 4, Secret, out_ctr_heap_id);
+
+    // Clean up state.
+    Xor32(eax, eax);                            
+    Xor32(ecx, ecx);
+    Xor32(edx, edx);
+ }
+
+#verbatim
+} // end module CTR
+#endverbatim

@@ -1,0 +1,90 @@
+
+// This would be cleaner.
+
+// Memory
+MemChangedOnlyIn(register pointer, heap).
+
+// What does it mean to be pointed at by a register?
+InMem(register ptr, heap, size, taint, mem);
+
+// What does it mean to be in a register?
+InReg(reg, taint);
+
+// Ctr 
+CtrInReg(ctr, reg, taint);
+CtrInMem(ctr, reg ptr, heap, taint, mem);
+
+// Incremented Ctr 
+IncrCtrInReg(ctr, incr ctr, reg, heap, taint).
+IncrCtrInMem(ctr, incr ctr, reg ptr, heap, taint, mem).
+
+// Key
+KeyInReg(key, reg);
+KeyInMem(key, reg ptr, heap, mem);
+
+// Expanded Key
+ExpandedKey(key, alg, w);
+ExpandedKeyInMem(key, alg, w, reg ptr, heap, mem);
+
+// Input
+InpInReg(input, reg, heap, taint, mem)
+InpInMem(input, reg ptr, heap, taint, mem) // 128 bits
+
+// Output
+OutInReg(output, reg, heap, taint, mem)
+OutInMem(output, reg ptr, heap, taint, mem) // 128 bits
+
+// Encr - Decryption 
+EncReg(input, input reg, output, output reg, key, key reg, exp key, exp key reg ptr, ctr, ctr reg, alg, taint, mem)
+DecReg(input, input reg, output, output reg, key, key reg, exp key, exp key reg ptr, ctr, ctr reg, alg, taint, mem)
+
+// And an in memory sequence version.
+
+
+// Concrete descriptions of memory.
+
+// Memory
+//  Only writing one heap and only from one pointer.
+predicate MemChangedOnlyIn(regptr : uint64, heap : heaplet_heap)
+{
+    mem == old(mem)[heap := mem[heap]]
+//    forall a :: (a < out_ctr_ptr || a >= out_ctr_ptr + 128) && 
+//      old(mem)[out_ctr_heap_heap].mem64?[a] ==>  mem[out_ctr_heap_heap].mem64?[a] && 
+//      mem[out_ctr_heap_heap].mem64[a] == old(mem)[out_ctr_heap_heap].mem64[a];  
+}
+
+// What does it mean to be pointed at by a register?
+predicate InMem(regptr : uint64, heap : heaplet_id, size : int, taint : Taint, mem : Heaplets)
+{
+  ValidSrcAddr(mem, heap, regptr, size, taint)
+}
+
+// What does it mean to be a value in a register?
+predicate InReg64(regptr : uint64, taint : Taint)
+{
+  true
+}
+
+predicate InReg128(regptr : uint64, taint : Taint)
+{
+  true
+}
+
+predicate CtrInReg(regptr : uint128, taint : Taint)
+{
+ InReg128(regptr, taint)
+}
+
+predicate CtrInMem(regptr : uint128, taint : Taint)
+{
+ InReg128(regptr, taint)
+}
+
+
+// Memory is unchanged except in this heap and from this pointer/range.
+predicate SeqQuadwordsMatchesMemory(s:seq<Quadword>, mem:Heaplet, s_ptr:uint64)
+    requires mem.QuadwordHeaplet?
+{
+    forall b:int :: 0 <= b < |s| ==> s_ptr + b*16 in mem.quads 
+                                      && mem.quads[s_ptr + b*16].v == s[b]
+}
