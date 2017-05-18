@@ -206,7 +206,7 @@ method printIns(ins:ins)
         case Mov64(dst, src)    => printName64("  mov", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
 
         case MOVQ64XMM(dst, src)     => print ("  movq ");     printOprnd(src); print(", "); printOprnd64(dst); print("\n");
-        case MOVQXMM64(dst, src)     => print ("  movq ");     printOprnd(src); print(", "); printOprnd64(dst); print("\n");
+        case MOVQXMM64(dst, src)     => print ("  movq ");     printOprnd64(src); print(", "); printOprnd(dst); print("\n");
 
         case MOVHLPS(dst, src)  => print ("  movhlps ");     printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case MOVLHPS(dst, src)  => print ("  movlhps ");     printOprnd(src); print(", "); printOprnd(dst); print("\n");

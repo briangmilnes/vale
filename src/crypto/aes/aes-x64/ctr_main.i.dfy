@@ -52,14 +52,19 @@ method {:main} Main(ghost env:HostEnvironment)
 
     // Make available the StdCall version for test from c. 
 
-    printProcPlatform("CTR128IncrementStdCall",
-        va_code_CTR128IncrementStdCall(),
-        0, 24,
-        asm_choice, platform_choice);
+    printProcPlatform("CTR128Increment64StdCall",
+       va_code_CTR128Increment64StdCall(),
+       0, 24,
+       asm_choice, platform_choice);
 
-//    printProcPlatform("CTREncryptOneBlockStdCall",
-//        va_code_CTREncryptOneBlockStdCall(),
-//        0, 0, asm_choice, platform_choice);
+    printProcPlatform("CTR128Increment128StdCall",
+       va_code_CTR128Increment128StdCall(),
+       0, 24,
+       asm_choice, platform_choice);
+
+    printProcPlatform("CTREncryptOneBlockStdCall",
+        va_code_CTREncryptOneBlockStdCall(),
+        0, 0, asm_choice, platform_choice);
 
     printProcPlatform("aes_main_i_KeyExpansionStdcall",
         va_code_KeyExpansionStdcall(Secret, win),

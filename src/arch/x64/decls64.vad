@@ -55,7 +55,6 @@ procedure{:refined}{:bridge} {:instruction Ins(Add64(dst, OConst(1)))} incr64(in
     }
 }
 
-
 procedure{:refined}{:bridge}{:instruction Ins(Mov64(dst, MakeHeapOp(src, offset, taint)))} Load64(
     out operand dst:uint64,
         operand src:uint64,
