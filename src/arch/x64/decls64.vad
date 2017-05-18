@@ -55,6 +55,42 @@ procedure{:refined}{:bridge} {:instruction Ins(Add64(dst, OConst(1)))} incr64(in
     }
 }
 
+
+procedure{:refined}  {:bridge} {:instruction Ins(MOVQXMM64(dst, src))} 
+    MovLow64To128(inout operand dst: Quadword, operand src:uint64)
+  ensures
+    dst == old(Quadword(lower64(src), upper64(src), dst.mid_hi, dst.hi));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+// movhlps  - high 64 to low 64 bit move
+procedure{:refined} {:bridge} {:instruction Ins(MOVHLPS(dst, src))} 
+    MOVHLPS(inout operand dst:Quadword, operand src:Quadword)
+  ensures
+    dst == old(Quadword(src.mid_hi, src.hi, dst.mid_hi, dst.hi));
+{
+   reveal evalCodeOpaque;
+   reveal x86_ValidState;
+   this := MaybeUpdateOk(old(this), this);
+   this := this.(heaplets := old(this).heaplets);
+}
+
+//// movlhps  - low 64 to high 64 bit move
+procedure{:refined} {:bridge} {:instruction Ins(MOVLHPS(dst, src))} 
+    MOVLHPS(inout operand dst:Quadword, operand src:Quadword)
+  ensures
+    dst == old(Quadword(dst.lo, dst.mid_lo, src.lo, src.mid_lo));
+{
+   reveal evalCodeOpaque;
+   reveal x86_ValidState;
+   this := MaybeUpdateOk(old(this), this);
+   this := this.(heaplets := old(this).heaplets);
+}
+
 procedure{:refined}{:bridge}{:instruction Ins(Mov64(dst, MakeHeapOp(src, offset, taint)))} Load64(
     out operand dst:uint64,
         operand src:uint64,

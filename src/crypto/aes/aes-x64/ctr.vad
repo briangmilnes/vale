@@ -218,112 +218,102 @@ procedure{:refined} {:bridge} {:instruction Ins(MOVQ64XMM(dst, src))}
     }
 }
 
-procedure{:refined}  {:bridge} {:instruction Ins(MOVQXMM64(dst, src))} 
-    MovLow64To128(inout operand dst: Quadword, operand src:uint64)
-  ensures
-    dst == old(Quadword(lower64(src), upper64(src), dst.mid_hi, dst.hi));
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    this := this.(heaplets := old(this).heaplets);
-    this := MaybeUpdateOk(old(this), this);
-}
+// The register version of this with a 128 bit register kept. 
+/* inout operand quadword's break Vale.
+procedure {:refined} CTR128Increment128RegBUG(
+   ghost  counter         : Quadword,
+   inout  operand xmm     : Quadword,
+   inout  operand temp64  : uint64
+   inout  operand temp128 : Quadword
+)
+returns (
+  ghost incrcounter : Quadword
+)
+   requires
+     CtrInReg(counter, xmm);
+     xmm != temp128;
 
-// movhlps  - high 64 to low 64 bit move
-procedure{:refined} {:bridge} {:instruction Ins(MOVHLPS(dst, src))} 
-    MOVHLPS(inout operand dst:Quadword, operand src:Quadword)
-  ensures
-    dst == old(Quadword(src.mid_hi, src.hi, dst.mid_hi, dst.hi));
-{
-   reveal evalCodeOpaque;
-   reveal x86_ValidState;
-   this := MaybeUpdateOk(old(this), this);
-   this := this.(heaplets := old(this).heaplets);
-}
+   modifies
+        efl;
 
-//// movlhps  - low 64 to high 64 bit move
-procedure{:refined} {:bridge} {:instruction Ins(MOVLHPS(dst, src))} 
-    MOVLHPS(inout operand dst:Quadword, operand src:Quadword)
-  ensures
-    dst == old(Quadword(dst.lo, dst.mid_lo, src.lo, src.mid_lo));
+   ensures
+   IncrCtrInReg(counter, incrcounter, xmm);
 {
-   reveal evalCodeOpaque;
-   reveal x86_ValidState;
-   this := MaybeUpdateOk(old(this), this);
-   this := this.(heaplets := old(this).heaplets);
+      MovLow64To64(temp64, xmm);  // Grab counter half.
+      MOVHLPS(temp128, xmm);         // Save IV half in temp128.
+      incr64(temp64);
+      MovLow64To128(xmm, temp64); // But zeros top bytes.
+      MOVLHPS(xmm0, temp128);     // Put back the IV.
+      Xor64(temp64, temp64);
+      Pxor(temp128,temp128);
+      incrcounter := xmm;
 }
+*/
 
 // The register version of this with a 128 bit register kept. 
-//procedure {:refined} CTR128Increment128Reg(
-//   ghost  counter         : Quadword,
-//   inout  operand xmm     : Quadword,
-//   inout  operand temp64  : uint64,
-//   inout  operand temp128 : Quadword
-//)
-//returns (
-//  ghost incrcounter : Quadword
-//)
-//   requires
-//     CtrInReg(counter, xmm);
-//     xmm != temp128;
-//
-//   modifies
-//        efl;
-//
-//   ensures
-////        IncrCtrInReg(counter, incrcounter, xmm); // BUG! Bryan pls comment.
-//   // xmm.hi == old(xmm).hi;
-//   //incrcounter == xmm;
-//{
-////no      MovLow64To64(temp64, xmm);  // Grab counter half.
-////no      MOVHLPS(temp128, xmm);      // Save IV half in temp128.
-////        incr64(temp64);
-////      MovLow64To128(xmm, temp64); // But zeros top bytes.
-////      MOVLHPS(xmm, temp128);      // Put back the IV.
-//        Xor64(temp64, temp64);
-//        Pxor(temp128, temp128); // uncomment and fail in the precondition with an ok.
-//        incrcounter := xmm;
-//}
+procedure {:refined} CTR128Increment128Reg(
+   ghost  counter         : Quadword,
+   inout  operand temp64  : uint64
+)
+returns (
+  ghost incrcounter : Quadword
+)
+   requires
+     CtrInReg(counter, xmm0);
 
-// This one should work but may be part of the problem.
+   modifies
+        efl; xmm0; xmm1;
+
+   ensures
+   IncrCtrInReg(counter, incrcounter, xmm0);
+{
+      MovLow64To64(temp64, xmm0);  // Grab counter half.
+      MOVHLPS(xmm1, xmm0);         // Save IV half in temp128.
+      incr64(temp64);
+      MovLow64To128(xmm0, temp64); // But zeros top bytes.
+      MOVLHPS(xmm0, xmm1);         // Put back the IV.
+      Xor64(temp64, temp64);
+      Pxor(xmm1, xmm1); 
+      incrcounter := xmm0;
+}
+
 // The 128 bit standard call that sets up the 128 bit register of this.
-//procedure {:refined} CTR128Increment128StdCall(
-//   ghost  counter : Quadword, 
-//   ghost  in_ctr_heap_id: heaplet_id,
-//   ghost  out_ctr_heap_id: heaplet_id
-//)
-//returns (
-//  ghost incrcounter : Quadword
-//)
-//
-//   modifies
-//        mem; efl; rdi; rsi; rdx; xmm0; xmm1;
-//
-//   requires
-//     let in_ctr_ptr  := rdi;
-//     let out_ctr_ptr := rsi;
-//   
-//   //  I have a counter in memory.
-//   CtrInMem(counter, rdi, in_ctr_heap_id, mem);
-//   // And a place two write out when incremented.
-//   ValidDstAddr(mem, out_ctr_heap_id, out_ctr_ptr, 128);
-//
-//   in_ctr_heap_id != out_ctr_heap_id;
-//
-//   ensures
-////     let in_ctr_ptr  := old(rdi);
-////     let out_ctr_ptr := old(rsi);
-////     // I am only changing 1 quad word.
-////     Mem128ChangedOnlyIn(out_ctr_ptr, 1, out_ctr_heap_id, mem, old(mem));
-////     // And I placed the incremented counter in it.
-////     CtrInMem(incrcounter, rsi, out_ctr_heap_id, mem);
-//{
-//      Load128(xmm0, rdi, 0, Public, in_ctr_heap_id);
-//      assert counter == xmm0;
-//      incrcounter := CTR128Increment128Reg(counter, xmm0, rdx, xmm1);
-//      Store128(rsi, xmm0, 0, Public, out_ctr_heap_id);
-//}
+procedure {:refined} CTR128Increment128StdCall(
+   ghost  counter : Quadword, 
+   ghost  in_ctr_heap_id: heaplet_id,
+   ghost  out_ctr_heap_id: heaplet_id
+)
+returns (
+  ghost incrcounter : Quadword
+)
 
+   modifies
+        mem; efl; rdi; rsi; rdx; xmm0; xmm1;
+
+   requires
+     let in_ctr_ptr  := rdi;
+     let out_ctr_ptr := rsi;
+   
+   //  I have a counter in memory.
+   CtrInMem(counter, rdi, in_ctr_heap_id, mem);
+   // And a place two write out when incremented.
+   ValidDstAddr(mem, out_ctr_heap_id, out_ctr_ptr, 128);
+
+   in_ctr_heap_id != out_ctr_heap_id;
+
+   ensures
+     let in_ctr_ptr  := old(rdi);
+     let out_ctr_ptr := old(rsi);
+    // I am only changing 1 quad word.
+     Mem128ChangedOnlyIn(out_ctr_ptr, 1, out_ctr_heap_id, mem, old(mem));
+    // And I placed the incremented counter in it.
+    CtrInMem(incrcounter, rsi, out_ctr_heap_id, mem);
+{
+      Load128(xmm0, rdi, 0, Public, in_ctr_heap_id);
+      assert counter == xmm0;
+      incrcounter := CTR128Increment128Reg(counter, rdx);
+      Store128(rsi, xmm0, 0, Public, out_ctr_heap_id);
+}
 
 // Dummy version.
 //procedure {:refined} CTR128Increment128StdCall(
@@ -338,6 +328,7 @@ procedure{:refined} {:bridge} {:instruction Ins(MOVLHPS(dst, src))}
 //}
   
 
+/*
 // Try a single routine version!
 // The 128 bit standard call that sets up the 128 bit register of this.
 procedure {:refined} CTR128Increment128StdCall(
@@ -364,16 +355,14 @@ returns (
    in_ctr_heap_id != out_ctr_heap_id;
 
    ensures
-//     let in_ctr_ptr  := old(rdi);
-//     let out_ctr_ptr := old(rsi);
-//     // I am only changing 1 quad word.
-//     Mem128ChangedOnlyIn(out_ctr_ptr, 1, out_ctr_heap_id, mem, old(mem));
-//     // And I placed the incremented counter in it.
-//     CtrInMem(incrcounter, rsi, out_ctr_heap_id, mem);
+     let in_ctr_ptr  := old(rdi);
+     let out_ctr_ptr := old(rsi);
+     // I am only changing 1 quad word.
+     Mem128ChangedOnlyIn(out_ctr_ptr, 1, out_ctr_heap_id, mem, old(mem));
+     // And I placed the incremented counter in it.
+     CtrInMem(incrcounter, rsi, out_ctr_heap_id, mem);
 {
       Load128(xmm0, rdi, 0, Public, in_ctr_heap_id);
-//      Perhaps this sub call is the total problem? yes it appears to be.
-//      incrcounter := CTR128Increment128Reg(counter, xmm0, rdx, xmm1);
       assert counter == xmm0;
       MovLow64To64(rdx, xmm0);  // Grab counter half.
       MOVHLPS(xmm1, xmm0);      // Save IV half in temp128.
@@ -385,6 +374,7 @@ returns (
       incrcounter := xmm0;
       Store128(rsi, xmm0, 0, Public, out_ctr_heap_id); // Put it back.
 }
+*/
 
 #verbatim
 } // end module CTR
