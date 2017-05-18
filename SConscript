@@ -76,6 +76,19 @@ else:
   print('Not building AES-CBC for this target architecture')  
 
 #
+# build ctr-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  ctr_asm = env.ExtractValeCode(
+    ['src/crypto/aes/$AES_ARCH_DIR/aes.vad', 'src/crypto/aes/$AES_ARCH_DIR/ctr.vad'], # Vale source
+     'src/crypto/aes/$AES_ARCH_DIR/ctr_main.i.dfy',              # Dafny main
+     'ctr'                                                       # Base name for the ASM files and EXE
+    )
+  env.BuildTest(['src/crypto/aes/testctr.c', ctr_asm[0]], '', 'testctr')
+else:
+  print('Not building AES-CTR for this target architecture')  
+
+#
 # build aes-exe
 #
 if env['TARGET_ARCH']=='x86' or env['TARGET_ARCH']=='amd64':   # x86 and x64 only
@@ -121,6 +134,7 @@ if env['OPENSSL_PATH'] != None:
   if env['TARGET_ARCH']=='x86':
     sha256_obj = engineenv.Object('obj/sha256_openssl', sha_c_h[0][0])
     cbc_obj = engineenv.Object('obj/cbc_openssl', cbc_asm[0])
+    ctr_obj = engineenv.Object('obj/ctr_openssl', ctr_asm[0])
     aes_obj = engineenv.Object('obj/aes_openssl', sha_asm[0])
     engine = engineenv.SharedLibrary(target='obj/EverestSha256.dll',
       source=[everest_sha256, everest_glue, sha256_obj, cbc_obj, aes_obj, '$OPENSSL_PATH/libcrypto.lib'])

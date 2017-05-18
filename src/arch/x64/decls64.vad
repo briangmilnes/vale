@@ -36,6 +36,26 @@ procedure{:refined}{:bridge}{:instruction Ins(Add64(dst, src))} Add64Wrap(inout 
     }
 }
 
+// Bryan please check -bgm 
+procedure{:refined}{:bridge} {:instruction Ins(Add64(dst, OConst(1)))} incr64(inout operand dst:uint64)
+    modifies
+        efl;
+    ensures
+        dst == old(BitwiseAdd64(dst, 1));
+        Cf(efl) == old(dst + 1 >= 0x1_0000_0000_0000_0000);
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal BitwiseAdd64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+    ghost if (!this.ok)
+    {
+        this := this.(regs := this.regs[@dst.r := 0]);
+    }
+}
+
+
 procedure{:refined}{:bridge}{:instruction Ins(Mov64(dst, MakeHeapOp(src, offset, taint)))} Load64(
     out operand dst:uint64,
         operand src:uint64,

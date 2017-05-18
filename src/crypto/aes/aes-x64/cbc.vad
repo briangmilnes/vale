@@ -417,6 +417,7 @@ procedure {:refined} CBCEncryptStdcall(
 
         // Input is readable
         ValidSrcAddrs(mem, input_id, input_ptr, 128, Secret, SeqLength(input)*16);
+
     requires
         input_id != key_id && key_id != output_id && input_id != output_id && IV_id != output_id;
 

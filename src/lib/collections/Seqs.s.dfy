@@ -13,4 +13,11 @@ function all_but_last<T>(s:seq<T>):seq<T>
     s[..|s|-1]
 }
 
+function all_but_first<T>(s:seq<T>):seq<T>
+    requires |s| > 0;
+    ensures  |all_but_first(s)| == |s| - 1;
+{
+    s[1..]
+}
+
 }

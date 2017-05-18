@@ -203,7 +203,14 @@ method printIns(ins:ins)
 {
     match ins
         case Rand(o)            => printName1("  rdrand", o);     printOprnd(o); print("\n");
-        case Mov64(dst, src) =>    printName64("  mov", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
+        case Mov64(dst, src)    => printName64("  mov", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
+
+        case MOVQ64XMM(dst, src)     => print ("  movq ");     printOprnd(src); print(", "); printOprnd64(dst); print("\n");
+        case MOVQXMM64(dst, src)     => print ("  movq ");     printOprnd(src); print(", "); printOprnd64(dst); print("\n");
+
+        case MOVHLPS(dst, src)  => print ("  movhlps ");     printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case MOVLHPS(dst, src)  => print ("  movlhps ");     printOprnd(src); print(", "); printOprnd(dst); print("\n");
+
         case Add64(dst, src) =>    printName64("  add", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
         case Sub64(dst, src)    => printName64("  sub", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
         case AddCarry64(dst, src) => printName64("  adc", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
@@ -219,7 +226,7 @@ method printIns(ins:ins)
         case AddCarry(dst, src) => printName2("  add", dst, src); printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case BSwap32(dst)       => printName1("  bswap", dst);    printOprnd(dst); print("\n");
         case Xor32(dst, src)    => printName2("  xor", dst, src); printOprnd(src); print(", "); printOprnd(dst); print("\n");
-        case Xor64(dst, src)    => printName2("  xor", dst, src); printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case Xor64(dst, src)    => printName2("  xor", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
         case And32(dst, src)    => printName2("  and", dst, src); printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case Not32(dst)         => printName1("  not", dst);      printOprnd(dst); print("\n");
         case GetCf(dst)         => printName1("  setc", dst);     printSmallOprnd(dst); print("\n");

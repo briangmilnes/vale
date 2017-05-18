@@ -23,6 +23,10 @@ datatype ins =
   Rand(xRand:operand)
 | Mov32(dstMov:operand, srcMov:operand)
 | Mov64(dstMov64:operand, srcMov64:operand)
+| MOVQ64XMM(dstMovq64:operand, srcMovqXMM: operand)
+| MOVQXMM64(dstMovqXMM:operand, srcMovq64: operand)
+| MOVHLPS(dstMovHLPS:operand, srcMovHLPS:operand)
+| MOVLHPS(dstMovLHPS:operand, srcMovLHPS:operand)
 | Add32(dstAdd:operand, srcAdd:operand)
 | Add64(dstAdd64:operand, srcAdd64:operand)
 | AddLea64(dstAddLea64:operand, src1AddLea64:operand, src2AddLea64:operand)
@@ -337,6 +341,21 @@ function eval_op64(s:state, o:operand) : uint64
                 lowerUpper64(GetValueAtResolvedAddress(s.heap, resolved_addr), GetValueAtResolvedAddress(s.heap, resolved_addr + 4))
 }
 
+
+function eval_op128(s:state, o:operand) : Quadword 
+
+{
+  match o
+    case OConst(n)          => Quadword(0,0,0,42)
+    case OStack(slot)       => Quadword(0,0,0,42)
+    case OHeap(addr, taint) => Quadword(0,0,0,42)
+    case OReg(r) =>
+      if r.X86Xmm? && ValidXmm(s.xmms, r) then
+      s.xmms[r.xmm]
+      else Quadword(0,0,0,42)
+}
+
+
 function UpdateHeap32(h:heap, addr:int, v:uint32, t:taint) : heap
 {
     var big_endian_bytes := WordToBytes(v);
@@ -393,6 +412,12 @@ predicate evalUpdateXmmsAndHavocFlags(s:state, o:operand, v:Quadword, r:state, o
     requires ValidXmmOperand(s, o);
 {
     r == s.(xmms := s.xmms[o.r.xmm := v], flags := r.flags, trace := s.trace + obs)
+}
+
+predicate evalUpdateXmmsAndMaintainFlags(s:state, o:operand, v:Quadword, r:state, obs:seq<observation>)
+    requires ValidXmmOperand(s, o);
+{
+    r == s.(xmms := s.xmms[o.r.xmm := v], trace := s.trace + obs)
 }
 
 predicate Valid128BitOperand(s:state, o:operand)
@@ -518,6 +543,12 @@ predicate ValidInstruction(s:state, ins:ins)
         case Rand(xRand) => Valid32BitDestinationOperand(s, xRand)
         case Mov32(dstMov, srcMov) => Valid32BitDestinationOperand(s, dstMov) && Valid32BitSourceOperand(s, srcMov)
         case Mov64(dstMov, srcMov) => Valid64BitDestinationOperand(s, dstMov) && Valid64BitSourceOperand(s, srcMov)
+        // Bryan pls check.
+        case MOVQ64XMM(dst, src) => Valid64BitDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src)
+        case MOVQXMM64(dst, src) => ValidXmmDestinationOperand(s, dst) && Valid64BitSourceOperand(s, src)
+        case MOVHLPS(dst, src) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src)
+        case MOVLHPS(dst, src) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src)
+
         case Add32(dstAdd, srcAdd) => Valid32BitDestinationOperand(s, dstAdd) && Valid32BitSourceOperand(s, srcAdd) && Valid32BitSourceOperand(s, dstAdd)
         case Add64(dstAdd, srcAdd) => Valid64BitDestinationOperand(s, dstAdd) && Valid64BitSourceOperand(s, srcAdd) && Valid64BitSourceOperand(s, dstAdd)
         case AddLea64(dstAdd, srcAdd1, srcAdd2) => Valid64BitDestinationOperand(s, dstAdd) && Valid64BitSourceOperand(s, srcAdd1) && Valid64BitSourceOperand(s, srcAdd2) && Valid64BitSourceOperand(s, dstAdd)
@@ -580,6 +611,12 @@ function insObs(s:state, ins:ins):seq<observation>
         case Rand(x) => operandObs(s, 32, x)
         case Mov32(dst, src) => operandObs(s, 32, dst) + operandObs(s, 32, src)
         case Mov64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
+        // Bryan pls check. 
+        case MOVQ64XMM(dst, src)  => operandObs(s, 64, dst) + operandObs(s, 128, src)
+        case MOVQXMM64(dst, src)  => operandObs(s, 128, dst) + operandObs(s, 64, src)
+
+        case MOVHLPS(dst, src) => operandObs(s, 128, dst) + operandObs(s, 128, src)
+        case MOVLHPS(dst, src) => operandObs(s, 128, dst) + operandObs(s, 128, src)
         case Add32(dst, src) => operandObs(s, 32, dst) + operandObs(s, 32, src)
         case Add64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
         case AddLea64(dst, src1, src2) => operandObs(s, 64, dst) + operandObs(s, 64, src1) + operandObs(s, 64, src2)
@@ -625,6 +662,27 @@ predicate evalIns(ins:ins, s:state, r:state)
             case Rand(x) => exists n:uint32 :: evalUpdateAndHavocFlags(s, x, n, r, obs)
             case Mov32(dst, src) => evalUpdateAndMaintainFlags(s, dst, eval_op32(s, src), r, obs) // mov doesn't change flags
             case Mov64(dst, src) => evalUpdateAndMaintainFlags64(s, dst, eval_op64(s, src), r, obs) // mov doesn't change flags
+
+// Bryan please check.
+          case MOVQ64XMM(dst, src) =>
+            var t := eval_op128(s,src);
+              evalUpdateAndMaintainFlags64(s, dst, lowerUpper64(t.lo, t.mid_lo), r, obs) // mov doesn't change flags
+
+          case MOVQXMM64(dst, src) =>
+            var d := eval_op128(s,dst);
+            var t := eval_op64(s,src);
+              evalUpdateXmmsAndMaintainFlags(s, dst, Quadword(lower64(t), upper64(t), d.mid_hi, d.hi), r, obs) // mov doesn't change flags
+
+          case MOVHLPS(dst, src) =>
+            var d := eval_op128(s,dst);
+            var t := eval_op128(s,src);
+              evalUpdateXmmsAndMaintainFlags(s, dst, Quadword(t.mid_hi, t.hi, d.mid_hi, d.hi), r, obs)
+
+          case MOVLHPS(dst, src) =>
+            var d := eval_op128(s,dst);
+            var t := eval_op128(s,src);
+              evalUpdateXmmsAndMaintainFlags(s, dst, Quadword(d.lo, d.mid_lo, t.lo, t.mid_lo), r, obs)
+
             case Add32(dst, src) => evalUpdateAndHavocFlags(s, dst, (eval_op32(s, dst) + eval_op32(s, src)) % 0x1_0000_0000, r, obs)
             case Add64(dst, src) => var sum := eval_op64(s, dst) + eval_op64(s, src);
                                     evalUpdateAndHavocFlags64(s, dst, sum % 0x1_0000_0000_0000_0000, r, obs)
@@ -658,7 +716,7 @@ predicate evalIns(ins:ins, s:state, r:state)
             case And32(dst, src) => evalUpdateAndHavocFlags(s, dst, and32(eval_op32(s, dst), eval_op32(s, src)), r, obs)
             case And64(dst, src) => evalUpdateAndHavocFlags64(s, dst, BitwiseAnd64(eval_op64(s, dst), eval_op64(s, src)), r, obs)
             case Not32(dst)      => evalUpdateAndHavocFlags(s, dst, not32(eval_op32(s, dst)), r, obs)
-            // Sticks the carry flag (CF) in a register (see SETC instruction)
+            // Sticks the carry flag (CF) in a register (see SETC instruction
             case GetCf(dst)      => // Instruction only writes the first uint8
                                     evalUpdateAndMaintainFlags(s, dst, clear_low_byte(eval_op32(s, dst)) + if Cf(s.flags) then 1 else 0, r, obs)
             case Rol32(dst, amount)  =>

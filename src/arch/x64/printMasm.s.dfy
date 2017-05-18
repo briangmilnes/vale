@@ -179,6 +179,14 @@ method printIns(ins:ins)
         case Rand(o) => print("  rdrand "); printOprnd(o); print("\n");
         case Mov32(dst, src) => print ("  mov "); printOprnd(dst); print(", "); printOprnd(src); print("\n");
         case Mov64(dst, src) => print ("  mov "); printOprnd64(dst); print(", "); printOprnd64(src); print("\n");
+
+        case MOVQ64XMM(dst, src)     => print ("  movq ");     printOprnd64(src); print(", "); printOprnd(dst); print("\n");
+        case MOVQXMM64(dst, src)     => print ("  movq ");     printOprnd(src); print(", "); printOprnd64(dst); print("\n");
+
+        case MOVHLPS(dst, src)  => print ("  movhlps ");     printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case MOVLHPS(dst, src)  => print ("  movlhps ");     printOprnd(src); print(", "); printOprnd(dst); print("\n");
+
+
         case Add32(dst, src) => print ("  add "); printOprnd(dst); print(", "); printOprnd(src); print("\n");
         case Add64(dst, src) => print ("  add "); printOprnd64(dst); print(", "); printOprnd64(src); print("\n");
         case AddLea64(dst, src1, src2) => print("  lea "); printOprnd64(dst); print(", ["); printOprnd64(src1); print(" + "); printOprnd64(src2); print("]\n");
@@ -194,7 +202,7 @@ method printIns(ins:ins)
         case AddCarry(dst, src) => print ("  add "); printOprnd(dst); print(", "); printOprnd(src); print("\n");
         case BSwap32(dst)    => print ("  bswap "); printOprnd(dst); print("\n");
         case Xor32(dst, src) => print ("  xor "); printOprnd(dst); print(", "); printOprnd(src); print("\n");
-        case Xor64(dst, src) => print ("  xor "); printOprnd(dst); print(", "); printOprnd(src); print("\n");
+        case Xor64(dst, src) => print ("  xor "); printOprnd64(dst); print(", "); printOprnd64(src); print("\n");
         case And32(dst, src) => print ("  and "); printOprnd(dst); print(", "); printOprnd(src); print("\n");
         case Not32(dst)      => print ("  not "); printOprnd(dst); print("\n");
         case GetCf(dst)      => print ("  setc "); printSmallOprnd(dst); print("\n");

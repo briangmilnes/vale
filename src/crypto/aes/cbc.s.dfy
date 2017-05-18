@@ -19,6 +19,7 @@ function CBC_Encrypt(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, IV:Qua
         rest + [AES_Encrypt(key, QuadwordXor(last(input), last(rest)), alg)]
 }
 
+
 function CBC_Decrypt(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, IV:Quadword) : seq<Quadword>
     requires |key| == Nk(alg);
     requires |input| > 0;
