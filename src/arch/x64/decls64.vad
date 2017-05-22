@@ -55,6 +55,20 @@ procedure{:refined}{:bridge} {:instruction Ins(Add64(dst, OConst(1)))} incr64(in
     }
 }
 
+procedure{:refined} {:bridge} {:instruction Ins(MOVQ64XMM(dst, src))} 
+    MovLow64To64(out operand dst:uint64, operand src:Quadword)
+  ensures
+  dst == old(lowerUpper64(src.lo, src.mid_lo));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+    ghost if (!this.ok)
+    {
+        this := this.(regs := this.regs[@dst.r := 0]);
+    }
+}
 
 procedure{:refined}  {:bridge} {:instruction Ins(MOVQXMM64(dst, src))} 
     MovLow64To128(inout operand dst: Quadword, operand src:uint64)

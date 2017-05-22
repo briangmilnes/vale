@@ -52,27 +52,31 @@ method {:main} Main(ghost env:HostEnvironment)
 
     // Make available the StdCall version for test from c. 
 
-    printProcPlatform("CTR128Increment64StdCall",
-       va_code_CTR128Increment64StdCall(),
-       0, 24,
-       asm_choice, platform_choice);
+//    printProcPlatform("CTR128Increment64StdCall",
+//       va_code_CTR128Increment64StdCall(),
+//       0, 24,
+//       asm_choice, platform_choice);
+//
+//    printProcPlatform("CTR128Increment128StdCall",
+//       va_code_CTR128Increment128StdCall(),
+//       0, 24,
+//       asm_choice, platform_choice);
+//
+//    printProcPlatform("CTREncryptOneBlockStdCall",
+//        va_code_CTREncryptOneBlockStdCall(),
+//        0, 0, asm_choice, platform_choice);
+//
+//    printProcPlatform("aes_main_i_KeyExpansionStdcall",
+//        va_code_KeyExpansionStdcall(Secret, win),
+//        0, 8,
+//        asm_choice, platform_choice);
+// 
+//    printProcPlatform("AES128EncryptOneBlockStdcall",
+//        va_code_AES128EncryptOneBlockStdcall(win),
+//        0, 0, asm_choice, platform_choice);
 
-    printProcPlatform("CTR128Increment128StdCall",
-       va_code_CTR128Increment128StdCall(),
-       0, 24,
-       asm_choice, platform_choice);
-
-    printProcPlatform("CTREncryptOneBlockStdCall",
-        va_code_CTREncryptOneBlockStdCall(),
-        0, 0, asm_choice, platform_choice);
-
-    printProcPlatform("aes_main_i_KeyExpansionStdcall",
-        va_code_KeyExpansionStdcall(Secret, win),
-        0, 8,
-        asm_choice, platform_choice);
- 
-    printProcPlatform("AES128EncryptOneBlockStdcall",
-        va_code_AES128EncryptOneBlockStdcall(win),
+    printProcPlatform("CTR128EncryptStdcall",
+        va_code_CTR128EncryptStdcall(),
         0, 0, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);

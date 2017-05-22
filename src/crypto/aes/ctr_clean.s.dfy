@@ -3,19 +3,20 @@ include "../../lib/util/operations.s.dfy"
 include "../../lib/util/words_and_bytes.s.dfy"
 include "../../lib/collections/Seqs.s.dfy"
 include "../../arch/x64/vale.i.dfy"
+include "../../lib/util/dafny_wrappers.i.dfy"
+
 include "aes.s.dfy"
-
-// Bryan suggests that I use quadwords uniformally and
-// convert into unit64 and back as needed. What would
-//that look like?
-
+include "aes_helpers.i.dfy"
 
 module CTRModuleClean {
 
 import opened x64_vale_i
 import opened x64_def_s
 import opened types_s
+import opened dafny_wrappers_i
 import opened AESModule
+import opened AESHelpersModule
+
 
 // I need a cleaner version of specifications in which a ghost is
 // used for each concrete value and the output of each routine.
@@ -88,6 +89,13 @@ predicate Mem64ChangedOnlyIn(regptr : uint64, count : int, heap : heaplet_id, me
      mem[heap].mem64[a] == oldmem[heap].mem64[a]
 }
 
+predicate InputMatchesMemory(input:seq<Quadword>, mem:Heaplet, input_ptr:uint64)
+    requires mem.QuadwordHeaplet?
+{
+    forall b:int :: 0 <= b < |input| ==> input_ptr + b*16 in mem.quads 
+                                      && mem.quads[input_ptr + b*16].v == input[b]
+}
+
 // Memory
 
 // What does it mean to be pointed at by a register?
@@ -124,69 +132,132 @@ predicate IncrCtrInReg(ctr : Quadword, incctr : Quadword, reg : Quadword) {
   CtrInReg(incctr, reg)
 }
 
-//IncrCtrInMem(ctr, incr ctr, reg ptr, heap, taint, mem).
 
-// Key
-//KeyInReg(key, reg);
-//KeyInMem(key, reg ptr, heap, mem);
+predicate AlgReq(alg : Algorithm, key : seq<uint32>, key_ptr : uint64) {
+  alg == AES_128 &&
+  |key| == Nk(alg) && 
+  SeqLength(key) == Nk(alg) &&
+  (Nb() * (Nr(alg) + 1)) / 4 == Nr(alg) + 1 &&   // Easy to prove, but necessary precondition to Cipher
+  (Nb() * (Nr(alg) + 1)) % 4 == 0 &&   // Easy to prove, but necessary precondition to Cipher
+  key_ptr % 16 == 0
+}
 
-// Expanded Key
-//ExpandedKey(key, alg, w);
-//ExpandedKeyInMem(key, alg, w, reg ptr, heap, mem);
+predicate HeapReq(key_heap : heaplet_id, expanded_key_heap : heaplet_id, input_heap : heaplet_id, output_heap : heaplet_id) {
+  key_heap != expanded_key_heap &&
+  key_heap != input_heap &&
+  key_heap != output_heap &&
+  expanded_key_heap != input_heap &&
+  expanded_key_heap != output_heap &&
+  input_heap != output_heap
+}
 
-// Input
-//InpInReg(input, reg, heap, taint, mem)
-//InpInMem(input, reg ptr, heap, taint, mem) // 128 bits
+predicate KeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, mem : Heaplets) {
+  ValidSrcAddrs(mem, key_heap, key_ptr, 128, Secret, 11*16) &&   // Key is readable
+  key_ptr % 16 == 0
+}
 
-// Output
-//OutInReg(output, reg, heap, taint, mem)
-//OutInMem(output, reg ptr, heap, taint, mem) // 128 bits
+predicate ExpandedKeyInitReq(expanded_key : seq<uint32>, expanded_key_heap : heaplet_id,
+                             expanded_key_ptr : uint64, mem : Heaplets) {
+  SeqLength(expanded_key) == 44 &&
+  ValidSrcAddrs(mem, expanded_key_heap, expanded_key_ptr, 1, Secret, 176)
+}
 
-// Encr - Decryption 
-//EncReg(input, input reg, output, output reg, key, key reg, exp key, exp key reg ptr, ctr, ctr reg, alg, taint, mem)
-//DecReg(input, input reg, output, output reg, key, key reg, exp key, exp key reg ptr, ctr, ctr reg, alg, taint, mem)
+predicate ExpandedKeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, expanded_key : seq<uint32>, expanded_key_heap : heaplet_id,
+                             expanded_key_ptr : uint64, mem : Heaplets, alg : Algorithm) {
+  AlgReq(alg, key, key_ptr) &&
+  KeyReq(key, key_heap, key_ptr, mem) && 
+  ExpandedKeyInitReq(expanded_key, expanded_key_heap, expanded_key_ptr, mem) && // Someday we may call this in assembly.
+   (forall j :: 0 <= j <= 10 ==> mem[key_heap].quads[key_ptr + 16*j].v == 
+         Quadword(expanded_key[4*j], expanded_key[4*j+1], expanded_key[4*j+2], expanded_key[4*j+3])) &&
+    KeyExpansionPredicate(key, alg, expanded_key)
+}
 
-// And an in memory sequence version.
+predicate InputInMem(input : seq<Quadword>, input_heap : heaplet_id, input_ptr : uint64, 
+                    input_end : uint64, input_end_ptr : uint64, mem : Heaplets) {
+  SeqLength(input) > 0 &&
+  ValidSrcAddrs(mem, input_heap, input_ptr, 128, Secret, SeqLength(input)*16) &&
+  InputMatchesMemory(input, mem[input_heap], input_ptr)
+}
 
+predicate OutputInMem(input : seq<Quadword>, output_heap : heaplet_id, 
+                      output_ptr : uint64, mem : Heaplets) {
+  SeqLength(input) > 0 &&
+  ValidSrcAddrs(mem, output_heap, output_ptr, 128, Secret, SeqLength(input)*16)
+}
 
-// Concrete descriptions of memory.
+// I abstractly know what my starting counter is. 
+predicate StartCtrReq(iv : uint64, ctr : Quadword) {
+  //ctr == Quadword(0,0,lower64(iv), upper64(iv))
+  true
+}
 
-// Memory
+// I concretely know.
+predicate StartCtrInReg(iv : uint64, ctr : Quadword, ctr_reg : Quadword) {
+ //StartCtrReq(iv, ctr) // &&
+  //ctr == ctr_reg
+// TODO
+  // Error: cannot establish the existence of LHS values that satisfy the such-that predicate
+ true
+}
 
-// What does it mean to be pointed at by a register?
-//predicate InMem(regptr : uint64, heap : heaplet_id, size : int, taint : Taint, mem : Heaplets)
-//{
-//  ValidSrcAddr(mem, heap, regptr, size, taint)
-//}
+predicate InputOutputRelations(input : seq<Quadword>, input_ptr : uint64, input_end_ptr : uint64, output_ptr : uint64) {
+   input_ptr + SeqLength(input)*16 < 0x1_0000_0000_0000_0000 &&
+   output_ptr + SeqLength(input)*16 < 0x1_0000_0000_0000_0000 &&
+   input_end_ptr >= input_ptr && 
+   input_end_ptr == input_ptr + SeqLength(input)*16 &&
+   input_end_ptr < 0x1_0000_0000_0000_0000
+}
 
-// What does it mean to be a value in a register?
-//predicate InReg64(regptr : uint64, taint : Taint)
-//{
-//  true
-//}
-//
-//predicate InReg128(regptr : uint64, taint : Taint)
-//{
-//  true
-//}
-//
-//predicate CtrInReg(regptr : uint128, taint : Taint)
-//{
-// InReg128(regptr, taint)
-//}
-//
-//predicate CtrInMem(regptr : uint128, taint : Taint)
-//{
-// InReg128(regptr, taint)
-//}
-//
+predicate CTRInvariants(
+    key     : seq<uint32>,
+    key_ptr : uint64,
+    key_heap : heaplet_id,
+    expanded_key : seq<uint32>,
+    expanded_key_ptr : uint64,
+    expanded_key_heap : heaplet_id,
+    iv       : uint64,
+    input:seq<Quadword>,
+    input_ptr : uint64,
+    input_end  : uint64,
+    input_end_ptr : uint64,
+    input_heap : heaplet_id,
+    output_heap : heaplet_id,
+    output_ptr : uint64,
+    alg: Algorithm,
+    mem : Heaplets,
+    old_mem : Heaplets)
+{
+        HeapReq(key_heap, expanded_key_heap, input_heap, output_heap) &&
+        KeyReq(key, key_heap, key_ptr, mem) &&
+        ExpandedKeyReq(key, key_heap, key_ptr, expanded_key, expanded_key_heap,
+                            expanded_key_ptr, mem, alg) &&
+        InputInMem(input, input_heap, input_ptr, input_end, input_end_ptr, mem) &&
+        OutputInMem(input, output_heap, output_ptr, mem) &&
+        InputOutputRelations(input, input_ptr, input_end_ptr, output_ptr) &&
+        mem == old_mem[output_heap := mem[output_heap]]
+}
 
-// Memory is unchanged except in this heap and from this pointer/range.
-//predicate SeqQuadwordsMatchesMemory(s:seq<Quadword>, mem:Heaplet, s_ptr:uint64)
-//    requires mem.QuadwordHeaplet?
-//{
-//    forall b:int :: 0 <= b < |s| ==> s_ptr + b*16 in mem.quads 
-//                                      && mem.quads[s_ptr + b*16].v == s[b]
-//}
+predicate CTROutputFinal2(key : seq<uint32>, input :seq<Quadword>, iv : uint64, alg : Algorithm, 
+                         mem : Heaplets,  output_heap : heaplet_id, output_ptr :uint64, output : seq<Quadword>, ctr : Quadword) {
+  true
+}
 
+predicate CTREncryptLoopInvariant(iteration : nat) {
+  true
+}
+
+lemma lemma_CTREncryptInvarientImplications(input : seq<Quadword>)
+  returns (output : seq<Quadword>) {
+    output := input;
+}
+
+predicate CTREncryptBodyPreconditions() {
+  true
+}
+
+predicate CTREncryptBodyPostconditions() {
+  true
+}
+
+// End of Module
 }

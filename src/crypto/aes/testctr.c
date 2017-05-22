@@ -12,6 +12,8 @@
 
 */
 
+#define justfinalcall 1
+
 /* 
   Vale seems to be using the following calling conventions:
 
@@ -175,6 +177,7 @@ int test_make_ctr() {
   }
 }
 
+#ifndef justfinalcall
 void __stdcall CTR128Increment64StdCall(const void* input_ptr, void* output_ptr);
 
 int test_counter_increment_64() {
@@ -299,6 +302,9 @@ int test_counters_128() {
   }
 }
 
+#endif
+
+
 /* Key */
 const uint8_t k[]    = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };
 /* Initial counter. */
@@ -320,6 +326,8 @@ const uint8_t output_block[][16] = {
   { 0xe8, 0x9c, 0x39, 0x9f, 0xf0, 0xf1, 0x98, 0xc6, 0xd4, 0x0a, 0x31, 0xdb, 0x15, 0x6c, 0xab, 0xfe }
 };
 
+
+#ifndef justfinalcall
 void __stdcall aes_main_i_KeyExpansionStdcall(const void * key_ptr, void *expanded_key_ptr);
 void __stdcall AES128EncryptOneBlockStdcall(const void *output, const void *input, const void *expanded_key);
 
@@ -350,6 +358,7 @@ int test_key_aes_encryption() {
   }
   return status;
 }
+#endif
 
 /*
 F.5.1       CTR-AES128.Encrypt       
@@ -388,12 +397,13 @@ const uint8_t C[][16]    = { { 0x87, 0x4d, 0x61, 0x91, 0xb6, 0x20, 0xe3, 0x26, 0
                              { 0x5a, 0xe4, 0xdf, 0x3e, 0xdb, 0xd5, 0xd3, 0x5e, 0x5b, 0x4f, 0x09, 0x02, 0x0d, 0xb0, 0x3e, 0xab},
                              { 0x1e, 0x03, 0x1d, 0xda, 0x2f, 0xbe, 0x03, 0xd1, 0x79, 0x21, 0x70, 0xa0, 0xf3, 0x00, 0x9c, 0xee}};
 
+#ifndef justfinalcall
 // The standard calling sequence of x86 on both windows/linux will give us four arguments in registers.
 
 void __stdcall CTREncryptOneBlockStdCall(const void* expanded_key, const void* counter, const void* input_ptr, void* output_ptr);
 
-int test_encryption() {
-  printf("\nTest AES Encryption \n");
+int test_encryption_one_block() {
+  printf("\nTest AES Encryption One Block \n");
   int status = 1;
   uint8_t expanded_key[176];
   aes_main_i_KeyExpansionStdcall(k, expanded_key);
@@ -402,15 +412,15 @@ int test_encryption() {
     // Actually passing args in rax, esi, rsi and rdx.
     CTREncryptOneBlockStdCall(expanded_key, input_block+i, P+i, output);
     if (memcmp(output, C+i, sizeof(uint8_t) *16) == 0) {
-      printf("AES128 Encrypt CTR P[%d] succeded.\n",i);
+      printf("AES128 Encrypt One Block CTR P[%d] succeded.\n",i);
     } else {
-      printf("AES128 Encrypt CTR P[%d] failed.\n", i);
+      printf("AES128 Encrypt One Block CTR P[%d] failed.\n", i);
       if (trace == 1) {
-  	printf("AES128 Encrypt CTR P[%d] \n",i );
+  	printf("AES128 Encrypt One Block CTR P[%d] \n",i );
   	print128BitVectorHex((uint8_t *)P+i);
-  	printf("AES128 Encrypt CTR C[%d] \n",i);
+  	printf("AES128 Encrypt One Block CTR C[%d] \n",i);
   	print128BitVectorHex((uint8_t *)C+i);
-  	printf("AES128 Encrypt CTR output \n");
+  	printf("AES128 Encrypt One Block CTR output \n");
   	print128BitVectorHex(output);
       }
       status = 0;
@@ -419,8 +429,8 @@ int test_encryption() {
   return status;
 }
 
-int test_decryption() {
-  printf("\nTest AES Decryption \n");
+int test_decryption_one_block() {
+  printf("\nTest AES Decryption One Block \n");
   int status = 1;
   uint8_t expanded_key[176];
   aes_main_i_KeyExpansionStdcall(k, expanded_key);
@@ -429,21 +439,137 @@ int test_decryption() {
     // Actually passing args in rax, esi, rsi and rdx.
     CTREncryptOneBlockStdCall(expanded_key, input_block+i, C+i, output);
     if (memcmp(output, P+i, sizeof(uint8_t) *16) == 0) {
-      printf("AES128 Decrypt CTR C[%d] succeded.\n",i);
+      printf("AES128 Decrypt One Block CTR C[%d] succeded.\n",i);
     } else {
-      printf("AES128 Decrypt CTR C[%d] failed.\n", i);
+      printf("AES128 Decrypt One Block CTR C[%d] failed.\n", i);
       if (trace == 1) {
-  	printf("AES128 Decrypt CTR C[%d] \n",i );
+  	printf("AES128 Decrypt One Block CTR C[%d] \n",i );
   	print128BitVectorHex((uint8_t *)P+i);
-  	printf("AES128 Decrypt CTR P[%d] \n",i);
+  	printf("AES128 Decrypt One Block CTR P[%d] \n",i);
   	print128BitVectorHex((uint8_t *)C+i);
-  	printf("AES128 Decrypt CTR output \n");
+  	printf("AES128 Decrypt One Block CTR output \n");
   	print128BitVectorHex(output);
       }
       status = 0;
     }
   }
   return status;
+}
+#endif
+
+/* Plain text. */
+const uint8_t PStream[64]    = {  0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+                                  0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c, 0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51,
+                                  0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11, 0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef,
+                                  0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17, 0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10};
+/* Cipher Text */
+const uint8_t CStream[64]    = { 0x87, 0x4d, 0x61, 0x91, 0xb6, 0x20, 0xe3, 0x26, 0x1b, 0xef, 0x68, 0x64, 0x99, 0x0d, 0xb6, 0xce,
+                                 0x98, 0x06, 0xf6, 0x6b, 0x79, 0x70, 0xfd, 0xff, 0x86, 0x17, 0x18, 0x7b, 0xb9, 0xff, 0xfd, 0xff,
+                                 0x5a, 0xe4, 0xdf, 0x3e, 0xdb, 0xd5, 0xd3, 0x5e, 0x5b, 0x4f, 0x09, 0x02, 0x0d, 0xb0, 0x3e, 0xab,
+                                 0x1e, 0x03, 0x1d, 0xda, 0x2f, 0xbe, 0x03, 0xd1, 0x79, 0x21, 0x70, 0xa0, 0xf3, 0x00, 0x9c, 0xee};
+
+// This is a bad test case in that it has no final truncated block.
+
+void print_stream(const uint8_t stream[64]) {
+  for (int i = 0; i < 64; ++i) {
+    printf("0x%2x,", stream[i]);
+    if (i % 16 == 0) {
+      printf("\n");
+    }
+  }
+}
+
+void __stdcall CTR128EncryptStdcall(
+                                 const void* key,
+                                 const void* expaned_key,
+                                 const void* iv,
+                                 const void* input,
+                                 const void* input_end,
+                                 const void* output);
+
+int test_encrypt_stream() {
+  printf("\nTest AES Encrypt Stream \n");
+  int status = 1;
+
+  uint8_t expanded_key[176];
+  // Correct to call this inside the vad.
+  //aes_main_i_KeyExpansionStdcall(k, expanded_key);
+
+  uint8_t CypherText[64]; 
+  ctr_t *ctr = make_ctr((uint8_t*) (ctr+0));
+  printf("Using initial counter \n");
+  print_ctr(ctr);
+
+  CTR128EncryptStdcall(k, expanded_key, ctr, PStream, PStream + sizeof(PStream), CypherText);
+  // Why scratch?
+  if (memcmp(CypherText,CStream,64) == 0) {
+    printf("AES128 CTR Encrypt Stream success\n");
+  } else {
+    printf("AES128 CTR Encrypt Stream failure\n");
+    printf("AES128 CTR Encrypt Stream Input  stream\n");
+    print_stream(PStream);
+    printf("AES128 CTR Encrypt Stream Output stream\n");
+    print_stream(CypherText);
+    printf("AES128 CTR Encrypt Stream Should Be stream\n");
+    print_stream(CStream);
+    return 0;
+  }
+
+  return status;
+}
+
+#ifndef justfinalcall
+
+int test_decrypt_stream() {
+  printf("\nTest AES Decrypt Stream \n");
+  int status = 1;
+
+  uint8_t expanded_key[176];
+  aes_main_i_KeyExpansionStdcall(k, expanded_key);
+
+  uint8_t CypherText[64]; 
+
+
+  ctr_t *ctr = make_ctr((uint8_t*) (ctr+0));
+  printf("Using initial counter \n");
+  print_ctr(ctr);
+
+  // In CTR mode one just encrypts a ctr with a key in sequence and
+  // XORs it with the input. So the decrypt is to just run it in the
+  // other direction.
+
+  CTR128EncryptStdcall(CStream, CypherText, expanded_key, 
+                    (const void*)((size_t)PStream + sizeof(PStream)), ctr, 0 /* scratch */ );
+  // Why scratch?
+  if (memcmp(CypherText,PStream,64) == 0) {
+    printf("AES128 CTR Decrypt Stream success\n");
+  } else {
+    printf("AES128 CTR Decrypt Stream failure\n");
+    printf("AES128 CTR Decrypt Stream Input  stream\n");
+    print_stream(PStream);
+    printf("AES128 CTR Decrypt Stream Output stream\n");
+    print_stream(CypherText);
+    printf("AES128 CTR Decrypt Stream Should Be stream\n");
+    print_stream(CStream);
+    return 0;
+  }
+
+  return status;
+}
+
+int test_encryption() {
+  int b1 = test_encryption_one_block();
+  int stream = test_encrypt_stream();
+
+  return (b1 == 1) && (stream == 1);
+}
+
+
+int test_decryption() {
+  int b1     = test_decryption_one_block();
+  int stream = test_decrypt_stream();
+
+  return (b1 == 1) && (stream == 1);
 }
 
 
@@ -466,3 +592,12 @@ int __cdecl main(void) {
     return 1;
   }
 }
+
+#endif
+
+#ifdef justfinalcall
+int __cdecl main(void) {
+  //  test_alignment_in_memory();
+  test_encrypt_stream();
+}
+#endif

@@ -9,6 +9,33 @@ module CTRModule {
 import opened types_s
 import opened AESModule
 
+function CTR_Encrypt(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, IV:Quadword) : seq<Quadword>
+    requires |key| == Nk(alg);
+    requires |input| > 0;
+    requires (Nb() * (Nr(alg) + 1)) / 4 == Nr(alg) + 1;   // Easy to prove, but necessary precondition to Cipher
+    requires (Nb() * (Nr(alg) + 1)) % 4 == 0;   // Easy to prove, but necessary precondition to Cipher
+{
+    if |input| == 1 then
+        [AES_Encrypt(key, QuadwordXor(input[0], IV), alg)]
+    else
+        var rest := CTR_Encrypt(key, all_but_last(input), alg, IV);
+        rest + [AES_Encrypt(key, QuadwordXor(last(input), last(rest)), alg)]
+}
+
+
+function CTR_Decrypt(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, IV:Quadword) : seq<Quadword>
+    requires |key| == Nk(alg);
+    requires |input| > 0;
+    requires (Nb() * (Nr(alg) + 1)) / 4 == Nr(alg) + 1;   // Easy to prove, but necessary precondition to InvCipher
+    requires (Nb() * (Nr(alg) + 1)) % 4 == 0;   // Easy to prove, but necessary precondition to InvCipher
+{
+    if |input| == 1 then
+        [QuadwordXor(AES_Decrypt(key, input[0], alg), IV)]
+    else
+        var rest := CTR_Decrypt(key, all_but_last(input), alg, IV);
+        rest + [QuadwordXor(AES_Decrypt(key, last(input), alg), input[|input|-2])]
+}
+
 function Uint32ToUint64(low: uint32, high: uint32) : uint64
 {
   (high * 0x1_0000_0000 + low) as uint64
@@ -35,7 +62,7 @@ function CTR_Encrypt_One_Block(key:seq<uint32>, input:Quadword, alg:Algorithm, c
       QuadwordXor(input, AES_Encrypt(key, counter, alg))
 }
 
-function CTR_Encrypt(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, counter:Quadword) : seq<Quadword>
+function CTR_EncryptTODO(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, counter:Quadword) : seq<Quadword>
     requires |key| == Nk(alg);
     requires |input| > 0;
     requires |input| < 0x1_0000_0000_0000_0000;
