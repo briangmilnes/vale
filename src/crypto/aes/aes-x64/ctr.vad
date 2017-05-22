@@ -548,6 +548,8 @@ returns (
 Start Validating
 */
 
+/* Stop validating due to trigger bug .
+
 procedure {:refined} CTR128EncryptBody(
           ghost key : seq(uint32),
           ghost key_heap : heaplet_id,
@@ -622,6 +624,8 @@ procedure {:refined} CTR128EncryptBody(
     Add64(r10,16);
     Add64(r11,16);
 }
+
+*/
 
 procedure {:refined} CTR128EncryptLoop(
           ghost key : seq(uint32),
@@ -710,8 +714,6 @@ procedure {:refined} CTR128EncryptLoop(
         iteration := iteration + 1;
     }
 }
-
-/* STOP VALIDATING
 
 
 // Everything is in a register, the CTR is built in xmm4.
@@ -900,9 +902,6 @@ procedure {:refined} CTR128EncryptStdcall(
 
     output := CTR128EncryptReg(key, key_heap, expanded_key, expanded_key_heap, iv, input, input_end, input_heap, output_heap, alg, ctr);
 }
-
-START VALIDATING
-*/
 
 #verbatim
 } // end module CTR
