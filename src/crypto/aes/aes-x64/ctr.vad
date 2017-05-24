@@ -594,13 +594,12 @@ procedure {:refined} {:timeLimitMultiplier 3} CTR128EncryptBody(
 
    ensures
      rcx <= r10 <= r8;
-//     r10 == rcx  + (iteration + 1) * 16;
+  //   r10 == rcx  + (iteration + 1) * 16;
 //     r11 == r9   + (iteration + 1) * 16;
      // Interestingly, Bryan does a correctness from 0 ... iteration check in CBC.
      let input_ptr  := rcx; let output_ptr := r9;
 //     InputCopied(mem[input_heap], input_ptr, mem[output_heap], output_ptr, iteration);
 //     mem == old(mem)[output_heap := mem[output_heap]];
-       mem == old(mem);
 {
 //     Load128(xmm1,  r10, 0, Secret, input_heap);
 //     Store128(r11, xmm1, 0, Secret, output_heap);
