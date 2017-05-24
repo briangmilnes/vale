@@ -12,6 +12,7 @@
 
 */
 
+
 #define justfinalcall 1
 
 /* 
@@ -327,8 +328,8 @@ const uint8_t output_block[][16] = {
 };
 
 
-#ifndef justfinalcall
 void __stdcall aes_main_i_KeyExpansionStdcall(const void * key_ptr, void *expanded_key_ptr);
+#ifndef justfinalcall
 void __stdcall AES128EncryptOneBlockStdcall(const void *output, const void *input, const void *expanded_key);
 
 int test_key_aes_encryption() {
@@ -492,26 +493,32 @@ int test_encrypt_stream() {
   int status = 1;
 
   uint8_t expanded_key[176];
-  // Correct to call this inside the vad.
-  //aes_main_i_KeyExpansionStdcall(k, expanded_key);
+  aes_main_i_KeyExpansionStdcall(k, expanded_key);
 
-  uint8_t CypherText[64]; 
-  ctr_t *ctr = make_ctr((uint8_t*) (ctr+0));
-  printf("Using initial counter \n");
-  print_ctr(ctr);
+  uint8_t *CypherText = (uint8_t *)malloc(sizeof(uint8_t) * 64); 
+  // Damn it, Dworkin did not start the counter at ZERO.
+  uint64_t iv = 0xf0f1f2f3f4f5f6f7;
 
-  CTR128EncryptStdcall(k, expanded_key, ctr, PStream, PStream + sizeof(PStream), CypherText);
+  // In CTR mode one just encrypts a ctr with a key in sequence and
+  // XORs it with the input. So the decrypt is to just run it in the
+  // other direction.
+
+  printf("About to call encrypt\n");
+  // Just for a one block copy.
+
+  CTR128EncryptStdcall(k, expanded_key, iv, PStream, (const void*)((size_t)PStream + 16), CStream);
   // Why scratch?
+
   if (memcmp(CypherText,CStream,64) == 0) {
     printf("AES128 CTR Encrypt Stream success\n");
   } else {
     printf("AES128 CTR Encrypt Stream failure\n");
     printf("AES128 CTR Encrypt Stream Input  stream\n");
-    print_stream(PStream);
+    print_stream(PStream);printf("\n");
     printf("AES128 CTR Encrypt Stream Output stream\n");
-    print_stream(CypherText);
+    print_stream(CypherText);printf("\n");
     printf("AES128 CTR Encrypt Stream Should Be stream\n");
-    print_stream(CStream);
+    print_stream(CStream);printf("\n");
     return 0;
   }
 
@@ -528,18 +535,15 @@ int test_decrypt_stream() {
   aes_main_i_KeyExpansionStdcall(k, expanded_key);
 
   uint8_t CypherText[64]; 
-
-
-  ctr_t *ctr = make_ctr((uint8_t*) (ctr+0));
-  printf("Using initial counter \n");
-  print_ctr(ctr);
+  // Damn it, Dworkin did not start the counter at ZERO.
+  uint64_t iv = 0xf0f1f2f3f4f5f60xf7;
 
   // In CTR mode one just encrypts a ctr with a key in sequence and
   // XORs it with the input. So the decrypt is to just run it in the
   // other direction.
 
-  CTR128EncryptStdcall(CStream, CypherText, expanded_key, 
-                    (const void*)((size_t)PStream + sizeof(PStream)), ctr, 0 /* scratch */ );
+  // Just for a one block copy.
+  CTR128EncryptStdcall(CStream, CypherText, expanded_key, (const void*)((size_t)PStream + 16), iv, 0 /* scratch */ );
   // Why scratch?
   if (memcmp(CypherText,PStream,64) == 0) {
     printf("AES128 CTR Decrypt Stream success\n");

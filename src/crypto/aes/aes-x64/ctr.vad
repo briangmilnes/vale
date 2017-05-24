@@ -119,6 +119,7 @@
         2. Declarations
 
 */
+
 include "../../../arch/x64/decls.vad"
 include "../../../arch/x64/decls64.vad"
 include{:verbatim} "../../../arch/x64/print.s.dfy"
@@ -128,9 +129,8 @@ include{:verbatim} "ctr_helpers.i.dfy"
 include{:verbatim} "../ctr.s.dfy" 
 include{:verbatim} "../ctr_clean.s.dfy" 
 
-// Temporaryily including CBC
-//include{:verbatim} "cbc_helpers.i.dfy"
-//include{:verbatim} "../cbc.s.dfy" 
+// To demonstrate register equality bugs.
+//include "bug.vad"
 
 #verbatim
 module CTR {
@@ -146,13 +146,7 @@ import opened CTRModule
 import opened CTR_Helpers
 import opened CTRModuleClean
 
-// Temporaryily including CTR
-//import opened CBCModule
-//import opened CBC_Helpers
-
 #endverbatim
-
-/* DONT Validate
 
 /*
 	3.	CTREncryptOneBlockStdCall
@@ -172,6 +166,7 @@ import opened CTRModuleClean
 
 */
 
+/*
 procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
    ghost key:seq(uint32), 
    ghost w:seq(uint32),
@@ -253,6 +248,7 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
   Pxor(xmm0, xmm0);
   Pxor(xmm1, xmm1);
 }
+*/
 
 // Decryption uses the same routine as we just xor again but the taints are different.
 
@@ -268,6 +264,7 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
 
 */
 
+/*
 procedure {:refined} CTR128Increment64StdCall(
    ghost  in_ctr_heap_id: heaplet_id,
    ghost  out_ctr_heap_id: heaplet_id
@@ -333,6 +330,7 @@ procedure {:refined} CTR128Increment64StdCall(
     Xor64(rdx,rdx);
  }
 
+*/
 
 /*
 
@@ -392,6 +390,7 @@ returns (
 
 */
 
+/*
 procedure {:refined} CTR128Increment128Reg(
    ghost  counter         : Quadword,
    inout  operand temp64  : uint64
@@ -418,6 +417,7 @@ returns (
       Pxor(xmm1, xmm1); 
       incrcounter := xmm0;         // Specify what the results mean.
 }
+*/
 
 /*
          7.	CTR128Increment128StdCall
@@ -441,7 +441,9 @@ CTR128Increment64StdCall:
 
 */
 
+/*
 // The 128 bit standard call that sets up the 128 bit register of this.
+
 procedure {:refined} CTR128Increment128StdCall(
    ghost  counter : Quadword, 
    ghost  in_ctr_heap_id: heaplet_id,
@@ -491,6 +493,7 @@ returns (
 //{
 //}
   
+*/
 
 /*
          8.	CTR128Increment128StdCall
@@ -499,6 +502,9 @@ returns (
 to increment a counter.
 
  The 128 bit standard call that sets up the 128 bit register of this.
+*/
+
+/*
 procedure {:refined} CTR128Increment128StdCall(
    ghost  counter : Quadword, 
    ghost  in_ctr_heap_id: heaplet_id,
@@ -545,307 +551,267 @@ returns (
 
 */
 
-Start Validating
-*/
+procedure {:refined} {:timeLimitMultiplier 3} CTR128EncryptBody(
+          ghost    key      : seq(uint32),
+          ghost    key_heap : heaplet_id,
 
-/* Stop validating due to trigger bug .
+          ghost    expanded_key        : seq(uint32),
+          ghost    expanded_key_heap   : heaplet_id,
 
-procedure {:refined} CTR128EncryptBody(
-          ghost key : seq(uint32),
-          ghost key_heap : heaplet_id,
+          ghost    iv       : uint64,
 
-          ghost expanded_key : seq(uint32),
-          ghost expanded_key_heap : heaplet_id,
+          ghost    input          : seq(Quadword),
+          ghost    input_end      : uint64,
+          ghost    input_heap : heaplet_id,
 
-          ghost iv       : uint64,
+          ghost    output_heap : heaplet_id,
 
-          ghost input:seq(Quadword),
-          ghost input_end  : uint64,
-          ghost input_heap : heaplet_id,
+          ghost    alg: Algorithm,
 
-          ghost output_heap : heaplet_id,
-
-          ghost alg: Algorithm,
-
-          ghost iteration : nat
+          ghost    ctr : Quadword,
+          ghost   iteration : nat
     )
 
-    reads
-        rdi; rsi; rdx; rcx; r8; r9;
-
-    modifies
-        mem; efl; xmm1; xmm4; r10; r11;
+    reads    rdi; rsi; rdx; rcx; r8; r9; 
+    modifies mem; efl; xmm1; xmm4; r10; r11; 
 
     requires/ensures 
-        let key_ptr                 := rdi;
-        let expanded_key_ptr        := rsi;
-        let iv_reg                  := rdx;
-        let input_ptr               := rcx;
-        let input_end_ptr           := r8;
-        let output_ptr              := r9;
-        let ctr_reg                 := xmm4;
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;  let ctr_reg          := xmm4;
+        let current_input_ptr := r10; let current_ouput_ptr := r11;
 
     CTRInvariants(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
-          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
-          mem, old(mem));
+          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr,
+          alg, mem, old(mem));
 
    requires
-        let key_ptr                 := rdi;
-        let expanded_key_ptr        := rsi;
-        let iv_reg                  := rdx;
-        let input_ptr               := rcx;
-        let input_end_ptr           := r8;
-        let output_ptr              := r9;
-        let ctr_reg                 := xmm4;
-
-     CTREncryptBodyPreconditions();
-// Are these enough to let me copy? Yes.
+     0 <= iteration < SeqLength(input);
      rcx <= r10 < r8;
-     r10 == input_ptr + iteration * 16;
-     r11 == output_ptr + iteration * 16;
-     r8  == input_ptr + SeqLength(input) * 16;
+     r10 == rcx  + iteration * 16;
+     r11 == r9   + iteration * 16;
+     r8  == rcx  + SeqLength(input) * 16;
 
    ensures
-     CTREncryptBodyPostconditions();
      rcx <= r10 <= r8;
+//     r10 == rcx  + (iteration + 1) * 16;
+//     r11 == r9   + (iteration + 1) * 16;
+     // Interestingly, Bryan does a correctness from 0 ... iteration check in CBC.
+     let input_ptr  := rcx; let output_ptr := r9;
+//     InputCopied(mem[input_heap], input_ptr, mem[output_heap], output_ptr, iteration);
+//     mem == old(mem)[output_heap := mem[output_heap]];
+       mem == old(mem);
 {
-    ghost var key_ptr                 := rdi;
-    ghost var expanded_key_ptr        := rsi;
-    ghost var iv_reg                  := rdx;
-    ghost var input_ptr               := rcx;
-    ghost var input_end_ptr           := r8;
-    ghost var output_ptr              := r9;
-    ghost var ctr_reg                 := xmm4;
-    ghost var current_input_ptr       := r10;
-    ghost var current_ouput_ptr       := r11;
-
-    Load128(xmm1, r10, 0, Secret, input_heap);
-    Store128(r11, xmm1, 0, Secret, output_heap);
-    Add64(r10,16);
-    Add64(r11,16);
+//     Load128(xmm1,  r10, 0, Secret, input_heap);
+//     Store128(r11, xmm1, 0, Secret, output_heap);
+//     Add64(r10, 16);
+//     Add64(r11, 16);
 }
 
-*/
-
 procedure {:refined} CTR128EncryptLoop(
-          ghost key : seq(uint32),
-          ghost key_heap : heaplet_id,
+          ghost    key      : seq(uint32),
+          ghost    key_heap : heaplet_id,
 
-          ghost expanded_key : seq(uint32),
-          ghost expanded_key_heap : heaplet_id,
+          ghost    expanded_key        : seq(uint32),
+          ghost    expanded_key_heap   : heaplet_id,
 
-          ghost iv       : uint64,
+          ghost    iv       : uint64,
 
-          ghost input:seq(Quadword),
-          ghost input_end  : uint64,
-          ghost input_heap : heaplet_id,
+          ghost    input          : seq(Quadword),
+          ghost    input_end      : uint64,
+          ghost    input_heap : heaplet_id,
 
-          ghost output_heap : heaplet_id,
+          ghost    output_heap : heaplet_id,
 
-          ghost alg: Algorithm
+          ghost    alg: Algorithm,
+
+          ghost    ctr : Quadword
     )
-
-    reads
-        rdi; rsi; rdx; rcx; r8; r9;
-
-    modifies
-       mem; efl; xmm1; xmm4; r10; r11;
+   reads    rdi; rsi; rdx; rcx; r8; r9; 
+   modifies mem; efl; xmm1; xmm4; r10; r11; 
 
    requires/ensures
-        let key_ptr                 := rdi;
-        let expanded_key_ptr        := rsi;
-        let iv_reg                  := rdx;
-        let input_ptr               := rcx;
-        let input_end_ptr           := r8;
-        let output_ptr              := r9;
-        let ctr_reg                 := xmm4;
-
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;  let ctr_reg          := xmm4;
+        let current_input_ptr := r10; let current_ouput_ptr := r11;
     CTRInvariants(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
           input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg,
            mem, old(mem));
+    HeapReq(key_heap, expanded_key_heap, input_heap, output_heap, mem);
 
    requires
-     CTREncryptLoopInvariant(0);
-        let key_ptr                 := rdi;
-        let expanded_key_ptr        := rsi;
-        let iv_reg                  := rdx;
-        let input_ptr               := rcx;
-        let input_end_ptr           := r8;
-        let output_ptr              := r9;
-        let ctr_reg                 := xmm4;
-     rcx <= r10 < r8;
-//     r10 == input_ptr + iteration * 16;
-//     r11 == output_ptr + iteration * 16;
-     r8  == input_ptr + SeqLength(input) * 16;
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;  let ctr_reg          := xmm4;
+        let current_input_ptr := r10; let current_ouput_ptr := r11;
+     CTREncryptLoopInvariant(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
+          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
+          mem, old(mem), 0);
 
    ensures
-    exists iteration : nat :: CTREncryptLoopInvariant(iteration);
-    rcx <= r10 <= r8;
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;  let ctr_reg          := xmm4;
+        let current_input_ptr := r10; let current_ouput_ptr := r11;
+    //exists iteration : nat :: CTREncryptLoopInvariant(iteration);
+    InputCopied(mem[input_heap], input_ptr, mem[output_heap], output_ptr, 0);
 
 {
-    ghost var key_ptr                 := rdi;
-    ghost var expanded_key_ptr        := rsi;
-    ghost var iv_reg                  := rdx;
-    ghost var input_ptr               := rcx;
-    ghost var input_end_ptr           := r8;
-    ghost var output_ptr              := r9;
-    ghost var ctr_reg                 := xmm4;
     ghost var iteration : nat := 0;
-
-    while (r10 < r8)
+    while (r10 < r8) // VALE BUG: Will not take operands.
      invariant 
-       old(r10) <= r10 <= r8;
-       CTREncryptLoopInvariant(iteration);
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;  let ctr_reg          := xmm4;
+        let current_input_ptr := r10; let current_ouput_ptr := r11;
+        mem == old(mem)[output_heap := mem[output_heap]];
+       CTREncryptLoopInvariant(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
+          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
+          mem, old(mem), iteration);
      decreases
       r8 - r10;
     {
-    CTR128EncryptBody(
-           key,
-           key_heap,
-           expanded_key,
-           expanded_key_heap,
-           iv,
-           input,
-           input_end,
-           input_heap,
-           output_heap,
-           alg,
-           iteration);
-        iteration := iteration + 1;
+      CTR128EncryptBody(
+       key, key_heap, expanded_key, expanded_key_heap,
+       iv,
+       input, input_end, input_heap,
+       output_heap,
+       alg, ctr,
+       iteration);
+      iteration := iteration + 1;
     }
 }
 
-
+/*
 // Everything is in a register, the CTR is built in xmm4.
 procedure {:refined} CTR128EncryptStart(
-          ghost key : seq(uint32),
-          ghost key_heap : heaplet_id,
+          ghost    key      : seq(uint32),
+          ghost    key_heap : heaplet_id,
 
-          ghost expanded_key : seq(uint32),
-          ghost expanded_key_heap : heaplet_id,
+          ghost   expanded_key        : seq(uint32),
+          ghost   expanded_key_heap   : heaplet_id,
 
-          ghost iv       : uint64,
+          ghost    iv       : uint64,
 
-          ghost input:seq(Quadword),
-          ghost input_end  : uint64,
-          ghost input_heap : heaplet_id,
+          ghost    input          : seq(Quadword),
+          ghost    input_end      : uint64,
+          ghost    input_heap : heaplet_id,
 
-          ghost output_heap : heaplet_id,
+          ghost     output_heap : heaplet_id,
 
           ghost alg: Algorithm,
-
           ghost ctr : Quadword
     ) returns (
         ghost output:seq(Quadword)
     )
 
-    reads
-        rdi; rsi; rdx; rcx; r8; r9; 
-
-    modifies
-        mem; efl; xmm1; xmm4; r10; r11;
+    reads    rdi; rsi; rdx; rcx; r8; r9; 
+    modifies mem; efl; xmm1; xmm4; r10; r11; 
 
     requires/ensures
-        let key_ptr                 := rdi;
-        let expanded_key_ptr        := rsi;
-        let iv_reg                  := rdx;
-        let input_ptr               := rcx;
-        let input_end_ptr           := r8;
-        let output_ptr              := r9;
-        let ctr_reg                 := xmm4;
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;  let ctr_reg          := xmm4;
+        let current_input_ptr := r10; let current_ouput_ptr := r11;
 
     CTRInvariants(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
           input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg,
           mem, old(mem));
 
    ensures
-      let output_ptr              := r9;
-      CTROutputFinal2(key, input, iv, alg, mem,  output_heap, output_ptr, output, ctr);
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;  let ctr_reg          := xmm4;
+        let current_input_ptr := r10; let current_ouput_ptr := r11;
+      InputCopied(mem[input_heap], input_ptr, mem[output_heap], output_ptr, 0);
+//      output == input;
+//      QuadwordSeqsInMemMatch(input, mem[input_heap], input_ptr, output, mem[output_heap], output_ptr,1);
 {
-    ghost var key_ptr                 := rdi;
-    ghost var expanded_key_ptr        := rsi;
-    ghost var iv_reg                  := rdx;
-    ghost var input_ptr               := rcx;
-    ghost var input_end_ptr           := r8;
-    ghost var output_ptr              := r9;
-    ghost var ctr_reg                 := xmm4;
 
-    // Set up a current input ptr copy to move. 
-    ghost var current_input_ptr       := r10;
-    ghost var current_ouput_ptr       := r9;
-    Mov64(r10,rcx);
-    Mov64(r11,r9);
+    // Set up a current and output ptrs.
+    Mov64(r10, rcx);
+    Mov64(r11, r9);
 
-    CTR128EncryptLoop(key, key_heap, expanded_key, expanded_key_heap, iv, input, input_end, input_heap, output_heap, alg);
+    CTR128EncryptBody(
+       key, key_heap, expanded_key, expanded_key_heap,
+       iv,
+       input, input_end, input_heap,
+       output_heap,
+       alg, ctr,
+       0);
+/*
+    CTR128EncryptLoop(key, key_heap, 
+                      expanded_key, expanded_key_heap, 
+                      iv,
+                      input, input_end, input_heap,
+                      output_heap, alg, 
+                      ctr);
+*/
 
-    exists iteration: nat :: CTREncryptLoopInvariant(iteration);
-    output := lemma_CTREncryptInvarientImplications(input);
+
+//    exists iteration: nat ::
+//      CTREncryptLoopInvariant(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
+//          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
+//          mem, old(mem), iteration);
+//
+   output := lemma_output_is_input(input);
 }
 
 
 procedure {:refined} CTR128EncryptReg(
-          ghost key : seq(uint32),
-          ghost key_heap : heaplet_id,
+          ghost   key      : seq(uint32),
+          ghost   key_heap : heaplet_id,
 
-          ghost expanded_key : seq(uint32),
-          ghost expanded_key_heap : heaplet_id,
+          ghost   expanded_key        : seq(uint32),
+          ghost   expanded_key_heap   : heaplet_id,
 
-          ghost iv       : uint64,
+          ghost   iv       : uint64,
 
-          ghost input:seq(Quadword),
-          ghost input_end  : uint64,
-          ghost input_heap : heaplet_id,
+          ghost   input          : seq(Quadword),
+          ghost   input_end      : uint64,
+          ghost   input_heap     : heaplet_id,
 
-          ghost output_heap : heaplet_id,
+          ghost   output_heap : heaplet_id,
 
-          ghost alg: Algorithm,
-
-          ghost ctr : Quadword
+          ghost   alg : Algorithm,
+          ghost   ctr : Quadword
     ) returns (
         ghost output:seq(Quadword)
     )
 
-    reads
+    reads 
         rdi; rsi; rdx; rcx; r8; r9;
 
     modifies
         mem; efl; xmm1; xmm4; xmm5; r10; r11;
 
     requires/ensures
-        let key_ptr                 := rdi;
-        let expanded_key_ptr        := rsi;
-        let iv_reg                  := rdx;
-        let input_ptr               := rcx;
-        let input_end_ptr           := r8;
-        let output_ptr              := r9;
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;
 
-    CTRInvariants(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
-          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg,
-          mem, old(mem));
-
+     CTRInvariants(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
+          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
+          mem,old(mem));
    ensures
-      let output_ptr              := r9;
-      CTROutputFinal2(key, input, iv, alg, mem,  output_heap, output_ptr, output, ctr);
+     let input_ptr  := rcx; let output_ptr := r9;
+     InputCopied(mem[input_heap], input_ptr, mem[output_heap], output_ptr, 0);
+//      output == input;
+//      QuadwordSeqsInMemMatch(input, mem[input_heap], input_ptr, output, mem[output_heap], output_ptr,1);
 {
-                
-    ghost var key_ptr                 := rdi;
-    ghost var expanded_key_ptr        := rsi;
-    ghost var iv_reg                  := rdx;
-    ghost var input_ptr               := rcx;
-    ghost var input_end_ptr           := r8;
-    ghost var output_ptr              := r9;
-    ghost var ctr_reg                 := xmm4;
 
     // Build the counter.
-    Pxor(xmm4,xmm4);           // Zero ctr.
-    MovLow64To128(xmm5,rdx);   // Put iv in an mmx low.
-    MOVLHPS(xmm4, xmm5);       // Move the iv high.
-    Pxor(xmm5,xmm5);           // Clean it out.
+    Pxor(xmm4,xmm4);             // Zero ctr.
+    MovLow64To128(xmm4, rdx);    // Put iv in an mmx low.
+    MOVLHPS(xmm4, xmm5);         // Move the iv high.
+    Pxor(xmm5,xmm5);             // Clean it out.
     // Call the final version.
-
-    output := CTR128EncryptStart(key, key_heap, expanded_key, expanded_key_heap, iv, input, input_end, input_heap, output_heap, alg, ctr);
+    output := CTR128EncryptStart(key, key_heap, expanded_key, expanded_key_heap,
+                                 iv,
+                                 input, input_end, input_heap,
+                                 output_heap, alg, ctr);
 }
-
 
 // Linux only calling sequence so far.
 procedure {:refined} CTR128EncryptStdcall(
@@ -870,29 +836,27 @@ procedure {:refined} CTR128EncryptStdcall(
         ghost output:seq(Quadword)
     )
 
-    reads
-        rdi; rsi; rdx; rcx; r8; r9;
+    reads    rdi; rsi; rdx; rcx; r8; r9;
 
-    modifies
-        mem; efl; xmm4; xmm5; r10; r11; xmm1;
+    modifies mem; efl; xmm1; xmm4; xmm5; r10; r11; 
 
     requires/ensures
-        let key_ptr                 := rdi;
-        let expanded_key_ptr        := rsi;
-        let iv_reg                  := rdx;
-        let input_ptr               := rcx;
-        let input_end_ptr           := r8;
-        let output_ptr              := r9;
-
-    CTRInvariants(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
-          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
-          mem, old(mem));
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;
+        CTRInvariants(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
+            input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
+            mem, old(mem));
 
    ensures
-      let output_ptr              := r9;
-      CTROutputFinal2(key, input, iv, alg, mem,  output_heap, output_ptr, output, ctr);
+        let key_ptr    := rdi; let expanded_key_ptr := rsi; let iv_reg     := rdx;
+        let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
+        let output_ptr := r9;
+        let input_ptr  := rcx; let output_ptr := r9;
+      InputCopied(mem[input_heap], input_ptr, mem[output_heap], output_ptr, 0);
+//      output == input;
+//      QuadwordSeqsInMemMatch(input, mem[input_heap], input_ptr, output, mem[output_heap], output_ptr,1);
 {
-                
     ghost var key_ptr                 := rdi;
     ghost var expanded_key_ptr        := rsi;
     ghost var iv_reg                  := rdx;
@@ -900,8 +864,14 @@ procedure {:refined} CTR128EncryptStdcall(
     ghost var input_end_ptr           := r8;
     ghost var output_ptr              := r9;
 
-    output := CTR128EncryptReg(key, key_heap, expanded_key, expanded_key_heap, iv, input, input_end, input_heap, output_heap, alg, ctr);
+    output := CTR128EncryptReg(key, key_heap, expanded_key, expanded_key_heap, 
+                               iv, input, input_end, input_heap,
+                               output_heap, alg, ctr);
 }
+
+*/
+// Dummy so validation always runs.
+procedure {:refined} CTR128EncryptStdcall() requires false;  ensures true; {}
 
 #verbatim
 } // end module CTR

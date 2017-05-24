@@ -89,21 +89,14 @@ predicate Mem64ChangedOnlyIn(regptr : uint64, count : int, heap : heaplet_id, me
      mem[heap].mem64[a] == oldmem[heap].mem64[a]
 }
 
-predicate InputMatchesMemory(input:seq<Quadword>, mem:Heaplet, input_ptr:uint64)
-    requires mem.QuadwordHeaplet?
+predicate QuadwordSeqInMemory(qws : seq<Quadword>, mem: Heaplet, ptr : uint64) 
+  requires mem.QuadwordHeaplet?
 {
-    forall b:int :: 0 <= b < |input| ==> input_ptr + b*16 in mem.quads 
-                                      && mem.quads[input_ptr + b*16].v == input[b]
+    forall b:int :: 0 <= b < |qws| ==> ptr + b*16 in mem.quads && mem.quads[ptr + b*16].v == qws[b]  
 }
 
 // Memory
 
-// What does it mean to be pointed at by a register?
-// ValidDstAddr really with the appropriate taint in memory.
-predicate InMem(athing : uint128, regptr : uint128, heap : heaplet_id, taint : taint) 
-{
-  true
-}
 
 // Ctr is in a register.
 predicate CtrInReg(ctr : Quadword, reg : Quadword) {
@@ -142,13 +135,19 @@ predicate AlgReq(alg : Algorithm, key : seq<uint32>, key_ptr : uint64) {
   key_ptr % 16 == 0
 }
 
-predicate HeapReq(key_heap : heaplet_id, expanded_key_heap : heaplet_id, input_heap : heaplet_id, output_heap : heaplet_id) {
+predicate HeapReq(key_heap : heaplet_id, expanded_key_heap : heaplet_id, input_heap : heaplet_id, output_heap : heaplet_id, mem : Heaplets) {
+// Disjointness.
   key_heap != expanded_key_heap &&
   key_heap != input_heap &&
   key_heap != output_heap &&
   expanded_key_heap != input_heap &&
   expanded_key_heap != output_heap &&
-  input_heap != output_heap
+  input_heap != output_heap &&
+
+  key_heap in mem &&
+  expanded_key_heap in mem &&
+  input_heap in mem &&
+  output_heap in mem
 }
 
 predicate KeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, mem : Heaplets) {
@@ -176,15 +175,16 @@ predicate InputInMem(input : seq<Quadword>, input_heap : heaplet_id, input_ptr :
                     input_end : uint64, input_end_ptr : uint64, mem : Heaplets) {
   SeqLength(input) > 0 &&
   ValidSrcAddrs(mem, input_heap, input_ptr, 128, Secret, SeqLength(input)*16) &&
-  InputMatchesMemory(input, mem[input_heap], input_ptr)
+  QuadwordSeqInMemory(input, mem[input_heap], input_ptr)
 }
 
-predicate OutputInMem(input : seq<Quadword>, output_heap : heaplet_id, 
+predicate OutputWriteable(output : seq<Quadword>, output_heap : heaplet_id, 
                       output_ptr : uint64, mem : Heaplets) {
-  SeqLength(input) > 0 &&
-  ValidSrcAddrs(mem, output_heap, output_ptr, 128, Secret, SeqLength(input)*16)
+  SeqLength(output) > 0 &&
+  ValidSrcAddrs(mem, output_heap, output_ptr, 128, Secret, SeqLength(output)*16)
 }
 
+// TODO
 // I abstractly know what my starting counter is. 
 predicate StartCtrReq(iv : uint64, ctr : Quadword) {
   //ctr == Quadword(0,0,lower64(iv), upper64(iv))
@@ -200,12 +200,13 @@ predicate StartCtrInReg(iv : uint64, ctr : Quadword, ctr_reg : Quadword) {
  true
 }
 
-predicate InputOutputRelations(input : seq<Quadword>, input_ptr : uint64, input_end_ptr : uint64, output_ptr : uint64) {
+predicate InputOutputInvariants(input : seq<Quadword>, input_ptr : uint64, input_end_ptr : uint64, 
+                               output_ptr : uint64) {
    input_ptr + SeqLength(input)*16 < 0x1_0000_0000_0000_0000 &&
    output_ptr + SeqLength(input)*16 < 0x1_0000_0000_0000_0000 &&
    input_end_ptr >= input_ptr && 
    input_end_ptr == input_ptr + SeqLength(input)*16 &&
-   input_end_ptr < 0x1_0000_0000_0000_0000
+   input_end_ptr < 0x1_0000_0000_0000_0000 
 }
 
 predicate CTRInvariants(
@@ -216,7 +217,7 @@ predicate CTRInvariants(
     expanded_key_ptr : uint64,
     expanded_key_heap : heaplet_id,
     iv       : uint64,
-    input:seq<Quadword>,
+    input :seq<Quadword>,
     input_ptr : uint64,
     input_end  : uint64,
     input_end_ptr : uint64,
@@ -227,23 +228,44 @@ predicate CTRInvariants(
     mem : Heaplets,
     old_mem : Heaplets)
 {
-        HeapReq(key_heap, expanded_key_heap, input_heap, output_heap) &&
+        HeapReq(key_heap, expanded_key_heap, input_heap, output_heap, mem) &&
         KeyReq(key, key_heap, key_ptr, mem) &&
         ExpandedKeyReq(key, key_heap, key_ptr, expanded_key, expanded_key_heap,
                             expanded_key_ptr, mem, alg) &&
         InputInMem(input, input_heap, input_ptr, input_end, input_end_ptr, mem) &&
-        OutputInMem(input, output_heap, output_ptr, mem) &&
-        InputOutputRelations(input, input_ptr, input_end_ptr, output_ptr) &&
+        OutputWriteable(input, output_heap, output_ptr, mem) &&
+        InputOutputInvariants(input, input_ptr, input_end_ptr, output_ptr) &&
         mem == old_mem[output_heap := mem[output_heap]]
 }
+
 
 predicate CTROutputFinal2(key : seq<uint32>, input :seq<Quadword>, iv : uint64, alg : Algorithm, 
                          mem : Heaplets,  output_heap : heaplet_id, output_ptr :uint64, output : seq<Quadword>, ctr : Quadword) {
   true
 }
 
-predicate CTREncryptLoopInvariant(iteration : nat) {
-  true
+predicate CTREncryptLoopInvariant(
+    key     : seq<uint32>,
+    key_ptr : uint64,
+    key_heap : heaplet_id,
+    expanded_key : seq<uint32>,
+    expanded_key_ptr : uint64,
+    expanded_key_heap : heaplet_id,
+    iv       : uint64,
+    input :seq<Quadword>,
+    input_ptr : uint64,
+    input_end  : uint64,
+    input_end_ptr : uint64,
+    input_heap : heaplet_id,
+    output_heap : heaplet_id,
+    output_ptr : uint64,
+    alg: Algorithm,
+    mem : Heaplets,
+    old_mem : Heaplets,
+    iteration : nat) {
+  CTRInvariants(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
+          input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
+          mem, old_mem)
 }
 
 lemma lemma_CTREncryptInvarientImplications(input : seq<Quadword>)
@@ -258,6 +280,43 @@ predicate CTREncryptBodyPreconditions() {
 predicate CTREncryptBodyPostconditions() {
   true
 }
+
+
+// Just for learning how to write the code/proofs.
+
+predicate QuadwordSeqsInMemMatch
+  (input  : seq<Quadword>, in_mem  : Heaplet, input_ptr : uint64,
+   output : seq<Quadword>, out_mem : Heaplet, output_ptr : uint64,
+   length : int)
+  requires in_mem.QuadwordHeaplet?
+  requires out_mem.QuadwordHeaplet?
+{
+  |input| == |output| &&
+  |input| >= length &&
+   forall b:int :: 0 <= b < length ==> 
+     input_ptr  + b*16 in in_mem.quads && 
+     output_ptr + b*16 in out_mem.quads && 
+     in_mem.quads[input_ptr + b*16].v == out_mem.quads[output_ptr + b*16].v
+}
+
+
+predicate InputCopied
+  (in_mem  : Heaplet, input_ptr : uint64,
+   out_mem : Heaplet, output_ptr : uint64,
+   position : int)
+  requires in_mem.QuadwordHeaplet?
+  requires out_mem.QuadwordHeaplet?
+{
+  input_ptr  + position*16 in in_mem.quads && 
+  output_ptr + position*16 in out_mem.quads && 
+  in_mem.quads[input_ptr + position*16].v == out_mem.quads[output_ptr + position*16].v
+}
+
+lemma lemma_output_is_input(input : seq<Quadword>)
+  returns (output : seq<Quadword>) {
+    output := input;
+}
+
 
 // End of Module
 }

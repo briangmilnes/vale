@@ -66,10 +66,10 @@ method {:main} Main(ghost env:HostEnvironment)
 //        va_code_CTREncryptOneBlockStdCall(),
 //        0, 0, asm_choice, platform_choice);
 //
-//    printProcPlatform("aes_main_i_KeyExpansionStdcall",
-//        va_code_KeyExpansionStdcall(Secret, win),
-//        0, 8,
-//        asm_choice, platform_choice);
+      printProcPlatform("aes_main_i_KeyExpansionStdcall",
+         va_code_KeyExpansionStdcall(Secret, win),
+         0, 8,
+        asm_choice, platform_choice);
 // 
 //    printProcPlatform("AES128EncryptOneBlockStdcall",
 //        va_code_AES128EncryptOneBlockStdcall(win),
