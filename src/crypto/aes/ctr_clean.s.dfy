@@ -136,18 +136,19 @@ predicate AlgReq(alg : Algorithm, key : seq<uint32>, key_ptr : uint64) {
 }
 
 predicate HeapReq(key_heap : heaplet_id, expanded_key_heap : heaplet_id, input_heap : heaplet_id, output_heap : heaplet_id, mem : Heaplets) {
+// In the memory
+  key_heap in mem &&
+  expanded_key_heap in mem &&
+  input_heap in mem &&
+  output_heap in mem &&
+
 // Disjointness.
   key_heap != expanded_key_heap &&
   key_heap != input_heap &&
   key_heap != output_heap &&
   expanded_key_heap != input_heap &&
   expanded_key_heap != output_heap &&
-  input_heap != output_heap &&
-
-  key_heap in mem &&
-  expanded_key_heap in mem &&
-  input_heap in mem &&
-  output_heap in mem
+  input_heap != output_heap
 }
 
 predicate KeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, mem : Heaplets) {

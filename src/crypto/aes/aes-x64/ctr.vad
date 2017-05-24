@@ -664,10 +664,10 @@ procedure {:refined} CTR128EncryptLoop(
         let input_ptr  := rcx; let input_end_ptr    := r8;  let output_ptr := r9;
         let output_ptr := r9;  let ctr_reg          := xmm4;
         let current_input_ptr := r10; let current_ouput_ptr := r11;
-        mem == old(mem)[output_heap := mem[output_heap]];
        CTREncryptLoopInvariant(key, key_ptr, key_heap, expanded_key, expanded_key_ptr, expanded_key_heap, iv,
           input, input_ptr, input_end, input_end_ptr, input_heap, output_heap, output_ptr, alg, 
           mem, old(mem), iteration);
+        mem == old(mem)[output_heap := mem[output_heap]];
      decreases
       r8 - r10;
     {
