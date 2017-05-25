@@ -471,10 +471,11 @@ const uint8_t CStream[64]    = { 0x87, 0x4d, 0x61, 0x91, 0xb6, 0x20, 0xe3, 0x26,
 
 // This is a bad test case in that it has no final truncated block.
 
+
 void print_stream(const uint8_t stream[64]) {
   for (int i = 0; i < 64; ++i) {
     printf("0x%2x,", stream[i]);
-    if (i % 16 == 0) {
+    if ((i +1) % 16 == 0) {
       printf("\n");
     }
   }
@@ -482,7 +483,7 @@ void print_stream(const uint8_t stream[64]) {
 
 void __stdcall CTR128EncryptStdcall(
                                  const void* key,
-                                 const void* expaned_key,
+                                 const void* expanded_key,
                                  const void* iv,
                                  const void* input,
                                  const void* input_end,
@@ -504,10 +505,11 @@ int test_encrypt_stream() {
   // other direction.
 
   printf("About to call encrypt\n");
-  // Just for a one block copy.
 
-  CTR128EncryptStdcall(k, expanded_key, iv, PStream, (const void*)((size_t)PStream + 16), CStream);
-  // Why scratch?
+  printf("PStream %p %p\n", PStream,(const void*)((size_t)PStream + 16));
+
+  CTR128EncryptStdcall(k, expanded_key, (const void *)iv, 
+                       PStream, (const void*)((size_t)PStream + 16), CStream);
 
   if (memcmp(CypherText,CStream,64) == 0) {
     printf("AES128 CTR Encrypt Stream success\n");

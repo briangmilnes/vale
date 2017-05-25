@@ -17,14 +17,19 @@ import opened dafny_wrappers_i
 import opened AESModule
 import opened AESHelpersModule
 
-
-// I need a cleaner version of specifications in which a ghost is
-// used for each concrete value and the output of each routine.
-// The cryptographic types we are using are:
-// key, expanded_key, block, block sequence and counter.
-// They are either in memory or in a register.
-// We specify the expanded key in bytes all else in quadwords.
-// 
+datatype Pair<T,U> = Pair(0: T,1: U)
+datatype G = G(ghost key : seq<uint32>,
+               ghost key_heap : heaplet_id,
+               ghost expanded_key : seq<uint32>,
+               ghost expanded_key_heap : heaplet_id,
+               ghost iv       : uint64,
+               ghost input :seq<Quadword>,
+               ghost input_end  : uint64,
+               ghost input_heap : heaplet_id,
+               ghost output_heap : heaplet_id,
+               ghost alg: Algorithm,
+               ghost mem : Heaplets,
+               ghost old_mem : Heaplets)
 
 // We need to translate Quadwords to uint128 and versa vice.
 
@@ -313,11 +318,6 @@ predicate InputCopied
   in_mem.quads[input_ptr + position*16].v == out_mem.quads[output_ptr + position*16].v
 }
 
-lemma lemma_output_is_input(input : seq<Quadword>)
-  returns (output : seq<Quadword>) {
-    output := input;
-}
-
-
 // End of Module
+
 }
