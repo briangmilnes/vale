@@ -76,7 +76,7 @@ method {:main} Main(ghost env:HostEnvironment)
 //        0, 0, asm_choice, platform_choice);
 
     printProcPlatform("CTR128EncryptStdcall",
-        va_code_CTR128EncryptStdcall(),
+    va_code_CTR128EncryptStdcall(),
         0, 0, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);
