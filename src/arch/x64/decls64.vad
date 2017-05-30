@@ -55,13 +55,13 @@ procedure{:refined}{:bridge} {:instruction Ins(Add64(dst, OConst(1)))} incr64(in
     }
 }
 
-procedure{:refined} {:bridge} {:instruction Ins(MOVQ64XMM(dst, src))} 
-    MovLow64To64(out operand dst:uint64, operand src:Quadword)
+procedure{:refined} {:bridge} {:instruction Ins(MOVQ64XMM(dst, src))} MovLow64To64(out operand dst:uint64, operand src:Quadword)
   ensures
   dst == old(lowerUpper64(src.lo, src.mid_lo));
 {
     reveal evalCodeOpaque;
     reveal x86_ValidState;
+    reveal lowerUpper64;
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
     ghost if (!this.ok)
@@ -70,20 +70,20 @@ procedure{:refined} {:bridge} {:instruction Ins(MOVQ64XMM(dst, src))}
     }
 }
 
-procedure{:refined}  {:bridge} {:instruction Ins(MOVQXMM64(dst, src))} 
-    MovLow64To128(inout operand dst: Quadword, operand src:uint64)
+procedure{:refined}  {:bridge} {:instruction Ins(MOVQXMM64(dst, src))} MovLow64To128(inout operand dst: Quadword, operand src:uint64)
   ensures
-    dst == old(Quadword(lower64(src), upper64(src), dst.mid_hi, dst.hi));
+    dst == old(Quadword(lower64(src), upper64(src), 0, 0));
 {
     reveal evalCodeOpaque;
     reveal x86_ValidState;
+    reveal lower64;
+    reveal upper64;
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
 }
 
 // movhlps  - high 64 to low 64 bit move
-procedure{:refined} {:bridge} {:instruction Ins(MOVHLPS(dst, src))} 
-    MOVHLPS(inout operand dst:Quadword, operand src:Quadword)
+procedure{:refined} {:bridge} {:instruction Ins(MOVHLPS(dst, src))}  MOVHLPS(inout operand dst:Quadword, operand src:Quadword)
   ensures
     dst == old(Quadword(src.mid_hi, src.hi, dst.mid_hi, dst.hi));
 {
@@ -94,8 +94,7 @@ procedure{:refined} {:bridge} {:instruction Ins(MOVHLPS(dst, src))}
 }
 
 //// movlhps  - low 64 to high 64 bit move
-procedure{:refined} {:bridge} {:instruction Ins(MOVLHPS(dst, src))} 
-    MOVLHPS(inout operand dst:Quadword, operand src:Quadword)
+procedure{:refined} {:bridge} {:instruction Ins(MOVLHPS(dst, src))} MOVLHPS(inout operand dst:Quadword, operand src:Quadword)
   ensures
     dst == old(Quadword(dst.lo, dst.mid_lo, src.lo, src.mid_lo));
 {

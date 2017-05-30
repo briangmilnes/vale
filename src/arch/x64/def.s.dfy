@@ -326,6 +326,10 @@ function{:opaque} lower64(i:uint64):uint32 { i % 0x1_0000_0000 }
 function{:opaque} upper64(i:uint64):uint32 { i / 0x1_0000_0000 }
 function{:opaque} lowerUpper64(l:uint32, u:uint32):uint64 { l + 0x1_0000_0000 * u }
 
+function lower64trans(i:uint64):uint32 { i % 0x1_0000_0000 }
+function upper64trans(i:uint64):uint32 { i / 0x1_0000_0000 }
+function lowerUpper64trans(l:uint32, u:uint32):uint64 { l + 0x1_0000_0000 * u }
+
 function eval_op64(s:state, o:operand) : uint64
     requires !(o.OReg? && o.r.X86Xmm?)
 {
@@ -671,7 +675,7 @@ predicate evalIns(ins:ins, s:state, r:state)
           case MOVQXMM64(dst, src) =>
             var d := eval_op128(s,dst);
             var t := eval_op64(s,src);
-              evalUpdateXmmsAndMaintainFlags(s, dst, Quadword(lower64(t), upper64(t), d.mid_hi, d.hi), r, obs) // mov doesn't change flags
+              evalUpdateXmmsAndMaintainFlags(s, dst, Quadword(lower64(t), upper64(t), 0, 0), r, obs) // mov doesn't change flags
 
           case MOVHLPS(dst, src) =>
             var d := eval_op128(s,dst);

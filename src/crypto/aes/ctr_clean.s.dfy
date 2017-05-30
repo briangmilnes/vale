@@ -28,7 +28,8 @@ datatype G = G(ghost key : seq<uint32>,
                ghost inp_heap : heaplet_id,
                ghost out_heap : heaplet_id,
                ghost alg: Algorithm,
-               ghost init_ctr : uint64)
+               ghost init_ctr : uint64,
+               ghost ctr  : Quadword)
 
 // We need to translate Quadwords to uint128 and versa vice.
 
@@ -73,10 +74,10 @@ predicate is_reg_edi(r : operand) {
 // Bind the registers, passed as operators, to a physical register.
 predicate BindRegsPhy1(key_ptr : operand, exp_key_ptr : operand, iv_reg : operand, inp_ptr : operand, inp_end_ptr : operand,  out_ptr : operand, ctr_reg : operand, init_ctr : operand) {
  key_ptr.OReg?      && key_ptr     == OReg(X86Edi) &&
- exp_key_ptr.OReg?  && exp_key_ptr == OReg(X86Esi) && 
+ exp_key_ptr.OReg?  && exp_key_ptr == OReg(X86R8) && 
  iv_reg.OReg?       && iv_reg      == OReg(X86Edx) && 
  inp_ptr.OReg?      && inp_ptr     == OReg(X86Ecx) && 
- inp_end_ptr.OReg?  && inp_end_ptr == OReg(X86R8) &&
+ inp_end_ptr.OReg?  && inp_end_ptr == OReg(X86Esi) &&
  out_ptr.OReg?      && out_ptr     == OReg(X86R9) &&
  ctr_reg.OReg?      && ctr_reg     == OReg(X86Xmm(4)) &&
  init_ctr.OReg?     && init_ctr    == OReg(X86R12) 
@@ -123,6 +124,7 @@ predicate QuadwordSeqInMemory(qws : seq<Quadword>, mem: Heaplet, ptr : uint64)
     forall b:int :: 0 <= b < |qws| ==> ptr + b*16 in mem.quads && mem.quads[ptr + b*16].v == qws[b]  
 }
 
+// TODO obviate 
 predicate CtrInMem(ctr : Quadword, regptr : uint64, heap : heaplet_id, mem : Heaplets) { 
   // That register's value points to a readable source addresss in that heap with public taint.
   ValidSrcAddr(mem, heap, regptr, 128, Public) &&
@@ -137,6 +139,7 @@ predicate AlgReq(alg : Algorithm, key : seq<uint32>, key_ptr : uint64) {
   (Nb() * (Nr(alg) + 1)) / 4 == Nr(alg) + 1 &&   // Easy to prove, but necessary precondition to Cipher
   (Nb() * (Nr(alg) + 1)) % 4 == 0 &&   // Easy to prove, but necessary precondition to Cipher
   key_ptr % 16 == 0
+
 }
 
 predicate HeapReq(key_heap : heaplet_id, exp_key_heap : heaplet_id, inp_heap : heaplet_id, out_heap : heaplet_id, mem : Heaplets, old_mem : Heaplets) {
@@ -168,17 +171,11 @@ predicate KeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, mem
   key_ptr % 16 == 0
 }
 
-predicate ExpKeyInitReq(exp_key : seq<uint32>, exp_key_heap : heaplet_id,
-                             exp_key_ptr : uint64, mem : Heaplets) {
-  SeqLength(exp_key) == 44 &&
-  ValidSrcAddrs(mem, exp_key_heap, exp_key_ptr, 1, Secret, 176)
-}
-
 predicate ExpKeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, exp_key : seq<uint32>, exp_key_heap : heaplet_id,
                              exp_key_ptr : uint64, mem : Heaplets, alg : Algorithm) {
   AlgReq(alg, key, key_ptr) &&
   KeyReq(key, key_heap, key_ptr, mem) && 
-  ExpKeyInitReq(exp_key, exp_key_heap, exp_key_ptr, mem) && // Someday we may call this in assembly.
+  SeqLength(exp_key) == 44 &&
    (forall j :: 0 <= j <= 10 ==> mem[key_heap].quads[key_ptr + 16*j].v == 
          Quadword(exp_key[4*j], exp_key[4*j+1], exp_key[4*j+2], exp_key[4*j+3])) &&
     KeyExpansionPredicate(key, alg, exp_key)
@@ -205,10 +202,28 @@ predicate InpOutInvariants(inp : seq<Quadword>, inp_ptr : uint64, inp_end_ptr : 
    inp_end_ptr < 0x1_0000_0000_0000_0000 
 }
 
-predicate CTRInv(g : G,
+predicate IVReq(iv : uint64, iv_reg : uint64) {
+  iv == iv_reg 
+}
+
+// TODO init ctr vs ctr 
+predicate CtrReq(iv : uint64, ctr : uint64, ctr_reg : Quadword) {
+  ctr_reg.hi == upper64(iv) &&
+  ctr_reg.mid_hi == lower64(iv) 
+}
+
+predicate CtrInitReq(iv : uint64, ctr : uint64, ctr_reg : Quadword, init_ctr : uint64) {
+  CtrReq(iv, ctr, ctr_reg) &&
+  ctr_reg.hi == upper64(iv) &&
+  ctr_reg.mid_hi == lower64(iv) 
+}
+
+// On the call, what is true before the setup?
+predicate CTRInvInit(g : G,
     key_ptr : uint64, exp_key_ptr : uint64,
     inp_ptr : uint64, inp_end_ptr : uint64,
     out_ptr : uint64,
+    iv_reg  : uint64,
     mem : Heaplets, 
     old_mem : Heaplets)
 {
@@ -216,12 +231,24 @@ predicate CTRInv(g : G,
         KeyReq(g.key, g.key_heap, key_ptr, mem) &&
         ExpKeyReq(g.key, g.key_heap, key_ptr, g.exp_key, g.exp_key_heap,
                             exp_key_ptr, mem, g.alg) &&
+        IVReq(g.iv, iv_reg) &&
         InpInMem(g.inp, g.inp_heap, inp_ptr, g.inp_end, inp_end_ptr, mem) &&
         OutWriteable(g.inp, g.out_heap, out_ptr, mem) &&
         InpOutInvariants(g.inp, inp_ptr, inp_end_ptr, out_ptr) &&
         mem == old_mem[g.out_heap := mem[g.out_heap]]
 }
 
+predicate CTRInv(g : G,
+    key_ptr : uint64, exp_key_ptr : uint64,
+    inp_ptr : uint64, inp_end_ptr : uint64,
+    out_ptr : uint64,
+    iv_reg  : uint64,
+    ctr_reg : uint64,
+    mem : Heaplets, 
+    old_mem : Heaplets)
+{
+   CTRInvInit(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, mem, old_mem)
+}
 
 // Can't make the last requirement work due to a bug in Vale or Dafney.
 //predicate ChangeOnly1Block(inp_ptr : uint64,   inp_heap : heaplet_id, 
@@ -258,7 +285,6 @@ predicate QuadwordSeqsInMemMatch
      out_ptr + b*16 in out_mem.quads && 
      in_mem.quads[inp_ptr + b*16].v == out_mem.quads[out_ptr + b*16].v
 }
-
 
 // End of Module
 }

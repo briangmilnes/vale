@@ -447,4 +447,13 @@ lemma lemma_RightShift12(x: uint32)
     assert x''' == RightShift(x, 12);
 }
 
+lemma lemma_QuadwordEqual(q : Quadword, q' : Quadword) 
+  requires q == q';
+  ensures q.lo == q'.lo; 
+  ensures q.mid_lo == q'.mid_lo;
+  ensures q.mid_hi == q'.mid_hi;
+  ensures q.hi == q.hi;
+{
+}
+
 } // end module operations_i
