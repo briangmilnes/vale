@@ -22,54 +22,11 @@ datatype G = G(ghost key : seq<uint32>,
                ghost key_heap : heaplet_id,
                ghost exp_key : seq<uint32>,
                ghost exp_key_heap : heaplet_id,
-               ghost iv       : uint64,
                ghost inp :seq<Quadword>,
-               ghost inp_end  : uint64,
                ghost inp_heap : heaplet_id,
                ghost out_heap : heaplet_id,
-               ghost alg: Algorithm,
-               ghost init_ctr : uint64,
-               ghost ctr  : Quadword)
+               ghost alg: Algorithm)
 
-// We need to translate Quadwords to uint128 and versa vice.
-
-function QuadwordToUint128(q : Quadword) : uint128
-{
-  q.hi      * 0x1_00000000_00000000_00000000 +
-  q.mid_hi  * 0x1_00000000_00000000 +
-  q.mid_lo  * 0x1_00000000 +
-  q.lo
-}
-
-function QuadwordLow64ToUint64(q : Quadword) : uint64
-{
-  q.mid_lo  * 0x1_0000_0000 +
-  q.lo
-}
-
-function Uint128ToQuadword(u : uint128) : Quadword
-{
-  var hi     := ((u / 0x1_00000000_00000000_00000000) % 0x1_00000000)  as uint32;
-  var mid_hi := ((u / 0x1_00000000_00000000) % 0x1_00000000)           as uint32;
-  var mid_lo := ((u / 0x1_00000000) % 0x1_00000000)                    as uint32;
-  var lo     := (u % 0x1_00000000)                                     as uint32;
-  Quadword(hi, mid_hi, mid_lo, lo)
-}
-
-// And similarly, without storing things for 64 bit.
-function HighUint128(u : uint128) : uint64
-{
- (((u / 0x1_00000000_00000000) % 0x1_00000000_00000000) as uint64)
-}
-
-function LowUint128(u : uint128) : uint64 
-{
- ((u % 0x1_00000000_00000000) as uint64)
-}
-
-predicate is_reg_edi(r : operand) {
-  r.OReg? && r == OReg(X86Edi)
-}
 
 // Bind the registers, passed as operators, to a physical register.
 predicate BindRegsPhy1(key_ptr : operand, exp_key_ptr : operand, iv_reg : operand, inp_ptr : operand, inp_end_ptr : operand,  out_ptr : operand, ctr_reg : operand, init_ctr : operand) {
@@ -132,6 +89,64 @@ predicate CtrInMem(ctr : Quadword, regptr : uint64, heap : heaplet_id, mem : Hea
   ctr == mem[heap].quads[regptr].v
 }
 
+lemma lemma_BitwiseAdd64()
+    ensures  forall x:uint64, y:uint64 :: x + y < 0x1_0000_0000_0000_0000 ==> BitwiseAdd64(x, y) == x + y
+    ensures  forall x:uint64, y:uint64 :: x + y >= 0x1_0000_0000_0000_0000 ==> BitwiseAdd64(x, y) == x + y - 0x1_0000_0000_0000_0000
+    ensures  forall x:uint64 :: BitwiseAdd64(x, 0) == x;
+{
+    reveal_BitwiseAdd64();
+}
+
+predicate CtrIncr(oldc : Quadword, newc : Quadword) {
+  oldc.hi     == newc.hi &&
+  oldc.mid_hi == newc.mid_hi &&
+  newc.mid_lo == upper64(BitwiseAdd64(lowerUpper64(oldc.lo,oldc.mid_lo), 1)) &&
+  newc.lo     == lower64(BitwiseAdd64(lowerUpper64(oldc.lo,oldc.mid_lo), 1))
+}
+
+predicate CtrIncrN(newc : Quadword, init_ctr : uint64, n : nat) 
+ requires n < 1_0000_0000_0000_0000;
+{
+// I'm the init_ctr + n with wrapping.
+  newc.mid_lo == upper64(BitwiseAdd64(init_ctr, n)) &&
+  newc.lo     == lower64(BitwiseAdd64(init_ctr, n))
+}
+
+lemma lemma_CtrIncrNTrans(old_ctr : Quadword, new_ctr: Quadword, init_ctr : uint64, n : nat)
+  requires n + 1 < 1_0000_0000_0000_0000;
+  requires CtrIncrN(old_ctr, init_ctr, n);
+  requires CtrIncr (old_ctr,  new_ctr);
+  ensures  CtrIncrN(new_ctr, init_ctr, n + 1);
+{
+  lemma_BitwiseAdd64();
+  reveal_BitwiseAdd64();
+  reveal_upper64();
+  reveal_lower64();
+  reveal_lowerUpper64();
+}
+
+predicate CtrInvBefore(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, blocktobecopied : nat) {
+  blocktobecopied + 1 < 1_0000_0000_0000_0000 &&
+  ctr_reg.hi == upper64(iv_reg) &&
+  ctr_reg.mid_hi == lower64(iv_reg) &&
+  ctr_reg.mid_lo == upper64(BitwiseAdd64(init_ctr, blocktobecopied)) &&
+  ctr_reg.lo     == lower64(BitwiseAdd64(init_ctr, blocktobecopied))
+}
+
+predicate CtrInvAfter(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, blocktobecopied : nat) 
+{
+  reveal_BitwiseAdd64();
+  reveal_upper64();
+  reveal_lower64();
+  reveal_lowerUpper64();
+
+  blocktobecopied < 1_0000_0000_0000_0000 &&
+  ctr_reg.hi == upper64(iv_reg) &&
+  ctr_reg.mid_hi == lower64(iv_reg) &&
+  ctr_reg.mid_lo == upper64(BitwiseAdd64(init_ctr, blocktobecopied)) &&
+  ctr_reg.lo     == lower64(BitwiseAdd64(init_ctr, blocktobecopied))
+}
+
 predicate AlgReq(alg : Algorithm, key : seq<uint32>, key_ptr : uint64) {
   alg == AES_128 &&
   |key| == Nk(alg) && 
@@ -183,7 +198,8 @@ predicate ExpKeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, 
 
 predicate InpInMem(inp : seq<Quadword>, inp_heap : heaplet_id, inp_ptr : uint64, 
                    inp_end : uint64, inp_end_ptr : uint64, mem : Heaplets) {
-  SeqLength(inp) > 0 &&
+  // TODO - 1 weakens the length of sequence.                    
+  0 < SeqLength(inp) < 1_0000_0000_0000_0000 - 1 &&
   ValidSrcAddrs(mem, inp_heap, inp_ptr, 128, Secret, SeqLength(inp)*16) &&
   QuadwordSeqInMemory(inp, mem[inp_heap], inp_ptr)
 }
@@ -202,22 +218,6 @@ predicate InpOutInvariants(inp : seq<Quadword>, inp_ptr : uint64, inp_end_ptr : 
    inp_end_ptr < 0x1_0000_0000_0000_0000 
 }
 
-predicate IVReq(iv : uint64, iv_reg : uint64) {
-  iv == iv_reg 
-}
-
-// TODO init ctr vs ctr 
-predicate CtrReq(iv : uint64, ctr : uint64, ctr_reg : Quadword) {
-  ctr_reg.hi == upper64(iv) &&
-  ctr_reg.mid_hi == lower64(iv) 
-}
-
-predicate CtrInitReq(iv : uint64, ctr : uint64, ctr_reg : Quadword, init_ctr : uint64) {
-  CtrReq(iv, ctr, ctr_reg) &&
-  ctr_reg.hi == upper64(iv) &&
-  ctr_reg.mid_hi == lower64(iv) 
-}
-
 // On the call, what is true before the setup?
 predicate CTRInvInit(g : G,
     key_ptr : uint64, exp_key_ptr : uint64,
@@ -231,8 +231,7 @@ predicate CTRInvInit(g : G,
         KeyReq(g.key, g.key_heap, key_ptr, mem) &&
         ExpKeyReq(g.key, g.key_heap, key_ptr, g.exp_key, g.exp_key_heap,
                             exp_key_ptr, mem, g.alg) &&
-        IVReq(g.iv, iv_reg) &&
-        InpInMem(g.inp, g.inp_heap, inp_ptr, g.inp_end, inp_end_ptr, mem) &&
+        InpInMem(g.inp, g.inp_heap, inp_ptr, inp_end_ptr, inp_end_ptr, mem) &&
         OutWriteable(g.inp, g.out_heap, out_ptr, mem) &&
         InpOutInvariants(g.inp, inp_ptr, inp_end_ptr, out_ptr) &&
         mem == old_mem[g.out_heap := mem[g.out_heap]]
@@ -243,47 +242,30 @@ predicate CTRInv(g : G,
     inp_ptr : uint64, inp_end_ptr : uint64,
     out_ptr : uint64,
     iv_reg  : uint64,
-    ctr_reg : uint64,
+    ctr_reg : Quadword,
     mem : Heaplets, 
     old_mem : Heaplets)
 {
    CTRInvInit(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, mem, old_mem)
 }
 
-// Can't make the last requirement work due to a bug in Vale or Dafney.
-//predicate ChangeOnly1Block(inp_ptr : uint64,   inp_heap : heaplet_id, 
-//                           out_ptr : uint64,   out_heap : heaplet_id,
-//                           mem     : Heaplets, old_mem  : Heaplets, iteration : nat) 
-//// An awful lot of requirements to move a simple thing into dafny.
-//   requires out_heap in mem;                           
-//   requires mem[out_heap].QuadwordHeaplet?;
-//   requires out_heap in old_mem;
-//   requires old_mem[out_heap].QuadwordHeaplet?;
-//   requires inp_heap in mem;
-//   requires mem[inp_heap].QuadwordHeaplet?;
-////   requires (inp_ptr+(iteration*16)) in mem[inp_heap];
-//{
-//     mem == old_mem[out_heap := mem[out_heap]] &&
-//     mem[out_heap].quads == 
-//     (old_mem[out_heap].quads)
-//     [out_ptr+(iteration*16) := mem[inp_heap].quads[inp_ptr+(iteration*16)]]
-//}                            
-
-// Just for learning how to write the code/proofs.
-
-predicate QuadwordSeqsInMemMatch
-  (inp  : seq<Quadword>, in_mem  : Heaplet, inp_ptr : uint64,
-   out : seq<Quadword>, out_mem : Heaplet, out_ptr : uint64,
-   length : int)
-  requires in_mem.QuadwordHeaplet?
-  requires out_mem.QuadwordHeaplet?
+predicate InputInOutputMem(inp : seq<Quadword>, out_ptr : uint64, out_heap : heaplet_id, 
+                           ctr_reg : Quadword, mem : Heaplets, blockscopied : int)
+ requires out_heap in mem;
+ requires ValidSrcAddrs(mem, out_heap, out_ptr, 128, Secret, |inp|* 16)
 {
-  |inp| == |out| &&
-  |inp| >= length &&
-   forall b:int :: 0 <= b < length ==> 
-     inp_ptr  + b*16 in in_mem.quads && 
-     out_ptr + b*16 in out_mem.quads && 
-     in_mem.quads[inp_ptr + b*16].v == out_mem.quads[out_ptr + b*16].v
+  0 <= blockscopied <= |inp| //&&
+//  forall j: nat :: 0 <= j < blockscopied ==>
+//   QuadwordXor(inp[j], ctr_reg) == mem[out_heap].quads[out_ptr + j * 16].v
+}
+
+predicate CopyInvAlways(inp : seq<Quadword>,
+                  inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
+                  out_ptr : uint64, curr_out_ptr : uint64,
+                  blockscopied : int) {
+     curr_inp_ptr == inp_ptr + blockscopied * 16 &&
+     curr_out_ptr == out_ptr + blockscopied * 16 &&
+     inp_end_ptr  == inp_ptr  + SeqLength(inp) * 16
 }
 
 // End of Module
