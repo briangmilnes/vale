@@ -125,83 +125,57 @@ lemma lemma_CtrIncrNTrans(old_ctr : Quadword, new_ctr: Quadword, init_ctr : uint
   reveal_lowerUpper64();
 }
 
-predicate CtrInvBefore(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, blocktobecopied : nat) {
-  blocktobecopied + 1 < 1_0000_0000_0000_0000 &&
-  ctr_reg.hi == upper64(iv_reg) &&
-  ctr_reg.mid_hi == lower64(iv_reg) &&
-  ctr_reg.mid_lo == upper64(BitwiseAdd64(init_ctr, blocktobecopied)) &&
-  ctr_reg.lo     == lower64(BitwiseAdd64(init_ctr, blocktobecopied))
-}
-
-predicate CtrInvAfter(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, blocktobecopied : nat) 
-{
-  reveal_BitwiseAdd64();
-  reveal_upper64();
-  reveal_lower64();
-  reveal_lowerUpper64();
-
-  blocktobecopied < 1_0000_0000_0000_0000 &&
-  ctr_reg.hi == upper64(iv_reg) &&
-  ctr_reg.mid_hi == lower64(iv_reg) &&
-  ctr_reg.mid_lo == upper64(BitwiseAdd64(init_ctr, blocktobecopied)) &&
-  ctr_reg.lo     == lower64(BitwiseAdd64(init_ctr, blocktobecopied))
-}
-
-predicate AlgReq(alg : Algorithm, key : seq<uint32>, key_ptr : uint64) {
-  alg == AES_128 &&
-  |key| == Nk(alg) && 
-  SeqLength(key) == Nk(alg) &&
-  (Nb() * (Nr(alg) + 1)) / 4 == Nr(alg) + 1 &&   // Easy to prove, but necessary precondition to Cipher
-  (Nb() * (Nr(alg) + 1)) % 4 == 0 &&   // Easy to prove, but necessary precondition to Cipher
+predicate AlgReq(g : G, key_ptr : uint64) {
+  g.alg == AES_128 &&
+  |g.key| == Nk(g.alg) && 
+  SeqLength(g.key) == Nk(g.alg) &&
+  (Nb() * (Nr(g.alg) + 1)) / 4 == Nr(g.alg) + 1 &&   // Easy to prove, but necessary precondition to Cipher
+  (Nb() * (Nr(g.alg) + 1)) % 4 == 0 &&   // Easy to prove, but necessary precondition to Cipher
   key_ptr % 16 == 0
-
 }
 
-predicate HeapReq(key_heap : heaplet_id, exp_key_heap : heaplet_id, inp_heap : heaplet_id, out_heap : heaplet_id, mem : Heaplets, old_mem : Heaplets) {
+predicate HeapReq(g : G, mem : Heaplets, old_mem : Heaplets) {
 // In the memory
-  key_heap in mem &&  exp_key_heap in mem &&  inp_heap in mem &&  out_heap in mem &&
-  key_heap in old_mem &&  exp_key_heap in old_mem &&  inp_heap in old_mem &&  out_heap in old_mem &&
+  g.key_heap in mem &&  g.exp_key_heap in mem &&  g.inp_heap in mem &&  g.out_heap in mem &&
+  g.key_heap in old_mem &&  g.exp_key_heap in old_mem &&  g.inp_heap in old_mem &&  g.out_heap in old_mem &&
 
 // Disjointness.
-  key_heap != exp_key_heap &&
-  key_heap != inp_heap &&
-  key_heap != out_heap &&
-  exp_key_heap != inp_heap &&
-  exp_key_heap != out_heap &&
-  inp_heap != out_heap &&
+  g.key_heap != g.exp_key_heap &&
+  g.key_heap != g.inp_heap &&
+  g.key_heap != g.out_heap &&
+  g.exp_key_heap != g.inp_heap &&
+  g.exp_key_heap != g.out_heap &&
+  g.inp_heap != g.out_heap &&
 
 // Types of heaplets in memory.
-  mem[inp_heap].QuadwordHeaplet? &&
-  mem[out_heap].QuadwordHeaplet? &&
+  mem[g.inp_heap].QuadwordHeaplet? &&
+  mem[g.out_heap].QuadwordHeaplet? &&
 
 // Heaplets don't change.
-  mem[key_heap]    == old_mem[key_heap] &&
-  mem[exp_key_heap] == old_mem[exp_key_heap] &&
-  mem[inp_heap] == old_mem[inp_heap]
+  mem[g.key_heap]    == old_mem[g.key_heap] &&
+  mem[g.exp_key_heap] == old_mem[g.exp_key_heap] &&
+  mem[g.inp_heap] == old_mem[g.inp_heap]
 }
 
-
-predicate KeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, mem : Heaplets) {
-  ValidSrcAddrs(mem, key_heap, key_ptr, 128, Secret, 11*16) &&   // Key is readable
-  key_ptr % 16 == 0
+predicate KeyReq(g : G, exp_key_ptr : uint64, mem : Heaplets) {
+  ValidSrcAddrs(mem, g.exp_key_heap, exp_key_ptr, 128, Secret, 11*16) &&   // Key is readable
+  exp_key_ptr % 16 == 0 &&
+  SeqLength(g.exp_key) == 44 
 }
 
-predicate ExpKeyReq(key : seq<uint32>, key_heap : heaplet_id, key_ptr : uint64, exp_key : seq<uint32>, exp_key_heap : heaplet_id,
-                             exp_key_ptr : uint64, mem : Heaplets, alg : Algorithm) {
-  AlgReq(alg, key, key_ptr) &&
-  KeyReq(key, key_heap, key_ptr, mem) && 
-  SeqLength(exp_key) == 44 &&
-   (forall j :: 0 <= j <= 10 ==> mem[key_heap].quads[key_ptr + 16*j].v == 
-         Quadword(exp_key[4*j], exp_key[4*j+1], exp_key[4*j+2], exp_key[4*j+3])) &&
-    KeyExpansionPredicate(key, alg, exp_key)
+predicate ExpKeyReq(g : G, key_ptr : uint64, exp_key_ptr : uint64, mem : Heaplets) {
+  AlgReq(g, key_ptr) &&
+  KeyReq(g, exp_key_ptr, mem) &&
+  (forall j :: 0 <= j <= 10 ==> mem[g.exp_key_heap].quads[exp_key_ptr + 16*j].v == 
+         Quadword(g.exp_key[4*j], g.exp_key[4*j+1], g.exp_key[4*j+2], g.exp_key[4*j+3])) &&
+    KeyExpansionPredicate(g.key, g.alg, g.exp_key)
 }
 
-predicate InpInMem(inp : seq<Quadword>, inp_heap : heaplet_id, inp_ptr : uint64, 
-                   inp_end : uint64, inp_end_ptr : uint64, mem : Heaplets) {
-  // TODO - 1 weakens the length of sequence.                    
-  0 < SeqLength(inp) < 1_0000_0000_0000_0000 - 1 &&
-  ValidSrcAddrs(mem, inp_heap, inp_ptr, 128, Secret, SeqLength(inp)*16) &&
-  QuadwordSeqInMemory(inp, mem[inp_heap], inp_ptr)
+predicate InpInMem(g : G, inp_ptr : uint64, inp_end_ptr : uint64, mem : Heaplets) {
+  // TODO - 1 weakens the length of sequence.
+  0 < SeqLength(g.inp) < 1_0000_0000_0000_0000 - 1 &&
+  ValidSrcAddrs(mem, g.inp_heap, inp_ptr, 128, Secret, SeqLength(g.inp)*16) &&
+  QuadwordSeqInMemory(g.inp, mem[g.inp_heap], inp_ptr)
 }
 
 predicate OutWriteable(inp : seq<Quadword>, out_heap : heaplet_id, 
@@ -227,11 +201,10 @@ predicate CTRInvInit(g : G,
     mem : Heaplets, 
     old_mem : Heaplets)
 {
-        HeapReq(g.key_heap, g.exp_key_heap, g.inp_heap, g.out_heap, mem, old_mem) &&
-        KeyReq(g.key, g.key_heap, key_ptr, mem) &&
-        ExpKeyReq(g.key, g.key_heap, key_ptr, g.exp_key, g.exp_key_heap,
-                            exp_key_ptr, mem, g.alg) &&
-        InpInMem(g.inp, g.inp_heap, inp_ptr, inp_end_ptr, inp_end_ptr, mem) &&
+        HeapReq(g, mem, old_mem) &&
+        KeyReq(g, key_ptr, mem) &&
+        ExpKeyReq(g, key_ptr, exp_key_ptr, mem) &&
+        InpInMem(g, inp_ptr, inp_end_ptr, mem) &&
         OutWriteable(g.inp, g.out_heap, out_ptr, mem) &&
         InpOutInvariants(g.inp, inp_ptr, inp_end_ptr, out_ptr) &&
         mem == old_mem[g.out_heap := mem[g.out_heap]]
@@ -249,23 +222,91 @@ predicate CTRInv(g : G,
    CTRInvInit(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, mem, old_mem)
 }
 
-predicate InputInOutputMem(inp : seq<Quadword>, out_ptr : uint64, out_heap : heaplet_id, 
-                           ctr_reg : Quadword, mem : Heaplets, blockscopied : int)
- requires out_heap in mem;
- requires ValidSrcAddrs(mem, out_heap, out_ptr, 128, Secret, |inp|* 16)
-{
-  0 <= blockscopied <= |inp| //&&
-//  forall j: nat :: 0 <= j < blockscopied ==>
-//   QuadwordXor(inp[j], ctr_reg) == mem[out_heap].quads[out_ptr + j * 16].v
+predicate CtrInvBefore(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, blocktobecopied : nat) {
+  blocktobecopied + 1 < 1_0000_0000_0000_0000 &&
+  ctr_reg == ctr_n(iv_reg, init_ctr, blocktobecopied) &&
+  ctr_reg.hi == upper64(iv_reg) &&
+  ctr_reg.mid_hi == lower64(iv_reg) &&
+  ctr_reg.mid_lo == upper64(BitwiseAdd64(init_ctr, blocktobecopied)) &&
+  ctr_reg.lo     == lower64(BitwiseAdd64(init_ctr, blocktobecopied))
 }
 
-predicate CopyInvAlways(inp : seq<Quadword>,
+predicate CtrInvAfter(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, blocktobecopied : nat) 
+{
+  reveal_BitwiseAdd64();
+  reveal_upper64();
+  reveal_lower64();
+  reveal_lowerUpper64();
+
+  blocktobecopied < 1_0000_0000_0000_0000 &&
+  ctr_reg == ctr_n(iv_reg, init_ctr, blocktobecopied) &&
+  ctr_reg.hi == upper64(iv_reg) &&
+  ctr_reg.mid_hi == lower64(iv_reg) &&
+  ctr_reg.mid_lo == upper64(BitwiseAdd64(init_ctr, blocktobecopied)) &&
+  ctr_reg.lo     == lower64(BitwiseAdd64(init_ctr, blocktobecopied))
+}
+
+predicate CopyInvAlways(g : G,
                   inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
                   out_ptr : uint64, curr_out_ptr : uint64,
                   blockscopied : int) {
      curr_inp_ptr == inp_ptr + blockscopied * 16 &&
      curr_out_ptr == out_ptr + blockscopied * 16 &&
-     inp_end_ptr  == inp_ptr  + SeqLength(inp) * 16
+     inp_end_ptr  == inp_ptr  + SeqLength(g.inp) * 16
+}
+
+predicate InputInOutputMem(g : G, out_ptr : uint64, iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword, key_ptr : uint64,
+                           mem : Heaplets, blockscopied : int)
+ requires |g.inp| < 1_0000_0000_0000_0000;
+ requires g.out_heap in mem;
+ requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16)
+ requires AlgReq(g, key_ptr);
+{
+  0 <= blockscopied <= |g.inp| &&
+  forall j: nat :: 0 <= j < blockscopied ==>
+  // Three steps in developing this predicate.
+  // 1) just copy.
+  // inp[j] == mem[g.out_heap].quads[out_ptr + j * 16].v 
+  // 2) copy the ctr xor'd with the data.
+  // QuadwordXor(inp[j], ctr_n(iv_reg, init_ctr, j)) == mem[g.out_heap].quads[out_ptr + j * 16].v
+  // 3) copy the ctr encrypted xor'd with the data == AES-CTR.
+  QuadwordXor(g.inp[j], AES_Encrypt(g.key, ctr_n(iv_reg, init_ctr, j), g.alg))
+     == mem[g.out_heap].quads[out_ptr + j * 16].v
+}
+
+predicate CopyInvBefore(g : G,
+                       inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
+                       out_ptr : uint64, curr_out_ptr : uint64,
+                       iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword, key_ptr : uint64,
+                       mem : Heaplets,
+                       blocktobecopied : int) 
+ requires |g.inp| < 1_0000_0000_0000_0000;
+ requires g.out_heap in mem;
+ requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16);
+ requires AlgReq(g, key_ptr);
+{
+     CopyInvAlways(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blocktobecopied) &&
+     inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
+     0 <= blocktobecopied < |g.inp| &&
+     InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, blocktobecopied)
+}
+
+predicate CopyInvAfter(g : G,
+                       inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
+                       out_ptr : uint64, curr_out_ptr : uint64, 
+                       iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword, key_ptr : uint64,
+                       mem : Heaplets, old_mem : Heaplets,
+                       blockscopied : int)
+  requires |g.inp| < 1_0000_0000_0000_0000;
+  requires 0 <= blockscopied <= |g.inp|;
+  requires g.out_heap in mem;
+  requires mem[g.out_heap].QuadwordHeaplet?;
+  requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16)
+  requires AlgReq(g, key_ptr);
+{
+     CopyInvAlways(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blockscopied) &&
+     inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
+     InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, blockscopied)
 }
 
 // End of Module

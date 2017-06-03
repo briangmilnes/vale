@@ -126,7 +126,6 @@ include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
 include "aes.vad"
 include{:verbatim} "ctr_helpers.i.dfy"
 include{:verbatim} "../ctr.s.dfy" 
-include{:verbatim} "../ctr_clean.s.dfy" 
 
 #verbatim
 module CTR {
@@ -139,8 +138,7 @@ import opened x64_decls_i
 import opened x64_decls64_i
 import opened aes_vale
 import opened CTRModule
-import opened CTR_Helpers
-import opened CTRModuleClean
+import opened CTRHelpers
 
 #endverbatim
 
@@ -162,7 +160,6 @@ import opened CTRModuleClean
 
 */
 
-/*
 procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
    ghost key:seq(uint32), 
    ghost w:seq(uint32),
@@ -244,7 +241,6 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
   Pxor(xmm0, xmm0);
   Pxor(xmm1, xmm1);
 }
-*/
 
 // Decryption uses the same routine as we just xor again but the taints are different.
 
@@ -260,12 +256,11 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
 
 */
 
-/*
 procedure {:refined} CTR128Increment64StdCall(
    ghost  in_ctr_heap_id: heaplet_id,
    ghost  out_ctr_heap_id: heaplet_id
 )
-// Does this need a ghost output?
+// Does this need a ghost output? Nah it's just test.
 
    modifies
         mem; efl; rdi; rsi; rdx;
@@ -326,7 +321,6 @@ procedure {:refined} CTR128Increment64StdCall(
     Xor64(rdx,rdx);
  }
 
-*/
 
 /*
 	6. CTR128Increment128Reg
@@ -388,9 +382,9 @@ CTR128Increment64StdCall:
 
 */
 
-/*
 // The 128 bit standard call that sets up the 128 bit register of this.
 
+/*
 procedure {:refined} CTR128Increment128StdCall(
    ghost  counter : Quadword, 
    ghost  in_ctr_heap_id: heaplet_id,
@@ -428,6 +422,8 @@ returns (
       Store128(rsi, xmm0, 0, Public, out_ctr_heap_id);
 }
 
+*/
+
 // Dummy version.
 //procedure {:refined} CTR128Increment128StdCall(
 //   ghost  counter : Quadword, 
@@ -439,8 +435,6 @@ returns (
 //)
 //{
 //}
-  
-*/
 
 /*
          8.	CTR128Increment128StdCall
@@ -451,7 +445,6 @@ to increment a counter.
  The 128 bit standard call that sets up the 128 bit register of this.
 */
 
-/*
 procedure {:refined} CTR128Increment128StdCall(
    ghost  counter : Quadword, 
    ghost  in_ctr_heap_id: heaplet_id,
@@ -496,7 +489,7 @@ returns (
       Store128(rsi, xmm0, 0, Public, out_ctr_heap_id); // Put it back.
 }
 
-*/
+// Old test stuff above this. 
 
 procedure {:refined} CTR128Increment128(ghost g : G, ghost blocktobecopied : nat)
 
@@ -523,62 +516,6 @@ procedure {:refined} CTR128Increment128(ghost g : G, ghost blocktobecopied : nat
       lemma_CtrIncrNTrans(old(xmm4), xmm4, r12, blocktobecopied);
 }
 
-#verbatim
-function ctr_n(iv : uint64, init_ctr : uint64, n : uint64) : Quadword 
-{
-  reveal_BitwiseAdd64();
-  reveal_upper64();
-  reveal_lower64();
-  Quadword(lower64(BitwiseAdd64(init_ctr,n)), 
-           upper64(BitwiseAdd64(init_ctr,n)),
-           lower64(iv), 
-           upper64(iv))
-}
-
-predicate InputInOutputMem(inp : seq<Quadword>, out_ptr : uint64, out_heap : heaplet_id, 
-                           iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword,
-                           mem : Heaplets, blockscopied : int)
- requires out_heap in mem;
- requires ValidSrcAddrs(mem, out_heap, out_ptr, 128, Secret, |inp|* 16)
-{
-  0 <= blockscopied <= |inp| &&
-  forall j: nat :: 0 <= j < blockscopied ==>
-   inp[j] == mem[out_heap].quads[out_ptr + j * 16].v 
-   //QuadwordXor(inp[j], ctr_n(iv_reg, init_ctr, j)) == mem[out_heap].quads[out_ptr + j * 16].v
-}
-
-predicate CopyInvBefore(inp : seq<Quadword>,
-                       inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
-                       out_ptr : uint64, curr_out_ptr : uint64, out_heap : heaplet_id,
-                       iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword,
-                       mem : Heaplets,
-                       blocktobecopied : int) 
- requires out_heap in mem;
- requires ValidSrcAddrs(mem, out_heap, out_ptr, 128, Secret, |inp|* 16)
-{
-     CopyInvAlways(inp, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blocktobecopied) &&
-     inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
-     0 <= blocktobecopied < |inp| &&
-     InputInOutputMem(inp, out_ptr, out_heap, iv_reg, init_ctr, ctr_reg, mem, blocktobecopied)
-}
-
-predicate CopyInvAfter(inp : seq<Quadword>,
-                       inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
-                       out_ptr : uint64, curr_out_ptr : uint64, out_heap : heaplet_id,
-                       iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword,
-                       mem : Heaplets, old_mem : Heaplets,
-                       blockscopied : int)
-  requires 0 <= blockscopied <= |inp|;
-  requires out_heap in mem;
-  requires mem[out_heap].QuadwordHeaplet?;
-  requires ValidSrcAddrs(mem, out_heap, out_ptr, 128, Secret, |inp|* 16)
-{
-     CopyInvAlways(inp, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blockscopied) &&
-     inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
-     InputInOutputMem(inp, out_ptr, out_heap, iv_reg, init_ctr, ctr_reg, mem, blockscopied)
-}
-#endverbatim
-
 // Can't use operands, instructions are refined.
 procedure {:refined} {:bridge} {:timeLimitMultiplier 3} 
     CTR128EncryptCopy(ghost g         : G,
@@ -589,22 +526,23 @@ procedure {:refined} {:bridge} {:timeLimitMultiplier 3}
 
    requires
      CTRInv(g, rdi, r8, rcx, rsi, r9, rdx, xmm4, mem, old(mem));
-     CopyInvBefore(g.inp, rcx, rsi, r10, r9, r11, g.out_heap, rdx, r12, xmm4, mem, blocktobecopied);
+     CopyInvBefore(g,  rcx, rsi, r10, r9, r11, rdx, r12, xmm4, rdi, mem, blocktobecopied);
      CtrInvBefore(rdx, xmm4, r12, blocktobecopied);
 
    ensures
      CTRInv(g, rdi, r8, rcx, rsi, r9, rdx, xmm4, mem, old(mem));
-     CopyInvAfter(g.inp, rcx, rsi, r10, r9, r11, g.out_heap, rdx, r12, xmm4, mem, old(mem), blocktobecopied + 1);
+     CopyInvAfter(g, rcx, rsi, r10, r9, r11, rdx, r12, xmm4, rdi, mem, old(mem), blocktobecopied + 1);
      CtrInvAfter(rdx, xmm4, r12, blocktobecopied + 1);
 {
-     Load128(xmm1, r10, 0, Secret, g.inp_heap);
-     // MOVDQU(xmm0,xmm4);
+     Mov128(xmm0,xmm4); // Put the counter in xmm0.
      // input is in xmm0.
      // extended key ptr is in r8 
-     //     ghost var xmm0g := Quadword(xmm0.lo,xmm0.mid_lo,xmm0.mid_hi,xmm0.hi);
-     //     AES128EncryptOneBlock(g.key, xmm0g, g.expanded_key, Secret, g.expanded_key_heap);
-     //Pxor(xmm1,xmm0);
+     ghost var xmm0g := Quadword(xmm0.lo,xmm0.mid_lo,xmm0.mid_hi,xmm0.hi);
+     AES128EncryptOneBlock(g.key, xmm0g, g.exp_key, Secret, g.exp_key_heap);
+     Load128(xmm1, r10, 0, Secret, g.inp_heap);
+     Pxor(xmm1,xmm0);
      Store128(r11, xmm1, 0, Secret, g.out_heap);
+     Pxor(xmm0,xmm0); // Clean up encrypted counter.
      Add64(r10, 16);
      Add64(r11, 16);
      CTR128Increment128(g, blocktobecopied);
@@ -628,15 +566,13 @@ procedure {:timeLimitMultiplier 3} CTR128EncryptLoop(ghost g   : G,
    requires
      BindRegsPhy1Curr(@key_ptr, @exp_key_ptr, @iv_reg, @inp_ptr, @inp_end_ptr, @out_ptr, @ctr_reg, @init_ctr, @curr_inp_ptr, @curr_out_ptr);
      CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, ctr_reg, mem, old(mem));
-     CopyInvBefore(g.inp, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, g.out_heap,
-                   iv_reg, init_ctr, ctr_reg, mem, 0);
+     CopyInvBefore(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, 0);
      CtrInvBefore(iv_reg, ctr_reg, init_ctr, 0);
 
    ensures
       BindRegsPhy1(@key_ptr, @exp_key_ptr, @iv_reg, @inp_ptr, @inp_end_ptr, @out_ptr, @ctr_reg, @init_ctr);
       CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, ctr_reg, mem, old(mem));
-      CopyInvAfter(g.inp, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, g.out_heap, 
-                   iv_reg, init_ctr, ctr_reg, mem, old(mem), SeqLength(g.inp));
+      CopyInvAfter(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, old(mem), SeqLength(g.inp));
       CtrInvAfter(iv_reg, ctr_reg, init_ctr, SeqLength(g.inp));
 
 {
@@ -647,18 +583,17 @@ procedure {:timeLimitMultiplier 3} CTR128EncryptLoop(ghost g   : G,
       CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, ctr_reg, mem, old(mem));
 
       (curr_inp_ptr < inp_end_ptr) ==>
-       (CopyInvBefore(g.inp, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, g.out_heap, 
-                   iv_reg, init_ctr, ctr_reg, mem, blocktobecopied) &&
+       (CopyInvBefore(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, blocktobecopied) &&
        CtrInvBefore(iv_reg, ctr_reg, init_ctr, blocktobecopied));
 
       (curr_inp_ptr < inp_end_ptr) && (0 < blocktobecopied <= SeqLength(g.inp)) ==>
-       (CopyInvAfter(g.inp, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, g.out_heap, 
-                   iv_reg, init_ctr, ctr_reg, mem, old(mem), blocktobecopied) &&
+       (CopyInvAfter(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr,
+                   iv_reg, init_ctr, ctr_reg, key_ptr, mem, old(mem), blocktobecopied) &&
        CtrInvAfter(iv_reg, ctr_reg, init_ctr, blocktobecopied));
 
      (curr_inp_ptr >= inp_end_ptr) ==>
-      (CopyInvAfter(g.inp, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, g.out_heap, 
-                   iv_reg, init_ctr, ctr_reg, mem, old(mem), SeqLength(g.inp)) && 
+      (CopyInvAfter(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr,
+                   iv_reg, init_ctr, ctr_reg, key_ptr, mem, old(mem), SeqLength(g.inp)) && 
        CtrInvAfter(iv_reg, ctr_reg, init_ctr, SeqLength(g.inp)));
 
     decreases
@@ -692,13 +627,13 @@ procedure CTR128EncryptStart(ghost g   : G,
     ensures
      BindRegsPhy1(@key_ptr, @exp_key_ptr, @iv_reg, @inp_ptr, @inp_end_ptr, @out_ptr, @ctr_reg, @init_ctr);
      CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, ctr_reg, mem, old(mem));
-     InputInOutputMem(g.inp, out_ptr, g.out_heap, iv_reg, init_ctr, ctr_reg, mem, SeqLength(g.inp));
+     InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, SeqLength(g.inp));
 {
     // Set up a curr and out ptrs.
     Mov64(r10, rcx);
     Mov64(r11, r9);
-    assert CopyInvBefore(g.inp, inp_ptr, inp_end_ptr, r10, out_ptr, r11, g.out_heap, 
-                         iv_reg, init_ctr, ctr_reg, mem, 0);
+    assert CopyInvBefore(g, inp_ptr, inp_end_ptr, r10, out_ptr, r11,
+                         iv_reg, init_ctr, ctr_reg, key_ptr, mem, 0);
     CTR128EncryptLoop(g, key_ptr, exp_key_ptr, iv_reg, inp_ptr, inp_end_ptr, out_ptr, ctr_reg, init_ctr, r10, r11);
     output := g.inp;
 }
@@ -746,7 +681,7 @@ procedure CTR128EncryptReg(ghost g : G,
     ensures
       BindRegsPhy1(@key_ptr, @exp_key_ptr, @iv_reg, @inp_ptr, @inp_end_ptr, @out_ptr, @ctr_reg, @init_ctr);
       CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, ctr_reg, mem, old(mem));
-      InputInOutputMem(g.inp, out_ptr, g.out_heap, iv_reg, init_ctr, ctr_reg, mem, SeqLength(g.inp));
+      InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, SeqLength(g.inp));
 {
    CTR128SetupCTR(g);
    assert CtrInvBefore(iv_reg, ctr_reg, init_ctr, 0);
@@ -756,10 +691,9 @@ procedure CTR128EncryptReg(ghost g : G,
 
 // Linux only calling sequence so far, just in case I need to pass more arguments and hit the stack.
 // Plus windows may shuffle registers and so on.
-
 procedure CTR128EncryptStdcall(ghost g : G) returns (ghost output : seq(Quadword))
     reads    rdi; rsi; rdx; rcx; r8; r9;  stack;
-    modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r12; r13;
+    modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r12; r13; r14;
 
    requires/ensures
     let key_ptr := rdi; let exp_key_ptr := r8; let iv_reg := rdx; 
@@ -769,16 +703,51 @@ procedure CTR128EncryptStdcall(ghost g : G) returns (ghost output : seq(Quadword
     HasStackSlot(stack,1);
 
    ensures
-    let key_ptr := rdi; let exp_key_ptr := r8; let iv_reg := rdx; 
+    let key_ptr := rdi; let exp_key_ptr := r8;  let iv_reg := rdx; 
     let inp_ptr := rcx; let inp_end_ptr := rsi; let out_ptr := r9; let ctr_reg := xmm4;
     let init_ctr := r12;
     CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, ctr_reg, mem, old(mem));
-    InputInOutputMem(g.inp, out_ptr, g.out_heap, iv_reg, init_ctr, ctr_reg, mem, SeqLength(g.inp));
+    InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, SeqLength(g.inp));
 {
   LoadStack64(r12, 0);  // Get the initial counter from the stack.
   output := CTR128EncryptReg(g, rdi, r8, rdx, rcx, rsi, r9, xmm4, r12);
 }
 
+/* This can be used to show that the ctr is being correctly created in manual test.
+
+procedure {:refined} {:bridge} DumpXMM4 (ghost g : G)
+   reads    rdi; rsi; rdx; rcx; r8; r9;  stack;
+   modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r12; r13; r14;
+{
+  CTR128SetupCTR(g); 
+  Store128(r9, xmm4, 0, Secret, g.out_heap);
+//  Store64(r9, r12, 0, Secret, g.out_heap);  // init_ctr.
+//  Store64(r9, rdx, 0, Secret, g.out_heap);  // iv.
+}
+
+procedure CTR128EncryptStdcall(ghost g : G) returns (ghost output : seq(Quadword))
+    reads    rdi; rsi; rdx; rcx; r8; r9;  stack;
+    modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r12; r13; r14;
+
+   requires/ensures
+    let key_ptr := rdi; let exp_key_ptr := r8; let iv_reg := rdx; 
+    let inp_ptr := rcx; let inp_end_ptr := rsi; let out_ptr := r9; let ctr_reg := xmm4;
+    CTRInvInit(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, mem, old(mem));
+    HasStackSlot(stack,0);
+    HasStackSlot(stack,1);
+
+   ensures
+    let key_ptr := rdi; let exp_key_ptr := r8;  let iv_reg := rdx; 
+    let inp_ptr := rcx; let inp_end_ptr := rsi; let out_ptr := r9; let ctr_reg := xmm4;
+    let init_ctr := r12;
+    CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, ctr_reg, mem, old(mem));
+    InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, SeqLength(g.inp));
+{
+  LoadStack64(r12, 0);  // Get the initial counter from the stack.
+  DumpXMM4(g);
+}
+
+*/
 // Dummy so validation always runs when I'm not calling all of the procedures.
 //procedure {:refined} CTR128EncryptStdcall() requires false;  ensures true; {}
 
