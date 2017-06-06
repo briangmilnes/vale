@@ -329,6 +329,16 @@ procedure {:refined} {:instruction Ins(BSwap32(dst))} BSwap32(inout operand dst:
     this := this.(heaplets := old(this).heaplets);
 }
 
+procedure {:refined} {:instruction Ins(BSwap64(dst))} BSwap64(inout operand dst:uint64)
+  ensures
+    dst == bswap64(old(dst));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := MaybeUpdateOk(old(this), this);
+    this := this.(heaplets := old(this).heaplets);
+}
+
 procedure {:refined}  LoadBSwap(out operand dst:uint32, operand src:uint64, inline offset:int, 
                                 inline taint:taint, ghost id:heaplet_id)
     ensures {:refined false} op32(this, @dst);

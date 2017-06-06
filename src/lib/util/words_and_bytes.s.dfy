@@ -43,6 +43,12 @@ function{:opaque} WordToBytes(w:uint32) : seq<uint8>
 //      uint8(w              % 256) ]
 }
 
+function{:opaque} DoubleWordToBytes(w:uint64) : seq<uint8>
+    ensures |DoubleWordToBytes(w)| == 8;
+{
+    BEUintToSeqByte(w as int, 8)
+}
+
 function {:opaque} Uint64ToBytes(u:uint64) : seq<uint8>
     ensures |Uint64ToBytes(u)| == 8;
 {
@@ -54,6 +60,13 @@ function {:opaque} Uint64ToBytes(u:uint64) : seq<uint8>
       ((u/           0x10000) % 0x100) as uint8,
       ((u/             0x100) % 0x100) as uint8,
       ((u                   ) % 0x100) as uint8]
+}
+
+function {:opaque} BytesToDoubleWord(b0:uint8, b1:uint8, b2:uint8, b3:uint8, b4:uint8, b5:uint8, b6:uint8, b7:uint8) : uint64
+{
+    var w := BEByteSeqToInt([b0, b1, b2, b3, b4, b5, b6, b7]);
+    if 0 <= w < 0x1_0000_0000_0000_0000 then (w as uint64) else 42
+    // We defer the proof that BEByteSeqToInt is in bounds to the verified implementation
 }
 
 function WordSeqToBytes(ws:seq<uint32>) : seq<uint8>

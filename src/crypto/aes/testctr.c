@@ -410,13 +410,6 @@ int test_encryption_one_block() {
     CTREncryptOneBlockStdCall(expanded_key, input_block+i, P+i, output);
     if (memcmp(output, C+i, sizeof(uint8_t) * 16) == 0) {
       printf("AES128 Encrypt One Block CTR P[%d] succeded.\n\n",i);
-      // Temporary printing.
-  	printf("AES128 Encrypt One Block CTR P[%d] \n",i );
-  	print128BitVectorHex((uint8_t *)P+i);
-  	printf("AES128 Encrypt One Block CTR C[%d] \n",i);
-  	print128BitVectorHex((uint8_t *)C+i);
-  	printf("AES128 Encrypt One Block CTR output \n");
-  	print128BitVectorHex(output);
     } else {
       printf("AES128 Encrypt One Block CTR P[%d] failed.\n", i);
       if (trace == 1) {
@@ -502,28 +495,24 @@ int test_encrypt_stream() {
   aes_main_i_KeyExpansionStdcall(k, expanded_key);
 
   uint8_t *CypherText = (uint8_t *)malloc(sizeof(uint8_t) * 64); 
-  // 4 ways
-  // iv = 0xf0f1f2f3f4f5f6f7; init_ctr = 0xf8f9fafbfcfdfeff; - no 
-  // iv = 0xf8f9fafbfcfdfeff; init_ctr = 0xf0f1f2f3f4f5f6f7; - no 
-  // iv = 0xfffefdfcfbfaf9f8; init_ctr = 0xf7f6f5f4f3f2f1f0; - yes, first block succeeds second does not.
-  // So he has the IV in the low bytes, reversed and the ctr in the high bytes and is treating it
-  // little endian.
-  uint64_t iv = 0xfffefdfcfbfaf9f8;
-  // Damn it, Dworkin did not start the counter at ZERO in the text code.
-  uint64_t init_ctr = 0xf7f6f5f4f3f2f1f0;
+  uint64_t iv = 0xf7f6f5f4f3f2f1f0; // Swap endianness.
+  // Damn it, Dworkin did not start the counter at ZERO in the test vectors.
+  // And he xors with the ctr in low endian byte order.
+  // We enter it bigendian and byte swap it as needed.
+  uint64_t init_ctr = 0xf8f9fafbfcfdfeff;
 
   // In CTR mode one just encrypts a ctr with a key in sequence and
   // XORs it with the input. So the decrypt is to just run it in the
   // other direction.
   CTR128EncryptStdcall(k,                                                       //edi
-                       (const void*)((size_t)PStream + 32 /*sizeof(PStream)*/), //esi
+                       (const void*)((size_t)PStream + sizeof(PStream)),        //esi
                        (const void *)iv,                                        //rdx
                        PStream,                                                 //rcx
                        expanded_key,                                            //r8
                        CypherText,                                              //r9
                        (const void*)init_ctr);                                  //stack
 
-  if (memcmp(CypherText,CStream,32) == 0) {
+  if (memcmp(CypherText,CStream,sizeof(PStream)) == 0) {
     printf("AES128 CTR Encrypt Stream success\n");
   } else {
     printf("AES128 CTR Encrypt Stream failure\n");
@@ -540,7 +529,45 @@ int test_encrypt_stream() {
 }
 
 int test_decrypt_stream() {
-  return 1;
+  printf("\nTest AES Decrypt Stream \n");
+  int status = 1;
+
+  uint8_t expanded_key[176];
+  aes_main_i_KeyExpansionStdcall(k, expanded_key);
+
+  uint8_t *CypherText = (uint8_t *)malloc(sizeof(uint8_t) * 64); 
+  // So he has the IV in the low bytes, reversed and the ctr in the high bytes and is treating it
+  // little endian.
+  uint64_t iv = 0xf7f6f5f4f3f2f1f0;
+  // Damn it, Dworkin did not start the counter at ZERO in the test vectors.
+  // And he xors with the ctr in low endian byte order.
+  // We enter it bigendian and byte swap it as needed.
+  uint64_t init_ctr = 0xf8f9fafbfcfdfeff;
+
+  // In CTR mode one just encrypts a ctr with a key in sequence and
+  // XORs it with the input. So the decrypt is to just run it in the
+  // other direction.
+  CTR128EncryptStdcall(k,                                                       //edi
+                       (const void*)((size_t)CStream + sizeof(CStream)),        //esi
+                       (const void *)iv,                                        //rdx
+                       CStream,                                                 //rcx
+                       expanded_key,                                            //r8
+                       CypherText,                                              //r9
+                       (const void*)init_ctr);                                  //stack
+
+  if (memcmp(CypherText,PStream,sizeof(PStream)) == 0) {
+    printf("AES128 CTR Decrypt Stream success\n");
+  } else {
+    printf("AES128 CTR Decrypt Stream failure\n");
+    printf("AES128 CTR Decrypt Stream Input  stream\n");
+    print_stream(PStream);printf("\n");
+    printf("AES128 CTR Decrypt Stream Output stream\n");
+    print_stream(CypherText);printf("\n");
+    printf("AES128 CTR Decrypt Stream Should Be stream\n");
+    print_stream(CStream);printf("\n");
+    return 0;
+  }
+
 }
 
 int test_encryption() {
@@ -549,7 +576,6 @@ int test_encryption() {
 
   return (b1 == 1) && (stream == 1);
 }
-
 
 int test_decryption() {
   int b1     = test_decryption_one_block();
@@ -564,8 +590,8 @@ int __cdecl main(void) {
   //  int tc64 = test_counters_64();
   //  int tc128 = test_counters_128();
   //  int tk = test_key_aes_encryption();
-    int te = test_encryption();
-  //  int td = test_decryption();
+  int te = test_encryption();
+  int td = test_decryption();
   //int status = (tk == 1 && tc64 == 1 && tc128 == 1 && te == 1 && td == 1);
   int status = 0;
 

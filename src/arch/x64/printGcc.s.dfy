@@ -225,6 +225,7 @@ method printIns(ins:ins)
         case Mul32(src)         => printName1("  mul", src);      printOprnd(src); print("\n");
         case AddCarry(dst, src) => printName2("  add", dst, src); printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case BSwap32(dst)       => printName1("  bswap", dst);    printOprnd(dst); print("\n");
+        case BSwap64(dst)       => print ("  bswap "); printOprnd64(dst); print("\n");
         case Xor32(dst, src)    => printName2("  xor", dst, src); printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case Xor64(dst, src)    => printName2("  xor", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
         case And32(dst, src)    => printName2("  and", dst, src); printOprnd(src); print(", "); printOprnd(dst); print("\n");

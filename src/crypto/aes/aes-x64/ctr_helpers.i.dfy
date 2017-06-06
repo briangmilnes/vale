@@ -28,27 +28,30 @@ datatype G = G(ghost key : seq<uint32>,
                ghost inp :seq<Quadword>,
                ghost inp_heap : heaplet_id,
                ghost out_heap : heaplet_id,
-               ghost alg: Algorithm)
+               ghost alg: Algorithm,
+               ghost outp : seq<Quadword>)
+
 
 
 // Bind the registers, passed as operators, to a physical register.
-predicate BindRegsPhy1(key_ptr : operand, exp_key_ptr : operand, iv_reg : operand, inp_ptr : operand, inp_end_ptr : operand,  out_ptr : operand, ctr_reg : operand, init_ctr : operand) {
+predicate BindRegsPhy1(key_ptr : operand, exp_key_ptr : operand, iv_reg : operand, inp_ptr : operand, inp_end_ptr : operand,  out_ptr : operand, iv_ctr : operand, init_ctr : operand, ctr : operand) {
  key_ptr.OReg?      && key_ptr     == OReg(X86Edi) &&
  exp_key_ptr.OReg?  && exp_key_ptr == OReg(X86R8) && 
  iv_reg.OReg?       && iv_reg      == OReg(X86Edx) && 
  inp_ptr.OReg?      && inp_ptr     == OReg(X86Ecx) && 
  inp_end_ptr.OReg?  && inp_end_ptr == OReg(X86Esi) &&
  out_ptr.OReg?      && out_ptr     == OReg(X86R9) &&
- ctr_reg.OReg?      && ctr_reg     == OReg(X86Xmm(4)) &&
- init_ctr.OReg?     && init_ctr    == OReg(X86R12) 
+ iv_ctr.OReg?      && iv_ctr     == OReg(X86Xmm(4)) &&
+ init_ctr.OReg?     && init_ctr    == OReg(X86R12) &&
+ ctr.OReg?          && ctr         == OReg(X86R13)
 }
 
 predicate BindRegsPhy1Curr(key_ptr : operand, exp_key_ptr : operand, iv_reg : operand, 
                            inp_ptr : operand, inp_end_ptr : operand,  
-                           out_ptr : operand, ctr_reg : operand,
-                           init_ctr : operand,
+                           out_ptr : operand, iv_ctr : operand,
+                           init_ctr : operand, ctr : operand,
                            curr_inp_ptr : operand, curr_out_ptr : operand) {
-  BindRegsPhy1(key_ptr, exp_key_ptr, iv_reg, inp_ptr, inp_end_ptr, out_ptr, ctr_reg, init_ctr) && 
+  BindRegsPhy1(key_ptr, exp_key_ptr, iv_reg, inp_ptr, inp_end_ptr, out_ptr, iv_ctr, init_ctr, ctr) && 
   curr_inp_ptr.OReg? && curr_inp_ptr  == OReg(X86R10) &&   
   curr_out_ptr.OReg? && curr_out_ptr == OReg(X86R11)
 }
@@ -101,21 +104,43 @@ lemma lemma_BitwiseAdd64()
 }
 
 predicate CtrIncr(oldc : Quadword, newc : Quadword) {
-  oldc.hi     == newc.hi &&
-  oldc.mid_hi == newc.mid_hi &&
-  newc.mid_lo == upper64(BitwiseAdd64(lowerUpper64(oldc.lo,oldc.mid_lo), 1)) &&
-  newc.lo     == lower64(BitwiseAdd64(lowerUpper64(oldc.lo,oldc.mid_lo), 1))
+// IV is low and unchanged, specification duplication.
+  oldc.mid_lo == newc.mid_lo &&
+  oldc.lo     == newc.lo && 
+
+  newc.hi         == upper64(bswap64(BitwiseAdd64(bswap64(lowerUpper64(oldc.hi,oldc.mid_hi)), 1))) &&
+  newc.mid_hi     == lower64(bswap64(BitwiseAdd64(bswap64(lowerUpper64(oldc.hi,oldc.mid_hi)), 1)))
 }
 
 predicate CtrIncrN(newc : Quadword, init_ctr : uint64, n : nat) 
  requires n < 1_0000_0000_0000_0000;
 {
 // I'm the init_ctr + n with wrapping.
-  newc.mid_lo == upper64(BitwiseAdd64(init_ctr, n)) &&
-  newc.lo     == lower64(BitwiseAdd64(init_ctr, n))
+  newc.hi      == upper64(bswap64(BitwiseAdd64(init_ctr, n))) &&
+  newc.mid_hi  == lower64(bswap64(BitwiseAdd64(init_ctr, n)))
 }
 
-lemma lemma_CtrIncrNTrans(old_ctr : Quadword, new_ctr: Quadword, init_ctr : uint64, n : nat)
+/*
+lemma lemma_BitwiseAdd64PlusOne(init_ctr : uint64, n : uint64)
+  requires n + 1 < 0x1_0000_0000_0000_0000;
+  ensures BitwiseAdd64(init_ctr, n + 1) ==  BitwiseAdd64(BitwiseAdd64(init_ctr, n), 1);
+{
+  lemma_BitwiseAdd64();
+  reveal_BitwiseAdd64();
+}
+
+lemma lemma_BitwiseAdd64BSwap64PlusOne(init_ctr : uint64, n : uint64)
+  requires n + 1 < 0x1_0000_0000_0000_0000;
+  ensures BitwiseAdd64(bswap64(init_ctr), n + 1) ==  BitwiseAdd64(BitwiseAdd64(bswap64(init_ctr), n), 1);
+{
+  reveal_BitwiseAdd64();
+  reveal_BytesToDoubleWord();
+  reveal_Uint64ToBytes();
+  lemma_BitwiseAdd64();
+  lemma_BitwiseAdd64PlusOne(bswap64(init_ctr), n);
+}
+
+lemma {:timeLimitMultiplier 3} lemma_CtrIncrNTrans(old_ctr : Quadword, new_ctr: Quadword, init_ctr : uint64, n : nat)
   requires n + 1 < 1_0000_0000_0000_0000;
   requires CtrIncrN(old_ctr, init_ctr, n);
   requires CtrIncr (old_ctr,  new_ctr);
@@ -126,7 +151,10 @@ lemma lemma_CtrIncrNTrans(old_ctr : Quadword, new_ctr: Quadword, init_ctr : uint
   reveal_upper64();
   reveal_lower64();
   reveal_lowerUpper64();
+  reveal_BytesToDoubleWord();
+  reveal_Uint64ToBytes();
 }
+*/
 
 predicate AlgReq(g : G, key_ptr : uint64) {
   g.alg == AES_128 &&
@@ -195,12 +223,13 @@ predicate InpOutInvariants(inp : seq<Quadword>, inp_ptr : uint64, inp_end_ptr : 
    inp_end_ptr < 0x1_0000_0000_0000_0000 
 }
 
-// On the call, what is true before the setup?
+// What is true before the setup.
 predicate CTRInvInit(g : G,
     key_ptr : uint64, exp_key_ptr : uint64,
     inp_ptr : uint64, inp_end_ptr : uint64,
     out_ptr : uint64,
     iv_reg  : uint64,
+    ctr     : uint64,
     mem : Heaplets, 
     old_mem : Heaplets)
 {
@@ -210,7 +239,14 @@ predicate CTRInvInit(g : G,
         InpInMem(g, inp_ptr, inp_end_ptr, mem) &&
         OutWriteable(g.inp, g.out_heap, out_ptr, mem) &&
         InpOutInvariants(g.inp, inp_ptr, inp_end_ptr, out_ptr) &&
+        |g.inp| == |g.outp| &&
+        |g.inp| > 0 &&
         mem == old_mem[g.out_heap := mem[g.out_heap]]
+}
+
+predicate IvReq(g : G, iv_reg : uint64, iv_ctr : Quadword) {
+  iv_ctr.mid_lo  == upper64(iv_reg) &&
+  iv_ctr.lo      == lower64(iv_reg)
 }
 
 predicate CTRInv(g : G,
@@ -218,23 +254,26 @@ predicate CTRInv(g : G,
     inp_ptr : uint64, inp_end_ptr : uint64,
     out_ptr : uint64,
     iv_reg  : uint64,
-    ctr_reg : Quadword,
-    mem : Heaplets, 
+    iv_ctr : Quadword,
+    ctr    : uint64,
+    mem    : Heaplets, 
     old_mem : Heaplets)
 {
-   CTRInvInit(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, mem, old_mem)
+   CTRInvInit(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, ctr, mem, old_mem) &&
+   IvReq(g, iv_reg, iv_ctr)
 }
 
-predicate CtrInvBefore(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, blocktobecopied : nat) {
+predicate CtrInvBefore(iv_reg : uint64, iv_ctr : Quadword, init_ctr : uint64, ctr : uint64, blocktobecopied : nat) {
   blocktobecopied + 1 < 1_0000_0000_0000_0000 &&
-  ctr_reg == ctr_n(iv_reg, init_ctr, blocktobecopied) &&
-  ctr_reg.hi == upper64(iv_reg) &&
-  ctr_reg.mid_hi == lower64(iv_reg) &&
-  ctr_reg.mid_lo == upper64(BitwiseAdd64(init_ctr, blocktobecopied)) &&
-  ctr_reg.lo     == lower64(BitwiseAdd64(init_ctr, blocktobecopied))
+  iv_ctr.mid_lo == upper64(iv_reg) &&
+  iv_ctr.lo == lower64(iv_reg) &&
+
+  ctr == BitwiseAdd64(init_ctr, blocktobecopied) &&
+  iv_ctr.hi         == upper64(bswap64(ctr)) &&
+  iv_ctr.mid_hi     == lower64(bswap64(ctr))
 }
 
-predicate CtrInvAfter(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, blocktobecopied : nat) 
+predicate CtrInvAfter(iv_reg : uint64, iv_ctr : Quadword, init_ctr : uint64, ctr: uint64, blocktobecopied : nat) 
 {
   reveal_BitwiseAdd64();
   reveal_upper64();
@@ -242,11 +281,12 @@ predicate CtrInvAfter(iv_reg : uint64, ctr_reg : Quadword, init_ctr : uint64, bl
   reveal_lowerUpper64();
 
   blocktobecopied < 1_0000_0000_0000_0000 &&
-  ctr_reg == ctr_n(iv_reg, init_ctr, blocktobecopied) &&
-  ctr_reg.hi == upper64(iv_reg) &&
-  ctr_reg.mid_hi == lower64(iv_reg) &&
-  ctr_reg.mid_lo == upper64(BitwiseAdd64(init_ctr, blocktobecopied)) &&
-  ctr_reg.lo     == lower64(BitwiseAdd64(init_ctr, blocktobecopied))
+  iv_ctr.mid_lo == upper64(iv_reg) &&
+  iv_ctr.lo == lower64(iv_reg) &&
+
+  ctr == BitwiseAdd64(init_ctr, blocktobecopied) &&
+  iv_ctr.hi         == upper64(bswap64(ctr)) &&
+  iv_ctr.mid_hi     == lower64(bswap64(ctr))
 }
 
 predicate CopyInvAlways(g : G,
@@ -258,7 +298,8 @@ predicate CopyInvAlways(g : G,
      inp_end_ptr  == inp_ptr  + SeqLength(g.inp) * 16
 }
 
-predicate InputInOutputMem(g : G, out_ptr : uint64, iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword, key_ptr : uint64,
+predicate InputInOutputMem(g : G, out_ptr : uint64, iv_reg : uint64, init_ctr : uint64, ctr : uint64, 
+                          iv_ctr : Quadword, key_ptr : uint64,
                            mem : Heaplets, blockscopied : int)
  requires |g.inp| < 1_0000_0000_0000_0000;
  requires g.out_heap in mem;
@@ -280,7 +321,8 @@ predicate InputInOutputMem(g : G, out_ptr : uint64, iv_reg : uint64, init_ctr : 
 predicate CopyInvBefore(g : G,
                        inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
                        out_ptr : uint64, curr_out_ptr : uint64,
-                       iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword, key_ptr : uint64,
+                       iv_reg : uint64, init_ctr : uint64, iv_ctr : Quadword, ctr : uint64,
+                       key_ptr : uint64,
                        mem : Heaplets,
                        blocktobecopied : int) 
  requires |g.inp| < 1_0000_0000_0000_0000;
@@ -291,13 +333,14 @@ predicate CopyInvBefore(g : G,
      CopyInvAlways(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blocktobecopied) &&
      inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
      0 <= blocktobecopied < |g.inp| &&
-     InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, blocktobecopied)
+     InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr, iv_ctr, key_ptr, mem, blocktobecopied)
 }
 
 predicate CopyInvAfter(g : G,
                        inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
                        out_ptr : uint64, curr_out_ptr : uint64, 
-                       iv_reg : uint64, init_ctr : uint64, ctr_reg : Quadword, key_ptr : uint64,
+                       iv_reg : uint64, init_ctr : uint64, iv_ctr : Quadword, ctr : uint64,
+                       key_ptr : uint64,
                        mem : Heaplets, old_mem : Heaplets,
                        blockscopied : int)
   requires |g.inp| < 1_0000_0000_0000_0000;
@@ -309,7 +352,7 @@ predicate CopyInvAfter(g : G,
 {
      CopyInvAlways(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blockscopied) &&
      inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
-     InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr_reg, key_ptr, mem, blockscopied)
+     InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr, iv_ctr, key_ptr, mem, blockscopied)
 }
 
 // End of Module

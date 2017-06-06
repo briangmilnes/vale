@@ -38,6 +38,7 @@ datatype ins =
 | AddCarry(dstAddCarry:operand, srcAddCarry:operand)
 | AddCarry64(dstAddCarry64:operand, srcAddCarry64:operand)
 | BSwap32(dstBSwap:operand)
+| BSwap64(dst64BSwap:operand)
 | Xor32(dstXor:operand, srcXor:operand)
 | Xor64(dstXorq:operand, srcXorq:operand)
 | And32(dstAnd:operand, srcAnd:operand)
@@ -514,6 +515,11 @@ function bswap32(x:uint32) : uint32 {
     BytesToWord(bytes[3], bytes[2], bytes[1], bytes[0])
 }
 
+function bswap64(x:uint64) : uint64 { 
+    var bytes := DoubleWordToBytes(x);
+    BytesToDoubleWord(bytes[7], bytes[6], bytes[5], bytes[4], bytes[3], bytes[2], bytes[1], bytes[0])
+}
+
 function xor32(x:uint32, y:uint32) : uint32  { BitwiseXor(x, y) }
 
 function xor64(x:uint64, y:uint64) : uint64  { BitwiseXor64(x, y) }
@@ -564,6 +570,7 @@ predicate ValidInstruction(s:state, ins:ins)
         case AddCarry(dstAddCarry, srcAddCarry) => Valid32BitDestinationOperand(s, dstAddCarry) && Valid32BitSourceOperand(s, srcAddCarry) && Valid32BitSourceOperand(s, dstAddCarry)
         case AddCarry64(dstAddCarry, srcAddCarry) => Valid64BitDestinationOperand(s, dstAddCarry) && Valid64BitSourceOperand(s, srcAddCarry) && Valid64BitSourceOperand(s, dstAddCarry)
         case BSwap32(dstBSwap) => Valid32BitDestinationOperand(s, dstBSwap) && dstBSwap.OReg?
+        case BSwap64(dst64BSwap) => Valid64BitDestinationOperand(s, dst64BSwap) && dst64BSwap.OReg?
         case Xor32(dstXor, srcXor) => Valid32BitDestinationOperand(s, dstXor) && Valid32BitSourceOperand(s, srcXor) && Valid32BitSourceOperand(s, dstXor)
         case Xor64(dstXor, srcXor) => Valid64BitDestinationOperand(s, dstXor) && Valid64BitSourceOperand(s, srcXor) && Valid64BitSourceOperand(s, dstXor)
         case And32(dstAnd, srcAnd) => Valid32BitDestinationOperand(s, dstAnd) && Valid32BitSourceOperand(s, srcAnd) && Valid32BitSourceOperand(s, dstAnd)
@@ -632,6 +639,7 @@ function insObs(s:state, ins:ins):seq<observation>
         case AddCarry(dst, src) => operandObs(s, 32, dst) + operandObs(s, 32, src)
         case AddCarry64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
         case BSwap32(dst) => operandObs(s, 32, dst)
+        case BSwap64(dst) => operandObs(s, 64, dst)
         case Xor32(dst, src) => operandObs(s, 32, dst) + operandObs(s, 32, src)
         case Xor64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
         case And32(dst, src) => operandObs(s, 32, dst) + operandObs(s, 32, src)
@@ -715,6 +723,7 @@ predicate evalIns(ins:ins, s:state, r:state)
                                        evalUpdateAndHavocFlags64(s, dst, sum % 0x1_0000_0000_0000_0000, r, obs)
                                     && Cf(r.flags) == (sum >= 0x1_0000_0000_0000_0000)
             case BSwap32(dst)    => evalUpdateAndMaintainFlags(s, dst, bswap32(eval_op32(s, dst)), r, obs)
+            case BSwap64(dst)    => evalUpdateAndMaintainFlags64(s, dst, bswap64(eval_op64(s, dst)), r, obs)
             case Xor32(dst, src) => evalUpdateAndHavocFlags(s, dst, xor32(eval_op32(s, dst), eval_op32(s, src)), r, obs)
             case Xor64(dst, src) => evalUpdateAndHavocFlags64(s, dst, xor64(eval_op64(s, dst), eval_op64(s, src)), r, obs)
             case And32(dst, src) => evalUpdateAndHavocFlags(s, dst, and32(eval_op32(s, dst), eval_op32(s, src)), r, obs)

@@ -17,39 +17,79 @@ function ctr_n(iv : uint64, init_ctr : uint64, n : uint64) : Quadword
   reveal_BitwiseAdd64();
   reveal_upper64();
   reveal_lower64();
-  Quadword(lower64(BitwiseAdd64(init_ctr,n)), 
-           upper64(BitwiseAdd64(init_ctr,n)),
-           lower64(iv), 
-           upper64(iv))
+  Quadword(lower64(iv), 
+           upper64(iv),
+           lower64(bswap64(BitwiseAdd64(init_ctr,n))), 
+           upper64(bswap64(BitwiseAdd64(init_ctr,n))))
 }
 
-
-predicate CTR_EncryptReq(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, n : uint64) {
-    |input| > 0 &&
-    |input| < 0x1_0000_0000_0000_0000 - 1 &&
-    n + |input| < 0x1_0000_0000_0000_0000 - 1 &&
+predicate CTR_Encrypt_Req_AES(key : seq<uint32>, alg : Algorithm)  {
     |key| == Nk(alg) &&
     (Nb() * (Nr(alg) + 1)) / 4 == Nr(alg) + 1 &&
     (Nb() * (Nr(alg) + 1)) % 4 == 0
 }
 
-function CTR_EncryptAt(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, iv : uint64, init_ctr : uint64, n : uint64) : Quadword
-    requires CTR_EncryptReq(key, input, alg, n);
-    decreases |input|;
-{
-     QuadwordXor(input[0], AES_Encrypt(key, ctr_n(iv, init_ctr, n), alg))
+predicate CTR_Encrypt_Req(inp : seq<Quadword>, key : seq<uint32>, alg: Algorithm) {
+    CTR_Encrypt_Req_AES(key, alg) &&
+    |inp| > 0 &&
+    |inp| < 0x1_0000_0000_0000_0000 - 1
 }
 
-function CTR_Encrypt(key:seq<uint32>, input:seq<Quadword>, alg:Algorithm, iv : uint64, init_ctr : uint64, n : uint64) : seq<Quadword>
-    decreases |input|;
-    requires CTR_EncryptReq(key, input, alg, n);
+function CTR_Encrypt_At(inp : Quadword, key : seq<uint32>, alg: Algorithm, iv : uint64, init_ctr : uint64, n : uint64) : Quadword
+  requires CTR_Encrypt_Req_AES(key, alg);
 {
-    if |input| == 1 then
-      [QuadwordXor(input[0], AES_Encrypt(key, ctr_n(iv, init_ctr, n), alg))]
+     QuadwordXor(inp, AES_Encrypt(key, ctr_n(iv, init_ctr, n), alg))
+}
+
+function CTR_Encrypt'(inp : seq<Quadword>, key : seq<uint32>, alg: Algorithm, iv : uint64, init_ctr : uint64, n : uint64) : seq<Quadword>
+    requires CTR_Encrypt_Req(inp, key, alg);
+    requires |inp| + n < 0x1_0000_0000_0000_0000 - 1;
+    decreases |inp|;
+{
+   if |inp| == 1 then
+    [CTR_Encrypt_At(inp[0], key, alg, iv, init_ctr, n)]
     else
-      var first := [CTR_EncryptAt(key,input,alg, iv, init_ctr, n)];
-      first + CTR_Encrypt(key, all_but_first(input), alg, iv, init_ctr, n + 1)
+      [CTR_Encrypt_At(inp[0], key, alg, iv, init_ctr, n)] +
+       CTR_Encrypt'(inp[1..], key, alg, iv, init_ctr, n + 1)
 }
 
+lemma lemma_CTR_Encrypt_length_specific(inp : seq<Quadword>, key:seq<uint32>, alg:Algorithm, iv: uint64, init_ctr : uint64, n : uint64) 
+    requires CTR_Encrypt_Req(inp, key, alg);
+    requires 0 < |inp| + n < 0x1_0000_0000_0000_0000 - 1
+    decreases |inp|;
+    ensures  |CTR_Encrypt'(inp, key, alg, iv, init_ctr, n)| == |inp|;
+{
+    if |inp| == 1 {
+      assert |CTR_Encrypt'(inp, key, alg, iv, init_ctr, n)| == 1;
+    } else {
+        lemma_CTR_Encrypt_length_specific(inp[1..], key, alg, iv, init_ctr, n);
+    }
+}
+
+/*
+
+lemma lemma_CTR_Encrypt_length(inp : seq<Quadword>, key:seq<uint32>, alg:Algorithm, iv: uint64, init_ctr : uint64) 
+    requires CTR_Encrypt_Req(inp, key, alg);
+    requires 0 < |inp| < 0x1_0000_0000_0000_0000 - 1
+    ensures forall inp :: |inp| > 0 ==> |CTR_Encrypt'(inp, key, alg, iv, init_ctr,0)| == |inp|;
+    decreases |inp|;
+{
+    forall inp | |inp| > 0
+        ensures |CTR_Encrypt'(inp, key, alg, iv, init_ctr,0)| == |inp|;
+    {
+        lemma_CTR_Encrypt_length_specific(inp, key, alg, iv, init_ctr);
+    }
+}
+
+
+function CTR_Encrypt(inp : seq<Quadword>, key : seq<uint32>, alg: Algorithm, iv : uint64, init_ctr : uint64) : seq<Quadword>
+  requires CTR_Encrypt_Req(inp, key, alg);
+  ensures  |CTR_Encrypt(inp, key, alg, iv, init_ctr)| == |inp|;
+{
+//   lemma_CTR_Encrypt_length(inp, key, alg, iv, init_ctr);
+   CTR_Encrypt'(inp, key, alg, iv, init_ctr, 0)
+}
+
+*/
 // We don't need a decrypt predicate as the standard uses encrypt again and the xor decrypts.
 }
