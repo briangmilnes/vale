@@ -132,6 +132,7 @@ include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
 include "aes.vad"
 include{:verbatim} "ctr_helpers.i.dfy"
 include{:verbatim} "../ctr.s.dfy" 
+include{:verbatim} "proof.dfy"
 
 #verbatim
 module CTR {
@@ -166,6 +167,7 @@ import opened CTRHelpers
 
 */
 
+/*
 procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
    ghost key:seq(uint32), 
    ghost w:seq(uint32),
@@ -247,6 +249,7 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
   Pxor(xmm0, xmm0);
   Pxor(xmm1, xmm1);
 }
+*/
 
 // Decryption uses the same routine as we just xor again but the taints are different.
 
@@ -262,6 +265,7 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
 
 */
 
+/*
 procedure {:refined} CTR128Increment64StdCall(
    ghost  in_ctr_heap_id: heaplet_id,
    ghost  out_ctr_heap_id: heaplet_id
@@ -326,6 +330,7 @@ procedure {:refined} CTR128Increment64StdCall(
     Xor64(rsi,rsi);
     Xor64(rdx,rdx);
  }
+*/
 
 
 /*
@@ -451,6 +456,7 @@ to increment a counter.
  The 128 bit standard call that sets up the 128 bit register of this.
 */
 
+/*
 procedure {:refined} CTR128Increment128StdCall(
    ghost  counter : Quadword, 
    ghost  in_ctr_heap_id: heaplet_id,
@@ -494,7 +500,9 @@ returns (
       incrcounter := xmm0;
       Store128(rsi, xmm0, 0, Public, out_ctr_heap_id); // Put it back.
 }
+*/
 
+/*
 // Old test stuff above this. 
 
 procedure {:refined} CTR128Increment128(ghost g : G, ghost blocktobecopied : nat)
@@ -522,16 +530,6 @@ procedure {:refined} CTR128Increment128(ghost g : G, ghost blocktobecopied : nat
       Pxor(xmm5,xmm5);
 }
 
-#verbatim
-predicate CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, n : uint64)
- requires CTR_Encrypt_Req(g.inp, g.key, g.alg);
- requires n <= SeqLength(g.inp);
-{
-  forall j : nat :: j < n ==>
-   (CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr))[j] == g.outp[j]
-}
-#endverbatim
-
 // Can't use operands, instructions are refined.
 procedure {:refined} {:bridge} {:timeLimitMultiplier 3} 
     CTR128EncryptCopy(ghost g         : G,
@@ -550,22 +548,27 @@ procedure {:refined} {:bridge} {:timeLimitMultiplier 3}
      CTRInv(g, rdi, r8, rcx, rsi, r9, rdx, xmm4, r13, mem, old(mem));
      CopyInvAfter(g, rcx, rsi, r10, r9, r11, rdx, r12, xmm4, r13, rdi, mem, old(mem), blocktobecopied + 1);
      CtrInvAfter(rdx, xmm4, r12, r13, blocktobecopied + 1);
-//     CTR_Encrypt_Upto_Done(g, rdx, r12, blocktobecopied + 1);
-
+     CTR_Encrypt_Upto_Done(g, rdx, r12, blocktobecopied + 1);
 {
      Mov128(xmm0,xmm4); // Put the counter in xmm0.
      // input is in xmm0.
      // extended key ptr is in r8 
-     ghost var xmm0g := Quadword(xmm0.lo,xmm0.mid_lo,xmm0.mid_hi,xmm0.hi);
+     ghost var xmm0g :=  Quadword(xmm0.lo,xmm0.mid_lo,xmm0.mid_hi,xmm0.hi);
      AES128EncryptOneBlock(g.key, xmm0g, g.exp_key, Secret, g.exp_key_heap);
      Load128(xmm1, r10, 0, Secret, g.inp_heap);
      Pxor(xmm1,xmm0);
      Store128(r11, xmm1, 0, Secret, g.out_heap);
+
+     assume g.outp[blocktobecopied] == xmm1;
+     lemma_CTR_Encrypt_Upto_Done(g, rdx, r12, blocktobecopied);
+     CTR128Increment128(g, blocktobecopied);
      Pxor(xmm0,xmm0); // Clean up encrypted counter.
      Add64(r10, 16);
      Add64(r11, 16);
-     CTR128Increment128(g, blocktobecopied);
+
 }
+*/
+
 
 /*
 procedure {:timeLimitMultiplier 3} CTR128EncryptLoop(ghost g   : G,
@@ -634,8 +637,6 @@ procedure CTR128EncryptStart(ghost g   : G,
                             inout operand iv_ctr : Quadword,
                             operand init_ctr : uint64,
                             inout operand ctr : uint64)
-                            returns ( ghost output : seq(Quadword) )
-
     reads    rdi; rsi; rdx; rcx; r8; r9; r12;
     modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r13; r14;
 
@@ -694,8 +695,6 @@ procedure CTR128EncryptReg(ghost g : G,
                            inout operand iv_ctr : Quadword,
                            operand init_ctr : uint64,
                            inout operand ctr : uint64)
-   returns (ghost output : seq(Quadword))
-
     reads    rdi; rsi; rdx; rcx; r8; r9; r12;
     modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r13; r14;
 
@@ -712,12 +711,12 @@ procedure CTR128EncryptReg(ghost g : G,
    CTR128SetupCTR(g);
    assert CtrInvBefore(iv_reg, iv_ctr, init_ctr, ctr, 0);
    assert CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, iv_ctr, ctr, mem, old(mem));
-   output := CTR128EncryptStart(g, key_ptr, exp_key_ptr, iv_reg, inp_ptr, inp_end_ptr, out_ptr, iv_ctr, init_ctr, ctr);
+   CTR128EncryptStart(g, key_ptr, exp_key_ptr, iv_reg, inp_ptr, inp_end_ptr, out_ptr, iv_ctr, init_ctr, ctr);
 }
 
 // Linux only calling sequence so far, just in case I need to pass more arguments and hit the stack.
 // Plus windows may shuffle registers and so on.
-procedure CTR128EncryptStdcall(ghost g : G) returns (ghost output : seq(Quadword))
+procedure CTR128EncryptStdcall(ghost g : G)
     reads    rdi; rsi; rdx; rcx; r8; r9;  stack;
     modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r12; r13; r14;
 
@@ -738,7 +737,7 @@ procedure CTR128EncryptStdcall(ghost g : G) returns (ghost output : seq(Quadword
     //output == CTR_Encrypt(g.key, g.inp, g.alg, iv_reg, init_ctr, SeqLength(g.inp));
 {
   LoadStack64(r12, 0);  // Get the initial counter from the stack.
-  output := CTR128EncryptReg(g, rdi, r8, rdx, rcx, rsi, r9, xmm4, r12, r13);
+  CTR128EncryptReg(g, rdi, r8, rdx, rcx, rsi, r9, xmm4, r12, r13);
 }
 */
 

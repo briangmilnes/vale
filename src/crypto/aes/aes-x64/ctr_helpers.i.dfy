@@ -31,8 +31,6 @@ datatype G = G(ghost key : seq<uint32>,
                ghost alg: Algorithm,
                ghost outp : seq<Quadword>)
 
-
-
 // Bind the registers, passed as operators, to a physical register.
 predicate BindRegsPhy1(key_ptr : operand, exp_key_ptr : operand, iv_reg : operand, inp_ptr : operand, inp_end_ptr : operand,  out_ptr : operand, iv_ctr : operand, init_ctr : operand, ctr : operand) {
  key_ptr.OReg?      && key_ptr     == OReg(X86Edi) &&
@@ -305,17 +303,11 @@ predicate InputInOutputMem(g : G, out_ptr : uint64, iv_reg : uint64, init_ctr : 
  requires g.out_heap in mem;
  requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16)
  requires AlgReq(g, key_ptr);
+ requires |g.inp| == |g.outp|;
 {
   0 <= blockscopied <= |g.inp| &&
   forall j: nat :: 0 <= j < blockscopied ==>
-  // Three steps in developing this predicate.
-  // 1) just copy.
-  // inp[j] == mem[g.out_heap].quads[out_ptr + j * 16].v 
-  // 2) copy the ctr xor'd with the data.
-  // QuadwordXor(inp[j], ctr_n(iv_reg, init_ctr, j)) == mem[g.out_heap].quads[out_ptr + j * 16].v
-  // 3) copy the ctr encrypted xor'd with the data == AES-CTR.
-  QuadwordXor(g.inp[j], AES_Encrypt(g.key, ctr_n(iv_reg, init_ctr, j), g.alg))
-           == mem[g.out_heap].quads[out_ptr + j * 16].v
+  (QuadwordXor(g.inp[j], AES_Encrypt(g.key, ctr_n(iv_reg, init_ctr, j), g.alg)) == mem[g.out_heap].quads[out_ptr + j * 16].v) 
 }
 
 predicate CopyInvBefore(g : G,
@@ -329,6 +321,7 @@ predicate CopyInvBefore(g : G,
  requires g.out_heap in mem;
  requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16);
  requires AlgReq(g, key_ptr);
+ requires |g.inp| == |g.outp|;
 {
      CopyInvAlways(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blocktobecopied) &&
      inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
@@ -349,11 +342,62 @@ predicate CopyInvAfter(g : G,
   requires mem[g.out_heap].QuadwordHeaplet?;
   requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16)
   requires AlgReq(g, key_ptr);
+  requires |g.inp| == |g.outp|;
 {
      CopyInvAlways(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blockscopied) &&
      inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
      InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr, iv_ctr, key_ptr, mem, blockscopied)
 }
 
+lemma lemma_CTR_Encrypt'_length(inp : seq<Quadword>) 
+   decreases |inp|;
+   requires |inp| > 0;
+   ensures forall key : seq<uint32>, alg : Algorithm, iv : uint64, init_ctr : uint64, n : uint64 ::  
+    CTR_Encrypt_Req(inp, key, alg) &&
+    |inp| < 0x1_0000_0000_0000_0000 - 1 ==>
+    |CTR_Encrypt'(inp, key, alg, iv, init_ctr, n)| == |inp|;
+{
+    if |inp| == 1 {
+      assert forall key : seq<uint32>, alg : Algorithm, iv : uint64, init_ctr : uint64, n : uint64 :: 
+        CTR_Encrypt_Req(inp, key, alg) &&
+        |inp| + n < 0x1_0000_0000_0000_0000 - 1 ==>
+        |CTR_Encrypt'(inp, key, alg, iv, init_ctr, n)| == 1;
+    } else {
+      lemma_CTR_Encrypt'_length(inp[1..]);
+    }
+}
+
+lemma lemma_CTR_Encrypt_length(inp : seq<Quadword>) 
+   decreases |inp|;
+   requires |inp| > 0;
+   ensures forall key : seq<uint32>, alg : Algorithm, iv : uint64, init_ctr : uint64 ::  
+    CTR_Encrypt_Req(inp, key, alg) &&
+    |inp| < 0x1_0000_0000_0000_0000 - 1 ==>
+    |CTR_Encrypt(inp, key, alg, iv, init_ctr)| == |inp|;
+{
+  lemma_CTR_Encrypt'_length(inp);
+}
+
+predicate CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, n : uint64)
+ requires CTR_Encrypt_Req(g.inp, g.key, g.alg);
+ requires |g.inp| == |g.outp|;
+ requires n <= SeqLength(g.inp);
+{
+  forall j : nat :: j < n ==>
+   (CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr))[j] == g.outp[j]
+}
+
+lemma lemma_CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, n : uint64)
+  requires CTR_Encrypt_Req(g.inp, g.key, g.alg);
+  requires |g.inp| == |g.outp|;
+  requires n <= SeqLength(g.inp);
+  requires n + 1 <= SeqLength(g.inp);
+  requires CTR_Encrypt_Upto_Done(g, iv, init_ctr, n);
+  requires CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)[n] == g.outp[n]
+  ensures  CTR_Encrypt_Upto_Done(g, iv, init_ctr, n + 1);
+{
+}
+
 // End of Module
+
 }
