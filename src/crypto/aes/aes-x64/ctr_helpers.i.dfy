@@ -238,7 +238,8 @@ predicate CTRInvInit(g : G,
         OutWriteable(g.inp, g.out_heap, out_ptr, mem) &&
         InpOutInvariants(g.inp, inp_ptr, inp_end_ptr, out_ptr) &&
         |g.inp| == |g.outp| &&
-        |g.inp| > 0 &&
+        0 <= |g.inp|  < 0x1_0000_0000_0000_0000 - 1 &&
+        0 <= |g.outp| < 0x1_0000_0000_0000_0000 - 1 &&
         mem == old_mem[g.out_heap := mem[g.out_heap]]
 }
 
@@ -262,7 +263,7 @@ predicate CTRInv(g : G,
 }
 
 predicate CtrInvBefore(iv_reg : uint64, iv_ctr : Quadword, init_ctr : uint64, ctr : uint64, blocktobecopied : nat) {
-  blocktobecopied + 1 < 1_0000_0000_0000_0000 &&
+  blocktobecopied < 1_0000_0000_0000_0000 - 1 &&
   iv_ctr.mid_lo == upper64(iv_reg) &&
   iv_ctr.lo == lower64(iv_reg) &&
 
@@ -290,7 +291,11 @@ predicate CtrInvAfter(iv_reg : uint64, iv_ctr : Quadword, init_ctr : uint64, ctr
 predicate CopyInvAlways(g : G,
                   inp_ptr : uint64, inp_end_ptr : uint64, curr_inp_ptr : uint64,
                   out_ptr : uint64, curr_out_ptr : uint64,
-                  blockscopied : int) {
+                  blockscopied : int) 
+{
+     |g.inp| == |g.outp| && 
+     0 <= |g.inp|  < 1_0000_0000_0000_0000 - 1 && 
+     0 <= |g.outp| < 1_0000_0000_0000_0000 - 1 && 
      curr_inp_ptr == inp_ptr + blockscopied * 16 &&
      curr_out_ptr == out_ptr + blockscopied * 16 &&
      inp_end_ptr  == inp_ptr  + SeqLength(g.inp) * 16
@@ -299,7 +304,8 @@ predicate CopyInvAlways(g : G,
 predicate InputInOutputMem(g : G, out_ptr : uint64, iv_reg : uint64, init_ctr : uint64, ctr : uint64, 
                           iv_ctr : Quadword, key_ptr : uint64,
                            mem : Heaplets, blockscopied : int)
- requires |g.inp| < 1_0000_0000_0000_0000;
+ requires 0 <= |g.inp|  < 1_0000_0000_0000_0000 - 1;
+ requires 0 <= |g.outp| < 1_0000_0000_0000_0000 - 1;
  requires g.out_heap in mem;
  requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16)
  requires AlgReq(g, key_ptr);
@@ -307,7 +313,11 @@ predicate InputInOutputMem(g : G, out_ptr : uint64, iv_reg : uint64, init_ctr : 
 {
   0 <= blockscopied <= |g.inp| &&
   forall j: nat :: 0 <= j < blockscopied ==>
-  (QuadwordXor(g.inp[j], AES_Encrypt(g.key, ctr_n(iv_reg, init_ctr, j), g.alg)) == mem[g.out_heap].quads[out_ptr + j * 16].v) 
+  ((QuadwordXor(g.inp[j], AES_Encrypt(g.key, ctr_n(iv_reg, init_ctr, j), g.alg)) == mem[g.out_heap].quads[out_ptr + j * 16].v))
+// Bryan does this last. 
+// &&  
+//  forall j: nat :: 0 <= j < blockscopied ==>
+//   (g.outp[j] == mem[g.out_heap].quads[out_ptr + j*16].v)
 }
 
 predicate CopyInvBefore(g : G,
@@ -321,7 +331,6 @@ predicate CopyInvBefore(g : G,
  requires g.out_heap in mem;
  requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16);
  requires AlgReq(g, key_ptr);
- requires |g.inp| == |g.outp|;
 {
      CopyInvAlways(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blocktobecopied) &&
      inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
@@ -349,24 +358,6 @@ predicate CopyInvAfter(g : G,
      InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr, iv_ctr, key_ptr, mem, blockscopied)
 }
 
-lemma lemma_CTR_Encrypt'_length(inp : seq<Quadword>) 
-   decreases |inp|;
-   requires |inp| > 0;
-   ensures forall key : seq<uint32>, alg : Algorithm, iv : uint64, init_ctr : uint64, n : uint64 ::  
-    CTR_Encrypt_Req(inp, key, alg) &&
-    |inp| < 0x1_0000_0000_0000_0000 - 1 ==>
-    |CTR_Encrypt'(inp, key, alg, iv, init_ctr, n)| == |inp|;
-{
-    if |inp| == 1 {
-      assert forall key : seq<uint32>, alg : Algorithm, iv : uint64, init_ctr : uint64, n : uint64 :: 
-        CTR_Encrypt_Req(inp, key, alg) &&
-        |inp| + n < 0x1_0000_0000_0000_0000 - 1 ==>
-        |CTR_Encrypt'(inp, key, alg, iv, init_ctr, n)| == 1;
-    } else {
-      lemma_CTR_Encrypt'_length(inp[1..]);
-    }
-}
-
 lemma lemma_CTR_Encrypt_length(inp : seq<Quadword>) 
    decreases |inp|;
    requires |inp| > 0;
@@ -375,29 +366,57 @@ lemma lemma_CTR_Encrypt_length(inp : seq<Quadword>)
     |inp| < 0x1_0000_0000_0000_0000 - 1 ==>
     |CTR_Encrypt(inp, key, alg, iv, init_ctr)| == |inp|;
 {
-  lemma_CTR_Encrypt'_length(inp);
+    if |inp| == 1 {
+      assert forall key : seq<uint32>, alg : Algorithm, iv : uint64, init_ctr : uint64, n : uint64 :: 
+        CTR_Encrypt_Req(inp, key, alg) &&
+        |inp| < 0x1_0000_0000_0000_0000 - 1 ==>
+        |CTR_Encrypt(inp, key, alg, iv, init_ctr)| == 1;
+    } else {
+      lemma_CTR_Encrypt_length(all_but_last(inp));
+    }
 }
 
-predicate CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, n : uint64)
+lemma lemma_CTR_Encrypt_length'(inp : seq<Quadword>, key : seq<uint32>, alg : Algorithm, iv : uint64, init_ctr : uint64)
+   decreases |inp|;
+   requires |inp| > 0;
+   requires |inp| < 0x1_0000_0000_0000_0000 - 1;
+   requires CTR_Encrypt_Req(inp, key, alg);
+   ensures |CTR_Encrypt(inp, key, alg, iv, init_ctr)| == |inp|;
+{
+    if |inp| == 1 {
+      assert |CTR_Encrypt(inp, key, alg, iv, init_ctr)| == 1;
+    } else {
+       lemma_CTR_Encrypt_length'(all_but_last(inp), key, alg, iv, init_ctr);
+    }
+}
+
+lemma{:timeLimitMultiplier 3} lemma_CTR_Encrypt_Is_QuadwordXor_AES(inp : seq<Quadword>, key : seq<uint32>, alg : Algorithm, iv : uint64, init_ctr : uint64)
+  requires CTR_Encrypt_Req(inp, key, alg);
+  requires 0 < |inp| < 0x1_0000_0000_0000_0000 - 1;
+  ensures |CTR_Encrypt(inp, key, alg, iv, init_ctr)| == |inp|;
+  ensures forall i : nat :: i < |inp| ==>
+   CTR_Encrypt(inp, key, alg, iv, init_ctr)[i] == 
+    QuadwordXor(inp[i], AES_Encrypt(key, ctr_n(iv, init_ctr, i), alg));
+{
+  lemma_CTR_Encrypt_length'(inp, key, alg, iv, init_ctr);
+  if |inp| == 1 {
+    assert CTR_Encrypt(inp, key, alg, iv, init_ctr)[0] == 
+      QuadwordXor(inp[0], AES_Encrypt(key, ctr_n(iv, init_ctr, 0), alg));
+  } else {
+    lemma_CTR_Encrypt_Is_QuadwordXor_AES(all_but_last(inp), key, alg, iv, init_ctr);
+  }
+}
+
+predicate CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, out_ptr : uint64, mem : Heaplets, n : uint64)
  requires CTR_Encrypt_Req(g.inp, g.key, g.alg);
  requires |g.inp| == |g.outp|;
  requires n <= SeqLength(g.inp);
+ requires OutWriteable(g.inp, g.out_heap, out_ptr, mem);
 {
+  lemma_CTR_Encrypt_length(g.inp);
   forall j : nat :: j < n ==>
-   (CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr))[j] == g.outp[j]
-}
-
-lemma lemma_CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, n : uint64)
-  requires CTR_Encrypt_Req(g.inp, g.key, g.alg);
-  requires |g.inp| == |g.outp|;
-  requires n <= SeqLength(g.inp);
-  requires n + 1 <= SeqLength(g.inp);
-  requires CTR_Encrypt_Upto_Done(g, iv, init_ctr, n);
-  requires CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)[n] == g.outp[n]
-  ensures  CTR_Encrypt_Upto_Done(g, iv, init_ctr, n + 1);
-{
+   CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)[j] == mem[g.out_heap].quads[out_ptr + j * 16].v
 }
 
 // End of Module
-
 }

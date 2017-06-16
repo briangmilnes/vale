@@ -146,6 +146,7 @@ import opened x64_decls64_i
 import opened aes_vale
 import opened CTRModule
 import opened CTRHelpers
+import opened proof
 
 #endverbatim
 
@@ -502,7 +503,6 @@ returns (
 }
 */
 
-/*
 // Old test stuff above this. 
 
 procedure {:refined} CTR128Increment128(ghost g : G, ghost blocktobecopied : nat)
@@ -531,7 +531,7 @@ procedure {:refined} CTR128Increment128(ghost g : G, ghost blocktobecopied : nat
 }
 
 // Can't use operands, instructions are refined.
-procedure {:refined} {:bridge} {:timeLimitMultiplier 3} 
+procedure {:refined} {:bridge} {:timeLimitMultiplier 6}
     CTR128EncryptCopy(ghost g         : G,
                       ghost blocktobecopied : nat)
 
@@ -542,33 +542,49 @@ procedure {:refined} {:bridge} {:timeLimitMultiplier 3}
      CTRInv(g, rdi, r8, rcx, rsi, r9, rdx, xmm4, r13, mem, old(mem));
      CopyInvBefore(g,  rcx, rsi, r10, r9, r11, rdx, r12, xmm4, r13, rdi, mem, blocktobecopied);
      CtrInvBefore(rdx, xmm4, r12, r13, blocktobecopied);
-     CTR_Encrypt_Upto_Done(g, rdx, r12, blocktobecopied);
+     CTR_Encrypt_Upto_Done(g, rdx, r12, r9, mem, blocktobecopied);
 
    ensures
      CTRInv(g, rdi, r8, rcx, rsi, r9, rdx, xmm4, r13, mem, old(mem));
      CopyInvAfter(g, rcx, rsi, r10, r9, r11, rdx, r12, xmm4, r13, rdi, mem, old(mem), blocktobecopied + 1);
      CtrInvAfter(rdx, xmm4, r12, r13, blocktobecopied + 1);
-     CTR_Encrypt_Upto_Done(g, rdx, r12, blocktobecopied + 1);
+     CTR_Encrypt_Upto_Done(g, rdx, r12, r9, mem, blocktobecopied + 1);
 {
      Mov128(xmm0,xmm4); // Put the counter in xmm0.
-     // input is in xmm0.
+     // input is in xmm0, so it output.
      // extended key ptr is in r8 
-     ghost var xmm0g :=  Quadword(xmm0.lo,xmm0.mid_lo,xmm0.mid_hi,xmm0.hi);
-     AES128EncryptOneBlock(g.key, xmm0g, g.exp_key, Secret, g.exp_key_heap);
-     Load128(xmm1, r10, 0, Secret, g.inp_heap);
-     Pxor(xmm1,xmm0);
-     Store128(r11, xmm1, 0, Secret, g.out_heap);
+     ghost var xmm0_1 := Quadword(xmm0.lo,xmm0.mid_lo,xmm0.mid_hi,xmm0.hi);
+     assert xmm0_1 == ctr_n(rdx, r12, blocktobecopied);
 
-     assume g.outp[blocktobecopied] == xmm1;
-     lemma_CTR_Encrypt_Upto_Done(g, rdx, r12, blocktobecopied);
+     AES128EncryptOneBlock(g.key, xmm0_1, g.exp_key, Secret, g.exp_key_heap);
+     ghost var xmm0_2 := xmm0;
+     assert xmm0_2 == AES_Encrypt(g.key, ctr_n(rdx, r12, blocktobecopied), g.alg);
+
+     Load128(xmm1, r10, 0, Secret, g.inp_heap);
+     ghost var xmm1_0 := xmm1;
+     assert xmm1_0 == g.inp[blocktobecopied];
+
+     Pxor(xmm1,xmm0);
+     ghost var xmm1_1 := xmm1;
+     assert xmm1_1 == QuadwordXor(g.inp[blocktobecopied], xmm0_2);
+     lemma_CTR_Encrypt_length'(g.inp, g.key, g.alg, rdx, r12);
+     // assume SeqLength(CTR_Encrypt(g.inp, g.key, g.alg, rdx, r12)) > blocktobecopied;
+     lemma_CTR_Encrypt_Is_QuadwordXor_AES(g.inp, g.key, g.alg, rdx, r12);
+     assert xmm1_1 == CTR_Encrypt(g.inp, g.key, g.alg, rdx, r12)[blocktobecopied];
+
+     Store128(r11, xmm1, 0, Secret, g.out_heap);
+     assert r11 == r9 + blocktobecopied * 16;
+     assert mem[g.out_heap].quads[r9 + blocktobecopied * 16].v == xmm1_1;
+
+     assert CTR_Encrypt(g.inp, g.key, g.alg, rdx, r12)[blocktobecopied] == 
+                    mem[g.out_heap].quads[r9 + blocktobecopied * 16].v;
+     lemma_CTR_Encrypt_Upto_Done(g, rdx, r12, r9, mem, blocktobecopied);
+
      CTR128Increment128(g, blocktobecopied);
      Pxor(xmm0,xmm0); // Clean up encrypted counter.
      Add64(r10, 16);
      Add64(r11, 16);
-
 }
-*/
-
 
 /*
 procedure {:timeLimitMultiplier 3} CTR128EncryptLoop(ghost g   : G,
