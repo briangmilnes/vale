@@ -94,7 +94,7 @@ AddOption('--NOVERIFY',
   action='store_true',
   help='Verify and compile, or compile only')
 
-env['DAFNY_PATH'] = GetOption('dafny_path')
+env['DAFNY_PATH'] = Dir(GetOption('dafny_path')).abspath
 env['DAFNY_USER_ARGS'] = GetOption('dafny_user_args')
 env['VALE_USER_ARGS'] = GetOption('vale_user_args')
 env['KREMLIN_USER_ARGS'] = GetOption('kremlin_user_args')
@@ -115,7 +115,7 @@ if cache_dir != None:
   print('Using Shared Cache Directory %s'%cache_dir)
   CacheDir(cache_dir)
 
-env['DAFNY'] = File(os.path.join(env['DAFNY_PATH'], 'Dafny.exe'))
+env['DAFNY'] = Dir(env['DAFNY_PATH']).File('Dafny.exe')
 
 if 'KREMLIN_HOME' in os.environ:
   kremlin_path = os.environ['KREMLIN_HOME']
@@ -343,6 +343,12 @@ def kremlin_emitter(target, source, env):
 # Add env.Kremlin(), to extract .c/.h from .json.  The builder returns
 # two targets, the .c file first, followed by the .h file.
 def add_kremlin(env):
+  # In order to succeed, the Kremlin builder needs an extra directory in the
+  # PATH on Windows so that the DLL can be properly found.
+  if sys.platform == 'win32':
+    gmp_dll = FindFile('libgmp-10.dll', os.environ['PATH'].split(';'))
+    if gmp_dll != None:
+      env.PrependENVPath('PATH', os.path.dirname(str(gmp_dll)))
   env['KREMLIN_FLAGS'] = '-warn-error +1..4 -warn-error @4 -skip-compilation -add-include \\"DafnyLib.h\\" -cc msvc'
   kremlin = Builder(action='cd ${TARGET.dir} && ${KREMLIN.abspath} $KREMLIN_FLAGS ${SOURCE.file} $KREMLIN_USER_ARGS',
                            suffix = '.c',
@@ -434,20 +440,36 @@ def build_test(env, inputs, include_dir, output_base_name):
     if inps.startswith('src/'):
       inp = env.CopyAs(source=inp, target=inps.replace('src/', 'obj/', 1))
     inputs_obj.append(inp)
-  exe = testenv.Program(source=inputs_obj, target='obj/'+output_base_name+'.exe')
+  if sys.platform == 'win32':
+    built = testenv.Program(source=inputs_obj, target=['obj/'+output_base_name+'.exe', 'obj/'+output_base_name+'.pdb'])
+    exe = built[0]
+  else:
+    built = testenv.Program(source=inputs_obj, target='obj/'+output_base_name+'.exe')
+    exe = built
+  testoutput = 'obj/'+output_base_name+'.txt'
+  env.Command(target=testoutput,
+              source=exe,
+              action = [exe, 'echo ABC > ' + testoutput])
+  a = env.Alias('runtest', '', built)
+  #AlwaysBuild(a)
+  return a
+  
+def build_dafny_test(env, inputs, dafny_args, output_base_name):
+  testenv = env.Clone(DAFNY_COMPILER_FLAGS=dafny_args + ' /compile:2')
+  exe = testenv.DafnyCompile(source=inputs, target='obj/'+output_base_name+'.exe')
   testoutput = 'obj/'+output_base_name+'.txt'
   env.Command(target=testoutput,
               source=exe,
               action = [exe, 'echo ABC > ' + testoutput])
   a = env.Alias('runtest', '', exe)
-  #AlwaysBuild(a)
-  return a
-  
+  return a  
+ 
 # Add pseudobuilders to env.  
 def add_extract_code(env):
   env.AddMethod(extract_vale_code, "ExtractValeCode")
   env.AddMethod(extract_dafny_code, "ExtractDafnyCode")
   env.AddMethod(build_test, "BuildTest")
+  env.AddMethod(build_dafny_test, "BuildDafnyTest")
 
 # Helper class used by the src/SConscript file, to specify per-file
 # Dafny command-line options for verification.  

@@ -33,9 +33,9 @@ verify_options = {
   'src/lib/util/operations.i.dfy': BuildOptions(dafny_default_args_nonlarith + ' /proverOpt:OPTIMIZE_FOR_BV=true'),
   'obj/crypto/aes/cbc.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /timeLimit:120'),
   'obj/crypto/aes/aes-x64/cbc.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /timeLimit:120'),
-
+  'src/crypto/aes/dtestaes.dfy': None,
+  'src/crypto/aes/dtestgcm.dfy': None,
   'obj/crypto/aes/aes-x64/ctr.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /errorLimit:1'),   # + ' /noVerify'
-
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_nonlarith),
 
@@ -87,6 +87,7 @@ if env['TARGET_ARCH']=='amd64':
      'ctr'                                                       # Base name for the ASM files and EXE
     )
   env.BuildTest(['src/crypto/aes/testctr.c', ctr_asm[0]], '', 'testctr')
+  env.BuildDafnyTest(['src/crypto/aes/dtestgcm.dfy'], dafny_default_args, 'dtestgcm')
 else:
   print('Not building AES-CTR for this target architecture')  
 
@@ -100,6 +101,7 @@ if env['TARGET_ARCH']=='x86' or env['TARGET_ARCH']=='amd64':   # x86 and x64 onl
     'aes'                                            # Base name for the ASM files and EXE
     )
   env.BuildTest(['src/crypto/aes/testaes.c', aes_asm[0]], 'src/crypto/aes', 'testaes')
+  env.BuildDafnyTest(['src/crypto/aes/dtestaes.dfy'], dafny_default_args, 'dtestaes')
 else:
   print('Not building AES for this target architecture')
 
@@ -115,7 +117,7 @@ if env['TARGET_ARCH']=='amd64' and sys.platform == "win32":     # x64-only; not 
   env.BuildTest(['src/crypto/poly1305/testpoly1305.c', poly1305_asm[0]], 'src/crypto/poly1305', 'testpoly1305')
 else:
   print('Not building Poly1305 for this target architecture')
-
+ 
 if 'KREMLIN_HOME' in os.environ:
   kremlin_path = os.environ['KREMLIN_HOME']
 else:
@@ -136,7 +138,6 @@ if env['OPENSSL_PATH'] != None:
   if env['TARGET_ARCH']=='x86':
     sha256_obj = engineenv.Object('obj/sha256_openssl', sha_c_h[0][0])
     cbc_obj = engineenv.Object('obj/cbc_openssl', cbc_asm[0])
-    ctr_obj = engineenv.Object('obj/ctr_openssl', ctr_asm[0])
     aes_obj = engineenv.Object('obj/aes_openssl', sha_asm[0])
     engine = engineenv.SharedLibrary(target='obj/EverestSha256.dll',
       source=[everest_sha256, everest_glue, sha256_obj, cbc_obj, aes_obj, '$OPENSSL_PATH/libcrypto.lib'])
