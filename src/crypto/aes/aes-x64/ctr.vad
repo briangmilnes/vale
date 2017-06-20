@@ -3,6 +3,7 @@
 // init_ctr can go ghost
 // iv_reg   can go ghost
 // key_ptr  could after a setup of expanded key
+// Clense exactly where I should and no more.
 
 /*
 

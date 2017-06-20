@@ -113,20 +113,85 @@ predicate KeyReq(key : seq<uint32>) {
 
 // Algorithm 3 
 
+// This version is easier to prove but a bit farther from the spec.
+
 function AES_GCTR(key : seq<uint32>, CB : Quadword, X : seq<Quadword>) : seq<Quadword>
     decreases |X|;
-    requires  0 < |X| < 0x1_0000_0000 - 1;
+    requires  0 <= |X| < 0x1_0000_0000 - 1;
     requires KeyReq(key);
     ensures   |AES_GCTR(key, CB, X)| == |X|;
 {
-   if |X| == 1 then
-    [QuadwordXor(X[0], AES_Encrypt(key, ctr_n(CB, 0), AES_128))]
+  if |X| == 0 then
+    []
    else 
-      var rest := AES_GCTR(key, CB, all_but_last(X));
-      rest + [QuadwordXor(X[|X| - 1], AES_Encrypt(key, ctr_n(CB, |X| - 1), AES_128))]
+    var rest := AES_GCTR(key, CB, all_but_last(X));
+    rest + [QuadwordXor(X[|X| - 1], AES_Encrypt(key, ctr_n(CB, |X| - 1), AES_128))]
+}
+
+lemma lemma_AES_GCTR_empty_X_is(key : seq<uint32>, CB : Quadword, X : seq<Quadword>) 
+    requires  |X| == 0;
+    requires KeyReq(key);
+    ensures |AES_GCTR(key, CB, X)| == |X|;
+    ensures AES_GCTR(key, CB, X) == [];
+{
+}
+
+lemma lemma_AES_GCTR_n_is(key : seq<uint32>, CB : Quadword, X : seq<Quadword>) 
+    requires  0 <= |X| < 0x1_0000_0000 - 1;
+    requires KeyReq(key);
+    ensures |AES_GCTR(key, CB, X)| == |X|;
+    ensures forall i : nat :: i < |X| ==> 
+      AES_GCTR(key, CB, X)[i] == QuadwordXor(X[i], AES_Encrypt(key, ctr_n(CB, i), AES_128));
+{
+  if (|X| == 0) {
+    lemma_AES_GCTR_empty_X_is(key, CB, X);
+  } else {
+    lemma_AES_GCTR_n_is(key, CB, all_but_last(X));
+  }
+}
+
+// With an index and a head list recursion, as this looks more like the spec. 
+function AES_GCTR'(n : nat, key : seq<uint32>, CB : Quadword, X : seq<Quadword>) : seq<Quadword>
+    decreases |X|;
+    requires  0 <= n + |X| < 0x1_0000_0000 - 1;
+    requires KeyReq(key);
+    ensures  |AES_GCTR'(n, key, CB, X)| == |X|;
+{
+  if |X| == 0 then
+    []
+   else 
+    [QuadwordXor(X[0], AES_Encrypt(key, ctr_n(CB, n), AES_128))] + 
+    AES_GCTR'(n + 1, key, CB, all_but_first(X))
+}
+
+lemma lemma_AES_GCTR'_empty_X_is(n : nat, key : seq<uint32>, CB : Quadword, X : seq<Quadword>) 
+    requires  |X| == 0;
+    requires  0 <= n + |X| < 0x1_0000_0000 - 1;
+    requires KeyReq(key);
+    ensures |AES_GCTR'(n, key, CB, X)| == |X|;
+    ensures AES_GCTR'(n, key, CB, X) == [];
+{
+}
+
+lemma lemma_AES_GCTR'_n_is(n : nat, key : seq<uint32>, CB : Quadword, X : seq<Quadword>)
+    requires  0 <= n + |X| < 0x1_0000_0000 - 1;
+    requires KeyReq(key);
+    ensures |AES_GCTR'(n, key, CB, X)| == |X|;
+    ensures forall i : nat :: i < |X| ==> 
+      AES_GCTR'(n, key, CB, X)[i] == QuadwordXor(X[i], AES_Encrypt(key, ctr_n(CB, n + i), AES_128));
+    decreases |X|;
+{
+  if (|X| == 0) {
+    lemma_AES_GCTR'_empty_X_is(n, key, CB, X);
+  } else if |X| == 1 {
+     assert AES_GCTR'(n, key, CB, X)[0] == QuadwordXor(X[0], AES_Encrypt(key, ctr_n(CB, n + 0), AES_128));
+  } else {
+    lemma_AES_GCTR'_n_is(n + 1, key, CB, all_but_first(X));
+  }
 }
 
 // Algorithm 4 
+//
 // From 8.3 
 // The  total  number  of  invocations  of  the  authenticated  encryption function shall  not  exceed  
 // 2^32, including all IV lengths and all instances of the authenticated encryption function with 
@@ -155,10 +220,10 @@ predicate LenReq(PorC : seq<Quadword>, A : seq<Quadword>, IV : Quadword) {
 function AES_GCTR_AE(key : seq<uint32>, IV : Quadword, P : seq<Quadword>, A : seq<Quadword>)  :
   (seq<Quadword>, Quadword)
     requires KeyReq(key);
-    requires  0 < |P| < 0x1_0000_0000 - 1;
+    requires 0 <= |P| < 0x1_0000_0000 - 1;
     requires KeyReq(key);
     requires LenReq(P,A,IV);
-    //ensures |AES_GCTR_AE(key, IV, P, A).0| == |P|;
+    ensures  |AES_GCTR_AE(key, IV, P, A).0| == |P|;
 {
     var H := AES_Encrypt(key, Quadword(0, 0, 0, 0), AES_128);
     var J_0 := IV.(lo := 1);        // Consider the top 96 bits of the IV quadword to be the "real" IV
@@ -175,10 +240,10 @@ function AES_GCTR_AE(key : seq<uint32>, IV : Quadword, P : seq<Quadword>, A : se
 
 function AES_GCTR_AD(key : seq<uint32>, IV : Quadword, C : seq<Quadword>, A : seq<Quadword>, T: Quadword) : (seq<Quadword>, bool)
     requires KeyReq(key);
-    requires  0 < |C| < 0x1_0000_0000 - 1;
+    requires 0 <= |C| < 0x1_0000_0000 - 1;
     requires KeyReq(key);
     requires LenReq(C,A,IV);
-    //ensures |AES_GCTR_AD(key, IV, C, A, T).0| == |C|;
+    ensures |AES_GCTR_AD(key, IV, C, A, T).0| == |C|;
 {
     var H := AES_Encrypt(key, Quadword(0, 0, 0, 0), AES_128);
     var J_0 := IV.(lo := 1);        // Consider the top 96 bits of the IV quadword to be the "real" IV
