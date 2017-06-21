@@ -19,21 +19,20 @@ import opened AESModule
 import opened CTRModule
 import opened CTRHelpers
 
-lemma {:timeLimitMultiplier 2} lemma_CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, out_ptr : uint64, mem: Heaplets, n : uint64)
+lemma lemma_CTROutput(g : G, iv_reg : uint64, init_ctr : uint64, out_ptr : uint64, mem : Heaplets)
+  returns (output : seq<Quadword>)
   requires CTR_Encrypt_Req(g.inp, g.key, g.alg);
-  requires |g.inp| == |g.outp|;
-  requires n < |g.inp|;
-  requires n < |g.outp|;
-  requires |g.inp| < 0x1_0000_0000_0000_0000 - 1;
   requires OutWriteable(g.inp, g.out_heap, out_ptr, mem);
-  requires CTR_Encrypt_Upto_Done(g, iv, init_ctr, out_ptr, mem, n);
-  requires |CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)| > n;
-  ensures  |CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)| == |g.outp|;
-  requires CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)[n] == 
-              mem[g.out_heap].quads[out_ptr + n * 16].v;
-  ensures  CTR_Encrypt_Upto_Done(g, iv, init_ctr, out_ptr, mem, n + 1);
+  requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, SeqLength(g.inp)*16)
+  requires CTR_Encrypt_Upto_Done(g, iv_reg, init_ctr, out_ptr, mem, SeqLength(g.inp));
+  ensures  output == CTR_Encrypt(g.inp, g.key, g.alg, iv_reg, init_ctr);
 {
-  lemma_CTR_Encrypt_length'(g.inp, g.key, g.alg, iv, init_ctr);
+  output := CTR_Encrypt(g.inp, g.key, g.alg, iv_reg, init_ctr);
+  lemma_CTR_Encrypt_length(g.inp);
+  assert  forall j : nat :: 0 <= j < |output| ==>
+    output[j] == mem[g.out_heap].quads[out_ptr + j*16].v;
+  assert forall j : nat :: j < |output| ==>
+   CTR_Encrypt(g.inp, g.key, g.alg, iv_reg, init_ctr)[j] == mem[g.out_heap].quads[out_ptr + j * 16].v;
 }
 
 }

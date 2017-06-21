@@ -50,17 +50,7 @@ method {:main} Main(ghost env:HostEnvironment)
 
     var win := (platform_choice == Win);
 
-    // Make available the StdCall version for test from c. 
-
-    printProcPlatform("CTR128Increment64StdCall",
-       va_code_CTR128Increment64StdCall(),
-       0, 24,
-       asm_choice, platform_choice);
-
-    printProcPlatform("CTR128Increment128StdCall",
-       va_code_CTR128Increment128StdCall(),
-      0, 24,
-       asm_choice, platform_choice);
+    // Make available the StdCall version for test from c of two routines plus AES.
 
     printProcPlatform("CTREncryptOneBlockStdCall",
         va_code_CTREncryptOneBlockStdCall(),

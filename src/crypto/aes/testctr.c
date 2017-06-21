@@ -69,7 +69,6 @@
 #include <stdio.h>
 #include <stdint.h> // for uint?_t
 #include <string.h> // for memcmp
-#include <byteswap.h>
 #include "gcc_compat.h"
 
 /* Top level behaviour flags. */
@@ -88,217 +87,11 @@ void print128BitVectorHex(const uint8_t v[16]) {
 
 /* Encryption test cases. */
 
-/* Test the counter generation at each step. 
-  Although the specification calls this input block/output block, we give it sensible names.
-
-   The specification is vague on how to create the counter. It offers multiple techniques and I have
- yet to understand what is done by default. In the sole test examples they are starting with ictr,
- initial counter below and incrementing by one. However, the spec says one could use only the 
- lowest b bits for this incrementing counter. We can't see here what is going on.
-
- https://www.cryptopp.com/wiki/CTR_Mode#Counter_Increment for example uses the entire counter as an
- addition.
-
- Openssl implements a 32 bit CTR for one protocol and 128, 96 and 64 bit counters for AES.
-
- We'll just do a single 128 bit counter to start with a 64 bit lower part incrementing.
-
-*/
-
 const int ctr_tests = 4;
 uint8_t ctr[][16]      = {{0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff },
                           {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xff, 0x00 },
                           {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xff, 0x01 },
                           {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xff, 0x02 }};
-
-void test_alignment_in_memory() {
-  printf("test alignment in memory \n");
-
-  printf("as uint64_t * \n");
-
-  uint64_t *v1 = (((uint64_t*)ctr)+0);
-  *v1 = bswap_64(*v1);
-  printf("%lx \n",*v1);
-
-  uint64_t *v2 = (((uint64_t*)ctr)+1);
-  *v2 = bswap_64(*v2);
-  printf("%lx \n",*v2);
-
-  printf("as uint64_t * after malloc \n");
-  uint64_t *w = (uint64_t *)malloc(sizeof(uint64_t) * 2);
-  w[0] = *v2;
-  w[1] = *v1;
-  printf("high %lx \n",w[1]);
-  printf("low  %lx \n",w[0]);
-
-  printf("as uint64_t [2] on stack \n");
-  uint64_t x[2];
-  x[0] = *v2;
-  x[1] = *v1;
-  printf("high %lx \n",x[1]);
-  printf("low  %lx \n",x[0]);
-
-}
-
-/*
-
- The test vectors from FIPS 800-38A are written in host standard order. We convert them from
-bytes to words with a cast.
-*/
-
-#if __x86_64__
-typedef struct { uint64_t low, hi; } ctr_t; // C will align fields as increasing address.
-
-void print_ctr(ctr_t *ctr) {
-  printf("%lx%lx \n", ctr->hi, ctr->low);
-  //  printf("high %lx \n", ctr->hi);
-  //  printf("low  %lx \n", ctr->low);
-}
-
-ctr_t *make_ctr(uint8_t *v8) {
-  ctr_t *ctr = (ctr_t *) malloc(sizeof(ctr));
-  uint64_t *v64 = (uint64_t*)v8;
-  uint64_t high = bswap_64(*(v64+1)); 
-  uint64_t low  = bswap_64(*(v64+0));
-  ctr->low = high;
-  ctr->hi  = low;
-  return ctr;
-}
-#else
-
-#endif
-
-int test_make_ctr() {
-  printf("\nTest Make Counter \n");
-  for (int i = 0; i < 4; ++i) {
-    printf("make counter ctr %d ",i);
-    print_ctr(make_ctr((uint8_t*) (ctr+i)));
-  }
-}
-
-void __stdcall CTR128Increment64StdCall(const void* input_ptr, void* output_ptr);
-
-int test_counter_increment_64() {
-  printf("\nTest Counter Increment 64\n");
-  int status = 1;
-  for (int i = 0; i < 3; ++i) {
-    ctr_t* before      = make_ctr((uint8_t*)(ctr+i));
-    ctr_t* incremented = (ctr_t *)malloc(sizeof(ctr_t));
-    ctr_t* after       = make_ctr((uint8_t*)(ctr+i+1));
-    CTR128Increment64StdCall(before, incremented);
-    if (memcmp(incremented, after, sizeof(ctr_t)) == 0) {
-      printf("AES128 CTR 64 increment %i succeeded.\n", i);
-    } else {
-      printf("AES128 CTR 64 increment %i failed.\n", i);
-      if (trace == 1) {
-	printf("AES128 CTR 64 before      ");
-	print_ctr(before);
-	printf("AES128 CTR 64 incremented ");	
-	print_ctr(incremented);
-	printf("AES128 CTR 64 should be   ");
-	print_ctr(after);
-      }
-      status = 0;
-    }
-    free(before);
-    free(incremented);
-    free(after);
-  }
-  return status;
-}
-
-void __stdcall CTR128Increment128StdCall(const void* input_ptr, void* output_ptr);
-
-int test_counter_increment_128() {
-  printf("\nTest Counter Increment 128\n");
-  int status = 1;
-  for (int i = 0; i < 3; ++i) {
-    ctr_t* before      = make_ctr((uint8_t*)(ctr+i));
-    ctr_t* incremented = (ctr_t *)malloc(sizeof(ctr_t));
-    ctr_t* after       = make_ctr((uint8_t*)(ctr+i+1));
-    CTR128Increment128StdCall(before, incremented);
-    if (memcmp(incremented, after, sizeof(ctr_t)) == 0) {
-      printf("AES128 CTR 128 increment %i succeeded.\n", i);
-    } else {
-      printf("AES128 CTR 128 increment %i failed.\n", i);
-      if (trace == 1) {
-	printf("AES128 CTR 128 before      ");
-	print_ctr(before); 
-	printf("AES128 CTR 128 incremented ");	
-	print_ctr(incremented); 
-	printf("AES128 CTR 128 should be   ");
-	print_ctr(after);
-      }
-      status = 0;
-    }
-    free(before);
-    free(incremented);
-    free(after);
-  }
-  return status;
-}
-
-/* Test overflow on 128 bit counter. */
-uint8_t ctr_ready_to_overflow[] = {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
-uint8_t ctr_overflowed       [] = {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-
-int test_counter_overflow_64() {
-  ctr_t *tooverflow = make_ctr(ctr_ready_to_overflow);
-  ctr_t *overflowed = (ctr_t *)malloc(sizeof(ctr_t));
-  ctr_t *checkoverflowed = make_ctr(ctr_overflowed);
-  CTR128Increment64StdCall(tooverflow, overflowed);
-  if (memcmp(overflowed, checkoverflowed, sizeof(ctr_t)) == 0) {
-    printf("AES128 CTR 64 overflow succeeded.\n");
-    return 1;
-  } else {
-    printf("AES128 CTR 64 overflow failed.\n");
-    printf("to overflow "); print_ctr(tooverflow); 
-    printf("overflowed  "); print_ctr(overflowed); 
-    return 0;
-  }
-}
-
-int test_counter_overflow_128() {
-  ctr_t *tooverflow = make_ctr(ctr_ready_to_overflow);
-  ctr_t *overflowed = (ctr_t *)malloc(sizeof(ctr_t));
-  ctr_t *checkoverflowed = make_ctr(ctr_overflowed);
-  CTR128Increment128StdCall(tooverflow, overflowed);
-  if (memcmp(overflowed, checkoverflowed, sizeof(ctr_t)) == 0) {
-    printf("AES128 CTR 128 overflow succeeded.\n");
-    return 1;
-  } else {
-    printf("AES128 CTR 128 overflow failed.\n");
-    printf("to overflow "); print_ctr(tooverflow); 
-    printf("overflowed  "); print_ctr(overflowed); 
-    return 0;
-  }
-}
-
-int test_counters_64() {
-  int status = 1;
-  status = status && test_counter_increment_64();
-  status = status && test_counter_overflow_64();
-  if (status == 1) {
-    printf("AES128 CTR 64 counter tests all succeded.\n");
-    return 1;
-  } else {
-    printf("AES128 CTR 64 some counter test failed.\n");
-    return 0;
-  }
-}
-
-int test_counters_128() {
-  int status = 1;
-  status = status && test_counter_increment_128();
-  status = status && test_counter_overflow_128();
-  if (status == 1) {
-    printf("AES128 CTR 128 counter tests all succeded.\n");
-    return 1;
-  } else {
-    printf("AES128 CTR 128  some counter test failed.\n");
-    return 0;
-  }
-}
 
 /* Key */
 const uint8_t k[]    = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };
@@ -403,13 +196,13 @@ int test_encryption_one_block() {
   int status = 1;
   uint8_t expanded_key[176];
   aes_main_i_KeyExpansionStdcall(k, expanded_key);
-  for (int i = 0; i < 1; ++i) {
+  for (int i = 0; i < 4; ++i) {
     uint8_t *output = malloc(sizeof(uint8_t) * 16);
     // WTF? I'm not passing in the counter and this works? ==> ctr is zero?
     // rsi is hanging around from the key expansion, but it works. Why?
     CTREncryptOneBlockStdCall(expanded_key, input_block+i, P+i, output);
     if (memcmp(output, C+i, sizeof(uint8_t) * 16) == 0) {
-      printf("AES128 Encrypt One Block CTR P[%d] succeded.\n\n",i);
+      printf("AES128 Encrypt One Block CTR P[%d] succeded.\n",i);
     } else {
       printf("AES128 Encrypt One Block CTR P[%d] failed.\n", i);
       if (trace == 1) {
@@ -464,8 +257,7 @@ const uint8_t CStream[64]    = { 0x87, 0x4d, 0x61, 0x91, 0xb6, 0x20, 0xe3, 0x26,
                                  0x5a, 0xe4, 0xdf, 0x3e, 0xdb, 0xd5, 0xd3, 0x5e, 0x5b, 0x4f, 0x09, 0x02, 0x0d, 0xb0, 0x3e, 0xab,
                                  0x1e, 0x03, 0x1d, 0xda, 0x2f, 0xbe, 0x03, 0xd1, 0x79, 0x21, 0x70, 0xa0, 0xf3, 0x00, 0x9c, 0xee};
 
-// This is a bad test case in that it has no final truncated block.
-
+// This is a weak test case in that it has no final truncated block.
 
 void print_stream(const uint8_t stream[64]) {
   for (int i = 0; i < 64; ++i) {
@@ -489,7 +281,6 @@ void __stdcall CTR128EncryptStdcall(
 
 int test_encrypt_stream() {
   printf("\nTest AES Encrypt Stream \n");
-  int status = 1;
 
   uint8_t expanded_key[176];
   aes_main_i_KeyExpansionStdcall(k, expanded_key);
@@ -525,12 +316,11 @@ int test_encrypt_stream() {
     return 0;
   }
 
-  return status;
+  return 1;
 }
 
 int test_decrypt_stream() {
   printf("\nTest AES Decrypt Stream \n");
-  int status = 1;
 
   uint8_t expanded_key[176];
   aes_main_i_KeyExpansionStdcall(k, expanded_key);
@@ -567,42 +357,22 @@ int test_decrypt_stream() {
     print_stream(CStream);printf("\n");
     return 0;
   }
-
+  return 1;
 }
 
-int test_encryption() {
-  int b1 = test_encryption_one_block();
-  int stream = test_encrypt_stream();
-
-  return (b1 == 1) && (stream == 1);
+void test_encryption() {
+  test_encryption_one_block();
+  test_encrypt_stream();
 }
 
-int test_decryption() {
-  int b1     = test_decryption_one_block();
-  int stream = test_decrypt_stream();
-
-  return (b1 == 1) && (stream == 1);
+void test_decryption() {
+  test_decryption_one_block();
+  test_decrypt_stream();
 }
 
 int __cdecl main(void) {
-  //  test_alignment_in_memory();
-  //test_make_ctr();
-  //  int tc64 = test_counters_64();
-  //  int tc128 = test_counters_128();
-  //  int tk = test_key_aes_encryption();
-  int te = test_encryption();
-  int td = test_decryption();
-  //int status = (tk == 1 && tc64 == 1 && tc128 == 1 && te == 1 && td == 1);
-  int status = 0;
-
-  if (status == 1) {
-    printf("AES128 CTR all tests succeded.\n");
-    return 0; // give back a return code, not a boolean.
-  } else {
-    printf("AES128 CTR some test failed.\n");
-    return 1;
-  }
+  printf("AES128 CTR running tests.\n");
+  test_encryption();
+  test_decryption();
+  printf("\nAES128 CTR all tests run.\n");
 }
-
-
-

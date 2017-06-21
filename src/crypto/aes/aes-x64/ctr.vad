@@ -1,10 +1,3 @@
-// TOOD
-// Minimize registers as ghosts.
-// init_ctr can go ghost
-// iv_reg   can go ghost
-// key_ptr  could after a setup of expanded key
-// Clense exactly where I should and no more.
-
 /*
 
         AES CTR mode
@@ -24,8 +17,10 @@
     Dworkin
 
  This one is high bit 64 bits of initialization vector and a low
- 64 bits of a counter.
+ 64 bits of a counter. But does have test vectors which we call
+ in testctr.c.
  
+
 	Table of Contents
 
  1.	Introduction
@@ -33,7 +28,11 @@
  3.	CTREncryptOneBlockStdCall
  4.	CTR128Increment64StdCall
  6.	CTR128Increment128Reg
- 7.	CTR128Increment128StdCall
+ 7.	CTR128EncryptStart
+ 8.	CTR128SetupCTR
+ 9.	CTR128CleanReg
+ 10.	CTR128EncryptReg
+ 11.	CTR128EncryptStdcall
 
 */
 
@@ -47,7 +46,7 @@
 
   a) Calling Conventions - see testctr.c but basically we're working on two conventions
      but only bothering to build x64 software at the moment. So you get STD Call conventions
-     on Linux. See CTREncryptOneBlockStdCall for details.
+     on Linux. 
 
   b) Test Code - there is no default test harness (c unit or such). See testctr.c
    in everest/vale/src/crypto/aes/. 
@@ -55,9 +54,8 @@
   c) Building - the test code is your default product to build. 
     cd ~/everest/vale; time scons obj/testctr.exe; obj/testctr.exe
 
-  d) emacs - SCons is set up to build into the obj tree, so you don't have
-     compilation error following. As most of your errors are from Danfy or
-     Z3 anyway, it's not that useful.
+  d) emacs - tags is available and compilation error following almost works with
+      .emacs code from me. 
 
   e) Instructions
 
@@ -70,7 +68,6 @@
     MOVHLPS(inout operand dst:Quadword, operand src:Quadword)
     MOVLHPS(inout operand dst:Quadword, operand src:Quadword)
 
-    It is still unclear to me why add64 with a constant operand would not work.
     The moves are mostly MOVQ but it zeros the top of 128 bit registers.
     We want to be able to use 128 bit registers encrypted with the ctr (iv + int)
     to xor with plain or cypher text.
@@ -86,21 +83,23 @@
    zero the uper 64 bits (for pipeline efficiency) and the obvious MOVQ is not
    allowed to go XMM register to XMM register.
 
- f) In order to validate the assembler routines you are passing in and out
-   ghost variables that you use in specifications.
-
- g) File structure - 
+ f) File structure - 
      crypto/aes/aes-x64/ctr.vad    - The assembly code.
      crypto/aes/ctr.s.dfy          - Functional specifications using dfy.
      crypto/aes/ctr_helpers.i.dfy  - Predicates that wrap up the functional specs
-     crypto/aes/ctr_clean.s.dfy    - An attempt to make clean specifcations about
-                                     data in use.
 
- h) Memory Model - TBD
+ g) :refined and :bridge are extremely dangerous and necessary while vale runs on Dafny.
+  They speed up instruction proof but TOTALLY BREAK operand binding, forcing you to go
+  back to register naming. 
+ 
+ h) I often work on dafny theorems in a separate file included only here called proof.dfny.
+    This improves separate compilation time.
 
  i) GCC assembly -
     The file ends up in obj/ctr-linux.S and remember the dst vs src argument order
      is sanely src -> dst, unlike the intel stuff.
+    One can generate the C code's assembly to look at the calling conventions but
+      must turn off O2.
 
  j) Good documents:
      https://software.intel.com/sites/default/files/managed/39/c5/325462-sdm-vol-1-2abcd-3abcd.pdf
@@ -118,6 +117,35 @@
     the memory model. If so then you can "ensure false;" I test for this by putting in
     an "ensures false;".
  
+ l) We also have 'assume' so one can assume a theorem statement and then prove based on this.
+
+ m) Vale/Dafny.../Z3 is not necessarily proving lemmas in order in that the addition of following
+   lemmas may increase what Z3 gets and cause it to time out on a previous lemma.x
+
+ n) Binding is in general really weak in Vale's design. It's not just that :refined breaks things.
+   The binding from require, requires/ensures and ensures are ALL different. And they don't
+   have scope over the body either. In practice you need to get them bound to a register or
+   constrain the complete graph of inequalities of your registers or Vale can't prove that
+   writing RLedZeppelin is not going to modify RRollingStones.
+
+   To work around these problems, I define two binding predicates and constrain the operator names.
+  Ugly but effective.
+
+   Another problem is that the reads/modifies clauses are literal register names. Very ugly.
+
+ o) This file will take about five minutes of Z3 time on a pretty standard workstation ala
+   2017. This is because Vale/Dafny/Boogie/Z3 has produced bloated files of Z3 clauses. In
+   this case up to 200 MB of memory is used. Clause size and control are dramatically reduced
+   in Vale/F* and so refined can go away for example.
+
+ p) I built a ghost g: G datatype to carry my specifications without lots of arguments. However,
+   one can not really put the output vector in this. I was hoping that I could simply add
+   specifications to g.output and that would be sufficient. However, Vale requires that I'm
+   not modifying the structure of this with assignments like g.outp := (g.out[6] := 9).
+
+   So one really has to use return (ghost output : Seq<>) and even write lemmas that
+   do the assignment.
+
 */
 
 
@@ -133,7 +161,7 @@ include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
 include "aes.vad"
 include{:verbatim} "ctr_helpers.i.dfy"
 include{:verbatim} "../ctr.s.dfy" 
-include{:verbatim} "proof.dfy"
+include{:verbatim} "proof.dfy" 
 
 #verbatim
 module CTR {
@@ -169,7 +197,6 @@ import opened proof
 
 */
 
-/*
 procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
    ghost key:seq(uint32), 
    ghost w:seq(uint32),
@@ -217,26 +244,6 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
 
      // The memory is written only on the output heap.
      mem == old(mem)[out_heap_id := mem[out_heap_id]];
-
-    // The rest of the output heap is unchanged. 
-    // Warning about mem64 can only be applied to Heaplet64 objects.
-    // Bryan question.
-    // The rest of the output heap is unchanged.
-    //    forall a :: (a < out_ptr || a >= out_ptr + 128) && 
-    //      old(mem)[out_heap_id].mem64?[a] ==>  mem[out_heap_id].mem64?[a] && 
-    //      mem[out_heap_id].mem64[a] == old(mem)[out_heap_id].mem64[a];
-
-    // No way this is right.
-    // InputMatchesMemory(input,   mem[in_heap_id], ?);
-    // InputMatchesMemory(counter, mem[ctr_heap_id], ?);
-    //CTR_Encrypt_One_Block_Final(key,
-    //                            input,
-    //                            counter,
-    //                          alg,
-    //                            mem,
-    //                           output_heap_id,
-    //                           rcx,
-    //                            output);
 {
      Load128(xmm0, rsi, 0, Public, ctr_heap_id);                 // Load the counter into xmm0.
      Mov64(r8, rdi);                                             // key in r8, 16 byte aligned.
@@ -244,267 +251,15 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
      Load128(xmm1, rdx,  0, Secret, in_heap_id);                 // Load the block of plaintext.
      Pxor(xmm0, xmm1);                                           // Xor the encrypted counter with the plaintext.
      Store128(rcx, xmm0, 0, Public, out_heap_id);                // Store the cyphertext.
-
-  // Clean up state.
-  Xor64(rdx,rdx);
-  Xor64(rdi,rdi);
-  Pxor(xmm0, xmm0);
-  Pxor(xmm1, xmm1);
 }
-*/
 
 // Decryption uses the same routine as we just xor again but the taints are different.
 
 /*
 
-        4. CTR128Increment64StdCall
-
-   Do a 128 bit input/output but don't keep a 128 bit value in memory.
- In this case, read the int part of the counter, increment it, put it back in
- an output counter. Then copy over the IV part.
-
- Made for a C test case and learning.
+	4.	CTR128Increment128
 
 */
-
-/*
-procedure {:refined} CTR128Increment64StdCall(
-   ghost  in_ctr_heap_id: heaplet_id,
-   ghost  out_ctr_heap_id: heaplet_id
-)
-// Does this need a ghost output? Nah it's just test.
-
-   modifies
-        mem; efl; rdi; rsi; rdx;
-
-   requires
-     let in_ctr_ptr  := rdi;
-     let out_ctr_ptr := rsi;
-     ValidSrcAddr(mem,  in_ctr_heap_id, in_ctr_ptr, 64, Public);
-     ValidSrcAddr(mem,  in_ctr_heap_id, in_ctr_ptr + 8, 64, Public);
-     ValidDstAddr(mem, out_ctr_heap_id, out_ctr_ptr, 64);
-     ValidDstAddr(mem, out_ctr_heap_id, out_ctr_ptr + 8, 64);
-     in_ctr_ptr % 8 == 0;
-     out_ctr_ptr % 8 == 0;
-     in_ctr_heap_id != out_ctr_heap_id;
-
-   ensures
-     let in_ctr_ptr  := old(rdi);
-     let out_ctr_ptr := old(rsi);
-
-     // What properties do I want to prove?
-
-     // I have not touched the stack as it is not in the modifies.
-     // I have not changed the input. 
-     // Implied by not changing the heaplet.
-     //ValidSrcAddr(mem,  in_ctr_heap_id, in_ctr_ptr, 64, Public);
-     //ValidSrcAddr(mem,  in_ctr_heap_id, in_ctr_ptr + 8, 64, Public);
-     // I have valid output addresses, Src => Dst.
-//     ValidSrcAddr(mem, out_ctr_heap_id, out_ctr_ptr, 64, Public);
-//     ValidSrcAddr(mem, out_ctr_heap_id, out_ctr_ptr + 8, 64, Public);
-
-    // 2 64 byte stretches are the only things changed.
-//    Mem64ChangedOnlyIn(out_ctr_ptr, 2, out_ctr_heap_id, mem, old(mem));
-
-     // High half of the output is the low half of the input.
-//    mem[out_ctr_heap_id].mem64[out_ctr_ptr+8].t == old(mem)[in_ctr_heap_id].mem64[in_ctr_ptr+8].t;
-
-    // High half of the output is the high half of the input + 1 mod 2^64.
-//    mem[out_ctr_heap_id].mem64[out_ctr_ptr].v ==
-//    BitwiseAdd64(old(mem)[in_ctr_heap_id].mem64[in_ctr_ptr].v, 1);
-
-{
-    ghost var in_ctr_ptr  := rdi;
-    ghost var out_ctr_ptr := rsi;
- 
-    // Grab the counter low bits, add 1, store it.
-    Load64 (rdx, rdi, 0, Public, in_ctr_heap_id);
-    //Add64(rdx, 1); // Why will this not work?
-    incr64 (rdx); 
-    Store64(rsi, rdx, 0, Public, out_ctr_heap_id);
-
-    // Grab the counter high bits, the IV, and store it.
-    Load64 (rdx, rdi, 8, Public, in_ctr_heap_id);
-    Store64(rsi, rdx, 8, Public, out_ctr_heap_id);
-
-    // Clean up state.
-    Xor64(rdi,rdi);
-    Xor64(rsi,rsi);
-    Xor64(rdx,rdx);
- }
-*/
-
-
-/*
-	6. CTR128Increment128Reg
-
-  This is the version that we really want: a no expense virtual function call
-  to take an IV+Int counter in a 128 bit register and increment just the 64 bit
-  int.
-
-*/
-
-/*
-procedure {:refined} CTR128Increment128Reg(
-   ghost  counter         : Quadword,
-   inout  operand temp64  : uint64
-)
-returns (
-  ghost incrcounter : Quadword
-)
-   requires
-     CtrInReg(counter, xmm0);
-
-   modifies
-        efl; xmm0; xmm1;
-
-   ensures
-   IncrCtrInReg(counter, incrcounter, xmm0);
-{
-      MovLow64To64(temp64, xmm0);  // Grab counter half.
-      MOVHLPS(xmm1, xmm0);         // Save IV half in temp128.
-      incr64(temp64);
-      MovLow64To128(xmm0, temp64); // But zeros top bytes.
-      MOVLHPS(xmm0, xmm1);         // Put back the IV.
-
-      Xor64(temp64, temp64);       // Clean up.
-      Pxor(xmm1, xmm1); 
-      incrcounter := xmm0;         // Specify what the results mean.
-}
-*/
-
-/*
-         7.	CTR128Increment128StdCall
-
-  Call increment with correctly aligned 128 bit values in memory.
-  Put them in a register, call the no overhead vale routine that is
-  just going to be expaned inline.
-
-  You end up with something like this:
-
-CTR128Increment64StdCall:
-  movq 0 (%rdi), %rdx
-  add $1, %rdx
-  movq %rdx, 0 (%rsi)
-  movq 8 (%rdi), %rdx
-  movq %rdx, 8 (%rsi)
-  xor %rdi, %rdi
-  xor %rsi, %rsi
-  xor %rdx, %rdx
-  ret 
-
-*/
-
-// The 128 bit standard call that sets up the 128 bit register of this.
-
-/*
-procedure {:refined} CTR128Increment128StdCall(
-   ghost  counter : Quadword, 
-   ghost  in_ctr_heap_id: heaplet_id,
-   ghost  out_ctr_heap_id: heaplet_id
-)
-returns (
-  ghost incrcounter : Quadword
-)
-
-   modifies
-        mem; efl; rdi; rsi; rdx; xmm0; xmm1;
-
-   requires
-     let in_ctr_ptr  := rdi;
-     let out_ctr_ptr := rsi;
-   
-   //  I have a counter in memory.
-   CtrInMem(counter, rdi, in_ctr_heap_id, mem);
-   // And a place two write out when incremented.
-   ValidDstAddr(mem, out_ctr_heap_id, out_ctr_ptr, 128);
-
-   in_ctr_heap_id != out_ctr_heap_id;
-
-   ensures
-     let in_ctr_ptr  := old(rdi);
-     let out_ctr_ptr := old(rsi);
-    // I am only changing 1 quad word.
-     Mem128ChangedOnlyIn(out_ctr_ptr, 1, out_ctr_heap_id, mem, old(mem));
-    // And I placed the incremented counter in it.
-    CtrInMem(incrcounter, rsi, out_ctr_heap_id, mem);
-{
-      Load128(xmm0, rdi, 0, Public, in_ctr_heap_id);
-      assert counter == xmm0;
-      incrcounter := CTR128Increment128Reg(counter, rdx);
-      Store128(rsi, xmm0, 0, Public, out_ctr_heap_id);
-}
-
-*/
-
-// Dummy version.
-//procedure {:refined} CTR128Increment128StdCall(
-//   ghost  counter : Quadword, 
-//   ghost  in_ctr_heap_id: heaplet_id,
-//   ghost  out_ctr_heap_id: heaplet_id
-//)
-//returns (
-//  ghost incrcounter : Quadword
-//)
-//{
-//}
-
-/*
-         8.	CTR128Increment128StdCall
-
- A single routine version that does not give us a modular way to call
-to increment a counter.
-
- The 128 bit standard call that sets up the 128 bit register of this.
-*/
-
-/*
-procedure {:refined} CTR128Increment128StdCall(
-   ghost  counter : Quadword, 
-   ghost  in_ctr_heap_id: heaplet_id,
-   ghost  out_ctr_heap_id: heaplet_id
-)
-returns (
-  ghost incrcounter : Quadword
-)
-
-   modifies
-        mem; efl; rdi; rsi; rdx; xmm0; xmm1;
-
-   requires
-     let in_ctr_ptr  := rdi;
-     let out_ctr_ptr := rsi;
-   
-   //  I have a counter in memory.
-   CtrInMem(counter, rdi, in_ctr_heap_id, mem);
-   // And a place two write out when incremented.
-   ValidDstAddr(mem, out_ctr_heap_id, out_ctr_ptr, 128);
-
-   in_ctr_heap_id != out_ctr_heap_id;
-
-   ensures
-     let in_ctr_ptr  := old(rdi);
-     let out_ctr_ptr := old(rsi);
-     // I am only changing 1 quad word.
-     Mem128ChangedOnlyIn(out_ctr_ptr, 1, out_ctr_heap_id, mem, old(mem));
-     // And I placed the incremented counter in it.
-     CtrInMem(incrcounter, rsi, out_ctr_heap_id, mem);
-{
-      Load128(xmm0, rdi, 0, Public, in_ctr_heap_id);
-      assert counter == xmm0;
-      MovLow64To64(rdx, xmm0);  // Grab counter half.
-      MOVHLPS(xmm1, xmm0);      // Save IV half in temp128.
-      incr64(rdx);
-      MovLow64To128(xmm0, rdx); // But zeros top bytes.
-      MOVLHPS(xmm0, xmm1);      // Put back the IV.
-      Xor64(rdx, rdx);          // Clean up.
-      Pxor(xmm1,xmm1);
-      incrcounter := xmm0;
-      Store128(rsi, xmm0, 0, Public, out_ctr_heap_id); // Put it back.
-}
-*/
-
-// Old test stuff above this. 
 
 procedure {:refined} CTR128Increment128(ghost g : G, ghost blocktobecopied : nat)
 
@@ -526,12 +281,16 @@ procedure {:refined} CTR128Increment128(ghost g : G, ghost blocktobecopied : nat
       BSwap64(r14);             
       MovLow64To128(xmm5, r14); // Put it in an xmm5 so we can move it to the high bits.
       MOVLHPS(xmm4, xmm5);      // Put back the ctr, iv untouched.
-
-      Xor64(r14,r14);           // Clean up.
-      Pxor(xmm5,xmm5);
 }
 
+/*
+
+	5.	CTR128EncryptCopy
+
+*/
+
 // Can't use operands, instructions are refined.
+
 procedure {:refined} {:bridge} {:timeLimitMultiplier 7}
     CTR128EncryptCopy(ghost g         : G,
                       ghost blocktobecopied : nat)
@@ -583,10 +342,15 @@ procedure {:refined} {:bridge} {:timeLimitMultiplier 7}
      lemma_CTR_Encrypt_Upto_Done(g, rdx, r12, r9, mem, blocktobecopied);
 
      CTR128Increment128(g, blocktobecopied);
-     Pxor(xmm0,xmm0); // Clean up encrypted counter.
      Add64(r10, 16);
      Add64(r11, 16);
 }
+
+/*
+	
+	6.	CTR128EncryptLoop
+
+*/
 
 procedure {:timeLimitMultiplier 3} CTR128EncryptLoop(ghost g   : G,
                             operand key_ptr : uint64,
@@ -647,7 +411,13 @@ procedure {:timeLimitMultiplier 3} CTR128EncryptLoop(ghost g   : G,
     }
 }
 
-// Everything is in a register, the CTR is built in xmm4.
+/*
+
+	7.	CTR128EncryptStart
+
+ Everything is in a register, the CTR is built in xmm4.
+*/
+
 procedure CTR128EncryptStart(ghost g   : G,
                             operand key_ptr : uint64,
                             operand exp_key_ptr : uint64,
@@ -657,7 +427,8 @@ procedure CTR128EncryptStart(ghost g   : G,
                             operand out_ptr : uint64,
                             inout operand iv_ctr : Quadword,
                             operand init_ctr : uint64,
-                            inout operand ctr : uint64)
+                            inout operand ctr : uint64) 
+                     returns (ghost output : seq(Quadword))
     reads    rdi; rsi; rdx; rcx; r8; r9; r12;
     modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r13; r14;
 
@@ -672,15 +443,23 @@ procedure CTR128EncryptStart(ghost g   : G,
      CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, iv_ctr, ctr, mem, old(mem));
      InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr, iv_ctr, key_ptr, mem, SeqLength(g.inp));
      CTR_Encrypt_Upto_Done(g, iv_reg, init_ctr, out_ptr, mem, SeqLength(g.inp));
+     output == CTR_Encrypt(g.inp, g.key, g.alg, iv_reg, init_ctr);
 {
     // Set up a curr and out ptrs.
     Mov64(r10, rcx);
     Mov64(r11, r9);
     assert CopyInvBefore(g, inp_ptr, inp_end_ptr, r10, out_ptr, r11, iv_reg, init_ctr, iv_ctr, ctr, key_ptr, mem, 0);
     CTR128EncryptLoop(g, key_ptr, exp_key_ptr, iv_reg, inp_ptr, inp_end_ptr, out_ptr, iv_ctr, init_ctr, ctr, r10, r11);
+    output := lemma_CTROutput(g, iv_reg, init_ctr, out_ptr, mem);
 }
 
-procedure {:refined} {:bridge} CTR128SetupCTR(ghost g : G)
+/*
+
+		8.	CTR128SetupCTR
+
+*/
+
+procedure {:refined } {:bridge} CTR128SetupCTR(ghost g : G)
   reads    rdi; rsi; rdx; rcx; r8; r9; r12; mem;
   modifies efl; xmm4; xmm5; r13; r14;
 
@@ -702,10 +481,36 @@ procedure {:refined} {:bridge} CTR128SetupCTR(ghost g : G)
     BSwap64(r14);             // Make it little endian just for xor.
     MovLow64To128(xmm5, r14); // Put the ctr in low xmm5.
     MOVLHPS(xmm4, xmm5);      // Put back into the top of xmm4.
-
-    Pxor(xmm5,xmm5);          // Clean up.
-    Xor64(r14,r14);           // Clean up temp.
 }
+
+/*
+
+		9.	CTR128CleanReg
+
+   Clean out any state that might break taint analysis.
+*/
+
+procedure {:refined} {:bridge}  CTR128CleanReg()
+  modifies efl; xmm0; xmm4; xmm5; rdi; rdx; r12; r14;
+{
+  // Clean up once at the end.
+  Pxor(xmm0,xmm0); // encrypted counter
+  Pxor(xmm4,xmm4); // iv_ctr
+  Pxor(xmm5,xmm5); // tmp
+  Xor64(rdi, rdi); // key
+  Xor64(rdx, rdx); // ctr
+  Xor64(r12,r12);  // init_ctr.
+  Xor64(r14,r14);  // ctr
+}
+
+
+/*
+
+		10.	 CTR128EncryptReg
+
+   If you call from assembly, call here. 
+
+*/
 
 procedure CTR128EncryptReg(ghost g : G,
                            operand key_ptr : uint64,
@@ -717,8 +522,10 @@ procedure CTR128EncryptReg(ghost g : G,
                            inout operand iv_ctr : Quadword,
                            operand init_ctr : uint64,
                            inout operand ctr : uint64)
-    reads    rdi; rsi; rdx; rcx; r8; r9; r12;
-    modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r13; r14;
+                  returns (ghost output : seq(Quadword))
+
+    reads    rsi; rdx; rcx; r8; r9; 
+    modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r12; r13; r14; rdi; rdx;
 
     requires
       BindRegsPhy1(@key_ptr, @exp_key_ptr, @iv_reg, @inp_ptr, @inp_end_ptr, @out_ptr, @iv_ctr, @init_ctr, @ctr);
@@ -729,20 +536,27 @@ procedure CTR128EncryptReg(ghost g : G,
       CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, iv_ctr, ctr, mem, old(mem));
       InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr, iv_ctr, key_ptr, mem, SeqLength(g.inp));
       CTR_Encrypt_Upto_Done(g, iv_reg, init_ctr, out_ptr, mem, SeqLength(g.inp));
+      output == CTR_Encrypt(g.inp, g.key, g.alg, iv_reg, init_ctr);
 {
    CTR128SetupCTR(g);
    assert CtrInvBefore(iv_reg, iv_ctr, init_ctr, ctr, 0);
    assert CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, iv_ctr, ctr, mem, old(mem));
-   CTR128EncryptStart(g, key_ptr, exp_key_ptr, iv_reg, inp_ptr, inp_end_ptr, out_ptr, iv_ctr, init_ctr, ctr);
+   output := CTR128EncryptStart(g, key_ptr, exp_key_ptr, iv_reg, inp_ptr, inp_end_ptr, out_ptr, iv_ctr, init_ctr, ctr);
 }
 
-// Linux only calling sequence so far, just in case I need to pass more arguments and hit the stack.
-// Plus windows may shuffle registers and so on.
-procedure CTR128EncryptStdcall(ghost g : G)
-    reads    rdi; rsi; rdx; rcx; r8; r9;  stack;
-    modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r12; r13; r14;
+/*
+		11.	CTR128EncryptStdcall
 
-   requires/ensures
+   If you call from C, call here.  See testctr.c for the calling conventions linked.
+
+   Linux only calling sequence so far.
+*/
+
+procedure CTR128EncryptStdcall(ghost g : G) returns (ghost output : seq(Quadword))
+    reads    rsi; rcx; r8; r9;  stack;
+    modifies mem; efl; xmm0; xmm1; xmm2; xmm4; xmm5; r10; r11; r12; r13; r14; rdi; rdx;
+
+   requires
     let key_ptr := rdi; let exp_key_ptr := r8; let iv_reg := rdx; 
     let inp_ptr := rcx; let inp_end_ptr := rsi; let out_ptr := r9; let iv_ctr := xmm4; 
     let ctr := r14;
@@ -750,16 +564,19 @@ procedure CTR128EncryptStdcall(ghost g : G)
     HasStackSlot(stack,0);
     HasStackSlot(stack,1);
 
-   ensures
-    let key_ptr := rdi; let exp_key_ptr := r8;  let iv_reg := rdx; 
-    let inp_ptr := rcx; let inp_end_ptr := rsi; let out_ptr := r9; let iv_ctr := xmm4;
-    let init_ctr := r12; let ctr := r14;
-    CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, iv_ctr, ctr, mem, old(mem));
-    InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr, iv_ctr, key_ptr, mem, SeqLength(g.inp));
-    CTR_Encrypt_Upto_Done(g, iv_reg, init_ctr, out_ptr, mem, SeqLength(g.inp));
 {
   LoadStack64(r12, 0);  // Get the initial counter from the stack.
-  CTR128EncryptReg(g, rdi, r8, rdx, rcx, rsi, r9, xmm4, r12, r13);
+  output :=  CTR128EncryptReg(g, rdi, r8, rdx, rcx, rsi, r9, xmm4, r12, r13);
+
+  ghost var key_ptr := rdi; ghost var exp_key_ptr := r8;  ghost var iv_reg := rdx; 
+  ghost var inp_ptr := rcx; ghost var inp_end_ptr := rsi; ghost var out_ptr := r9; ghost var iv_ctr := xmm4;
+  ghost var init_ctr := r12; ghost var ctr := r14;
+  // Have to assert these down here as we are cleaning out secret state.
+  assert CTRInv(g, key_ptr, exp_key_ptr, inp_ptr, inp_end_ptr, out_ptr, iv_reg, iv_ctr, ctr, mem, old(mem));
+  assert InputInOutputMem(g, out_ptr, iv_reg, init_ctr, ctr, iv_ctr, key_ptr, mem, SeqLength(g.inp));
+  assert CTR_Encrypt_Upto_Done(g, iv_reg, init_ctr, out_ptr, mem, SeqLength(g.inp));
+  assert output == CTR_Encrypt(g.inp, g.key, g.alg, iv_reg, init_ctr);
+  CTR128CleanReg();
 }
 
 // Dummy so validation always runs when I'm not calling all of the procedures.

@@ -28,8 +28,7 @@ datatype G = G(ghost key : seq<uint32>,
                ghost inp :seq<Quadword>,
                ghost inp_heap : heaplet_id,
                ghost out_heap : heaplet_id,
-               ghost alg: Algorithm,
-               ghost outp : seq<Quadword>)
+               ghost alg: Algorithm)
 
 // Bind the registers, passed as operators, to a physical register.
 predicate BindRegsPhy1(key_ptr : operand, exp_key_ptr : operand, iv_reg : operand, inp_ptr : operand, inp_end_ptr : operand,  out_ptr : operand, iv_ctr : operand, init_ctr : operand, ctr : operand) {
@@ -55,42 +54,10 @@ predicate BindRegsPhy1Curr(key_ptr : operand, exp_key_ptr : operand, iv_reg : op
 }
 
 // Memory
-predicate Mem128ChangedOnlyIn(regptr : uint64, count : int, heap : heaplet_id, mem : Heaplets, oldmem: Heaplets)
-{
-    heap in mem &&
-    mem == oldmem[heap := mem[heap]] &&
-    mem[heap].QuadwordHeaplet? &&
-    heap in oldmem &&
-    oldmem[heap].QuadwordHeaplet? &&
-    forall a :: (a < regptr || a >= regptr + count * 16) &&
-     a in mem[heap].quads ==> a in oldmem[heap].quads &&
-     mem[heap].quads[a] == oldmem[heap].quads[a]
-}
-
-predicate Mem64ChangedOnlyIn(regptr : uint64, count : int, heap : heaplet_id, mem : Heaplets, oldmem: Heaplets)
-{
-    heap in mem &&
-    mem == oldmem[heap := mem[heap]] &&
-    mem[heap].Heaplet64? &&
-    heap in oldmem &&
-    oldmem[heap].Heaplet64? &&
-    forall a :: (a < regptr || a >= regptr + count * 8) &&
-     a in mem[heap].mem64 ==> a in oldmem[heap].mem64 &&
-     mem[heap].mem64[a] == oldmem[heap].mem64[a]
-}
-
 predicate QuadwordSeqInMemory(qws : seq<Quadword>, mem: Heaplet, ptr : uint64) 
   requires mem.QuadwordHeaplet?
 {
     forall b:int :: 0 <= b < |qws| ==> ptr + b*16 in mem.quads && mem.quads[ptr + b*16].v == qws[b]  
-}
-
-// TODO obviate 
-predicate CtrInMem(ctr : Quadword, regptr : uint64, heap : heaplet_id, mem : Heaplets) { 
-  // That register's value points to a readable source addresss in that heap with public taint.
-  ValidSrcAddr(mem, heap, regptr, 128, Public) &&
-  mem[heap].QuadwordHeaplet? &&
-  ctr == mem[heap].quads[regptr].v
 }
 
 lemma lemma_BitwiseAdd64()
@@ -118,41 +85,6 @@ predicate CtrIncrN(newc : Quadword, init_ctr : uint64, n : nat)
   newc.mid_hi  == lower64(bswap64(BitwiseAdd64(init_ctr, n)))
 }
 
-/*
-lemma lemma_BitwiseAdd64PlusOne(init_ctr : uint64, n : uint64)
-  requires n + 1 < 0x1_0000_0000_0000_0000;
-  ensures BitwiseAdd64(init_ctr, n + 1) ==  BitwiseAdd64(BitwiseAdd64(init_ctr, n), 1);
-{
-  lemma_BitwiseAdd64();
-  reveal_BitwiseAdd64();
-}
-
-lemma lemma_BitwiseAdd64BSwap64PlusOne(init_ctr : uint64, n : uint64)
-  requires n + 1 < 0x1_0000_0000_0000_0000;
-  ensures BitwiseAdd64(bswap64(init_ctr), n + 1) ==  BitwiseAdd64(BitwiseAdd64(bswap64(init_ctr), n), 1);
-{
-  reveal_BitwiseAdd64();
-  reveal_BytesToDoubleWord();
-  reveal_Uint64ToBytes();
-  lemma_BitwiseAdd64();
-  lemma_BitwiseAdd64PlusOne(bswap64(init_ctr), n);
-}
-
-lemma {:timeLimitMultiplier 3} lemma_CtrIncrNTrans(old_ctr : Quadword, new_ctr: Quadword, init_ctr : uint64, n : nat)
-  requires n + 1 < 1_0000_0000_0000_0000;
-  requires CtrIncrN(old_ctr, init_ctr, n);
-  requires CtrIncr (old_ctr,  new_ctr);
-  ensures  CtrIncrN(new_ctr, init_ctr, n + 1);
-{
-  lemma_BitwiseAdd64();
-  reveal_BitwiseAdd64();
-  reveal_upper64();
-  reveal_lower64();
-  reveal_lowerUpper64();
-  reveal_BytesToDoubleWord();
-  reveal_Uint64ToBytes();
-}
-*/
 
 predicate AlgReq(g : G, key_ptr : uint64) {
   g.alg == AES_128 &&
@@ -201,7 +133,6 @@ predicate ExpKeyReq(g : G, key_ptr : uint64, exp_key_ptr : uint64, mem : Heaplet
 }
 
 predicate InpInMem(g : G, inp_ptr : uint64, inp_end_ptr : uint64, mem : Heaplets) {
-  // TODO - 1 weakens the length of sequence.
   0 < SeqLength(g.inp) < 1_0000_0000_0000_0000 - 1 &&
   ValidSrcAddrs(mem, g.inp_heap, inp_ptr, 128, Secret, SeqLength(g.inp)*16) &&
   QuadwordSeqInMemory(g.inp, mem[g.inp_heap], inp_ptr)
@@ -237,9 +168,9 @@ predicate CTRInvInit(g : G,
         InpInMem(g, inp_ptr, inp_end_ptr, mem) &&
         OutWriteable(g.inp, g.out_heap, out_ptr, mem) &&
         InpOutInvariants(g.inp, inp_ptr, inp_end_ptr, out_ptr) &&
-        |g.inp| == |g.outp| &&
+//        |g.inp| == |g.outp| &&
         0 <= |g.inp|  < 0x1_0000_0000_0000_0000 - 1 &&
-        0 <= |g.outp| < 0x1_0000_0000_0000_0000 - 1 &&
+//      0 <= |g.outp| < 0x1_0000_0000_0000_0000 - 1 &&
         mem == old_mem[g.out_heap := mem[g.out_heap]]
 }
 
@@ -293,9 +224,9 @@ predicate CopyInvAlways(g : G,
                   out_ptr : uint64, curr_out_ptr : uint64,
                   blockscopied : int) 
 {
-     |g.inp| == |g.outp| && 
+//     |g.inp| == |g.outp| && 
      0 <= |g.inp|  < 1_0000_0000_0000_0000 - 1 && 
-     0 <= |g.outp| < 1_0000_0000_0000_0000 - 1 && 
+//     0 <= |g.outp| < 1_0000_0000_0000_0000 - 1 && 
      curr_inp_ptr == inp_ptr + blockscopied * 16 &&
      curr_out_ptr == out_ptr + blockscopied * 16 &&
      inp_end_ptr  == inp_ptr  + SeqLength(g.inp) * 16
@@ -305,11 +236,11 @@ predicate InputInOutputMem(g : G, out_ptr : uint64, iv_reg : uint64, init_ctr : 
                           iv_ctr : Quadword, key_ptr : uint64,
                            mem : Heaplets, blockscopied : int)
  requires 0 <= |g.inp|  < 1_0000_0000_0000_0000 - 1;
- requires 0 <= |g.outp| < 1_0000_0000_0000_0000 - 1;
+// requires 0 <= |g.outp| < 1_0000_0000_0000_0000 - 1;
  requires g.out_heap in mem;
  requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16)
  requires AlgReq(g, key_ptr);
- requires |g.inp| == |g.outp|;
+// requires |g.inp| == |g.outp|;
 {
   0 <= blockscopied <= |g.inp| &&
   forall j: nat :: 0 <= j < blockscopied ==>
@@ -351,7 +282,7 @@ predicate CopyInvAfter(g : G,
   requires mem[g.out_heap].QuadwordHeaplet?;
   requires ValidSrcAddrs(mem, g.out_heap, out_ptr, 128, Secret, |g.inp|* 16)
   requires AlgReq(g, key_ptr);
-  requires |g.inp| == |g.outp|;
+//  requires |g.inp| == |g.outp|;
 {
      CopyInvAlways(g, inp_ptr, inp_end_ptr, curr_inp_ptr, out_ptr, curr_out_ptr, blockscopied) &&
      inp_ptr <= curr_inp_ptr <= inp_end_ptr &&
@@ -409,13 +340,33 @@ lemma{:timeLimitMultiplier 3} lemma_CTR_Encrypt_Is_QuadwordXor_AES(inp : seq<Qua
 
 predicate CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, out_ptr : uint64, mem : Heaplets, n : uint64)
  requires CTR_Encrypt_Req(g.inp, g.key, g.alg);
- requires |g.inp| == |g.outp|;
+// requires |g.inp| == |g.outp|;
  requires n <= SeqLength(g.inp);
  requires OutWriteable(g.inp, g.out_heap, out_ptr, mem);
 {
   lemma_CTR_Encrypt_length(g.inp);
   forall j : nat :: j < n ==>
-   CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)[j] == mem[g.out_heap].quads[out_ptr + j * 16].v
+   CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)[j] == mem[g.out_heap].quads[out_ptr + j * 16].v //&&
+//  forall j : nat :: j < n ==>
+//   g.outp[j] == mem[g.out_heap].quads[out_ptr + j * 16].v
+}
+
+lemma {:timeLimitMultiplier 3} lemma_CTR_Encrypt_Upto_Done(g : G, iv : uint64, init_ctr : uint64, out_ptr : uint64, mem: Heaplets, n : uint64)
+  requires CTR_Encrypt_Req(g.inp, g.key, g.alg);
+//  requires |g.inp| == |g.outp|;
+  requires n < |g.inp|;
+//  requires n < |g.outp|;
+  requires |g.inp| < 0x1_0000_0000_0000_0000 - 1;
+  requires OutWriteable(g.inp, g.out_heap, out_ptr, mem);
+  requires CTR_Encrypt_Upto_Done(g, iv, init_ctr, out_ptr, mem, n);
+  requires |CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)| > n;
+//  ensures  |CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)| == |g.outp|;
+  requires CTR_Encrypt(g.inp, g.key, g.alg, iv, init_ctr)[n] == 
+              mem[g.out_heap].quads[out_ptr + n * 16].v;
+//  requires g.outp[n] == mem[g.out_heap].quads[out_ptr + n * 16].v;
+  ensures  CTR_Encrypt_Upto_Done(g, iv, init_ctr, out_ptr, mem, n + 1);
+{
+  lemma_CTR_Encrypt_length'(g.inp, g.key, g.alg, iv, init_ctr);
 }
 
 // End of Module
