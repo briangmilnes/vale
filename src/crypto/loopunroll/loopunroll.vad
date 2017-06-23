@@ -1,0 +1,49 @@
+/*
+  Do some testing on building unrolled loops.
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "loopunroll.s.dfy" 
+
+#verbatim
+module LoopUnroll {
+
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened aes_vale
+
+#endverbatim
+
+procedure IncrementUint32(ghost heap: heaplet_id) 
+    reads    rdi; rsi;
+    modifies mem; efl; r8; r9;
+{
+  Load (r9, r8, 0, Public, heap);
+  incr (r9);
+  Store(r8, r9, 0, Public, heap);
+}
+
+procedure IncrementVector() 
+    reads    rdi; rsi;
+    modifies mem; efl; r8; r9;
+{
+  ghost var heap : heaplet_id;
+  while (r8 < rsi)
+   invariant true;   
+   decreases r8 - (rdi + rsi);
+   {
+    IncrementUint32(heap);
+    Add32Wrap(r8,4);
+  }
+}
+
+#verbatim
+} 
+#endverbatim

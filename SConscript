@@ -88,7 +88,6 @@ if env['TARGET_ARCH']=='amd64':
      'ctr'                                                       # Base name for the ASM files and EXE
     )
   env.BuildTest(['src/crypto/aes/testctr.c', ctr_asm[0]], '', 'testctr')
-  env.BuildDafnyTest(['src/crypto/aes/dtestgcm.dfy'], dafny_default_args, 'dtestgcm')
 else:
   print('Not building AES-CTR for this target architecture')  
 
