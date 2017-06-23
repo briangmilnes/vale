@@ -36,6 +36,7 @@ verify_options = {
   'src/crypto/aes/dtestaes.dfy': None,
   'src/crypto/aes/dtestgcm.dfy': None,
   'obj/crypto/aes/aes-x64/ctr.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /errorLimit:1'), # + ' /noVerify',
+  'obj/crypto/loopunroll/loopunroll.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /errorLimit:1' + ' /noVerify'),
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_nonlarith),
 
@@ -90,6 +91,19 @@ if env['TARGET_ARCH']=='amd64':
   env.BuildDafnyTest(['src/crypto/aes/dtestgcm.dfy'], dafny_default_args, 'dtestgcm')
 else:
   print('Not building AES-CTR for this target architecture')  
+
+#
+# build loopunroll-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  loopunroll_asm = env.ExtractValeCode(
+    ['src/crypto/loopunroll/loopunroll.vad'], # Vale source
+     'src/crypto/loopunroll/loopunroll_main.i.dfy',
+     'loopunroll'            
+    )
+  env.BuildTest(['src/crypto/loopunroll/testloopunroll.c', loopunroll_asm[0]], '', 'testloopunroll')
+else:
+  print('Not building LOOPUNROLL for this target architecture')  
 
 #
 # build aes-exe
