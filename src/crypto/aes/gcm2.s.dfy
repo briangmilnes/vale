@@ -173,12 +173,12 @@ lemma lemma_AES_GCTR'_empty_X_is(n : nat, key : seq<uint32>, CB : Quadword, X : 
 {
 }
 
-lemma lemma_AES_GCTR'_n_is(n : nat, key : seq<uint32>, CB : Quadword, X : seq<Quadword>)
+lemma {:timeLimitMultiplier 3} lemma_AES_GCTR'_n_is(n : nat, key : seq<uint32>, CB : Quadword, X : seq<Quadword>)
     requires  0 <= n + |X| < 0x1_0000_0000 - 1;
     requires KeyReq(key);
     ensures |AES_GCTR'(n, key, CB, X)| == |X|;
     ensures forall i : nat :: i < |X| ==> 
-      AES_GCTR'(n, key, CB, X)[i] == QuadwordXor(X[i], AES_Encrypt(key, ctr_n(CB, n + i), AES_128));
+     AES_GCTR'(n, key, CB, X)[i] == QuadwordXor(X[i], AES_Encrypt(key, ctr_n(CB, n + i), AES_128));
     decreases |X|;
 {
   if (|X| == 0) {
@@ -189,6 +189,49 @@ lemma lemma_AES_GCTR'_n_is(n : nat, key : seq<uint32>, CB : Quadword, X : seq<Qu
     lemma_AES_GCTR'_n_is(n + 1, key, CB, all_but_first(X));
   }
 }
+
+// Prove it again with CB instead of ctr_n.
+
+// With an index and a head list recursion, as this looks more like the spec. 
+function AES_GCTR''(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>) : seq<Quadword>
+    decreases |X|;
+    requires  0 <= n + |X| < 0x1_0000_0000 - 1;
+    requires KeyReq(key);
+    ensures  |AES_GCTR''(n, key, ICB, X)| == |X|;
+{
+  if |X| == 0 then
+    []
+   else 
+    [QuadwordXor(X[0], AES_Encrypt(key, CB(n, ICB), AES_128))] + 
+    AES_GCTR''(n + 1, key, ICB, all_but_first(X))
+}
+
+lemma lemma_AES_GCTR''_empty_X_is(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>) 
+    requires  |X| == 0;
+    requires  0 <= n + |X| < 0x1_0000_0000 - 1;
+    requires KeyReq(key);
+    ensures |AES_GCTR''(n, key, ICB, X)| == |X|;
+    ensures AES_GCTR''(n, key, ICB, X) == [];
+{
+}
+
+lemma {:timeLimitMultiplier 6} lemma_AES_GCTR''_n_is(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>)
+    requires  0 <= n + |X| < 0x1_0000_0000 - 1;
+    requires KeyReq(key);
+    ensures |AES_GCTR''(n, key, ICB, X)| == |X|;
+    ensures forall i : nat :: i < |X| ==> 
+      AES_GCTR''(n, key, ICB, X)[i] == QuadwordXor(X[i], AES_Encrypt(key, CB(n + i, ICB), AES_128));
+    decreases |X|;
+{
+  if (|X| == 0) {
+    lemma_AES_GCTR''_empty_X_is(n, key, ICB, X);
+  } else if |X| == 1 {
+     assert AES_GCTR''(n, key, ICB, X)[0] == QuadwordXor(X[0], AES_Encrypt(key, CB(n + 0, ICB), AES_128));
+  } else {
+    lemma_AES_GCTR''_n_is(n + 1, key, ICB, all_but_first(X));
+  }
+}
+
 
 // Algorithm 4 
 //
