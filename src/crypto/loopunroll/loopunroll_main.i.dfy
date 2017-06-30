@@ -1,6 +1,6 @@
-include "../../../../obj/loopunroll/loopunroll.gen.dfy"
-include "../../../arch/x64/print.s.dfy"
-include "../../../lib/util/Io.s.dfy"
+include "../../../obj/crypto/loopunroll/loopunroll.gen.dfy"
+include "../../arch/x64/print.s.dfy"
+include "../../lib/util/Io.s.dfy"
 
 module LoopUnrollMain {
 
@@ -50,14 +50,17 @@ method {:main} Main(ghost env:HostEnvironment)
 
     var win := (platform_choice == Win);
 
+/*
     printProcPlatform("IncrementVector",
         va_code_IncrementVector(),
         0, 0, asm_choice, platform_choice);
+*/
 
-    printProcPlatform("IncrementVector2",
-       va_code_IncrementVector2(),
+    printProcPlatform("IncrementVectorUnrolledN",
+       va_code_IncrementVectorUnrolledN(),
         0, 0, asm_choice, platform_choice);
 
+/*
     printProcPlatform("IncrementVector4",
         va_code_IncrementVector4(),
         0, 0, asm_choice, platform_choice);
@@ -65,6 +68,7 @@ method {:main} Main(ghost env:HostEnvironment)
     printProcPlatform("IncrementVector8",
         va_code_IncrementVector8(),
         0, 0, asm_choice, platform_choice);
+*/
 
  	  printFooter(asm_choice);
 }
