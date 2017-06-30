@@ -14,6 +14,7 @@ import opened AESModule
 // The counter at N increments.
 function ctr_n(iv : uint64, init_ctr : uint64, n : uint64) : Quadword 
 {
+  // BP: Why do you need these three reveals?  I suspect you can remove some or all of them.
   reveal_BitwiseAdd64();
   reveal_upper64();
   reveal_lower64();
@@ -37,13 +38,18 @@ predicate CTR_Encrypt_Req(inp : seq<Quadword>, key : seq<uint32>, alg: Algorithm
 
 function CTR_Encrypt(inp : seq<Quadword>, key : seq<uint32>, alg: Algorithm, iv : uint64, init_ctr : uint64) : seq<Quadword>
     requires CTR_Encrypt_Req(inp, key, alg);
-    requires |inp| < 0x1_0000_0000_0000_0000 - 1;
+    requires |inp| < 0x1_0000_0000_0000_0000 - 1;   // BP: This appears to duplicate last clause of CTR_Encrypt_Req
     decreases |inp|;
 {
    if |inp| == 1 then
     [QuadwordXor(inp[0], AES_Encrypt(key, ctr_n(iv, init_ctr, 0), alg))]
    else 
+      // BP: I might call "rest" "prefix" instead
       var rest := CTR_Encrypt(all_but_last(inp), key, alg, iv, init_ctr);
+      // BP: For clarity, perhaps:
+      // var final_block := [QuadwordXor(last(inp), AES_Encrypt(key, ctr_n(iv, init_ctr, |inp| - 1), alg))];
+      // prefix + final_block
+
       rest + [QuadwordXor(inp[|inp| - 1], AES_Encrypt(key, ctr_n(iv, init_ctr, |inp| - 1), alg))]
 }
 
