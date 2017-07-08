@@ -50,25 +50,17 @@ method {:main} Main(ghost env:HostEnvironment)
 
     var win := (platform_choice == Win);
 
-/*
-    printProcPlatform("IncrementVector",
-        va_code_IncrementVector(),
-        0, 0, asm_choice, platform_choice);
-*/
-
-    printProcPlatform("IncrementVectorUnrolledN",
-       va_code_IncrementVectorUnrolledN(),
+    printProcPlatform("IncrementVectorUnrolled1",
+       va_code_IncrementVectorUnrolled1(),
         0, 0, asm_choice, platform_choice);
 
-/*
-    printProcPlatform("IncrementVector4",
-        va_code_IncrementVector4(),
-        0, 0, asm_choice, platform_choice);
+    printProcPlatform("IncrementVectorUnrolled4",
+       va_code_IncrementVectorUnrolled4(),
+        100, 0, asm_choice, platform_choice);
 
-    printProcPlatform("IncrementVector8",
-        va_code_IncrementVector8(),
-        0, 0, asm_choice, platform_choice);
-*/
+    printProcPlatform("IncrementVectorUnrolled8",
+       va_code_IncrementVectorUnrolled8(),
+        200, 0, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);
 }

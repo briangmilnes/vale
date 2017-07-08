@@ -14,7 +14,6 @@ import opened x64_vale_i
 import opened dafny_wrappers_i
 
 
-// Try allowing zero address ranges.
 // Bundle up what is a valid address to allow us to control triggering better.
 
 datatype AddrOff64 = addroff64(addr : uint64, offset : nat)
@@ -37,22 +36,23 @@ datatype Addrs64 = addrs64(addr : uint64, count : nat)
 
 predicate ValidAddrs64(ar : Addrs64) 
 {
-  ar.addr + ar.count * 8 < 0x1_0000_0000_0000_0000
+  ar.count > 0 && // Can I work with an empty address range?
+  ar.addr + (ar.count - 1) * 8 < 0x1_0000_0000_0000_0000
 }
 
 // Unaligned 
 
 predicate ValidDstUnAddr64(mem:Heaplets, id:heaplet_id, ao : AddrOff64)
+  requires ValidAddrOff64(ao);
 {
-  ValidAddrOff64(ao) && 
   id in mem  && 
   mem[id].Heaplet64? && 
   EvalAddrOff64(ao) in mem[id].mem64
 }
 
 predicate ValidSrcUnAddr64(mem:Heaplets, id:heaplet_id, ao : AddrOff64, taint:taint) 
+  requires ValidAddrOff64(ao);
 {
-  ValidAddrOff64(ao) &&
   id in mem  && 
   mem[id].Heaplet64? && 
   EvalAddrOff64(ao) in mem[id].mem64 &&
@@ -87,8 +87,8 @@ predicate ValidDstUnAddrs64(mem:Heaplets, id:heaplet_id, ar : Addrs64)
   ValidAddrs64(ar) &&
   id in mem &&
   mem[id].Heaplet64? &&
-  (forall i : nat :: 0 <= i < ar.count ==> EvalAddrOff64(addroff64(ar.addr, i)) in mem[id].mem64) &&
-  (forall i : nat :: 0 <= i < ar.count ==> ValidDstUnAddr64(mem, id, addroff64(ar.addr, i)))
+  forall i : nat :: 0 <= i < ar.count ==> EvalAddrOff64(addroff64(ar.addr, i)) in mem[id].mem64 &&
+  forall i : nat :: 0 <= i < ar.count ==> ValidDstUnAddr64(mem, id, addroff64(ar.addr, i))
 }
 
 predicate ValidSrcUnAddrs64(mem:Heaplets, id:heaplet_id, ar : Addrs64, taint:taint)
@@ -96,8 +96,8 @@ predicate ValidSrcUnAddrs64(mem:Heaplets, id:heaplet_id, ar : Addrs64, taint:tai
   ValidAddrs64(ar) && 
   id in mem &&
   mem[id].Heaplet64? &&
-  (forall i : nat :: 0 <= i < ar.count ==> EvalAddrOff64(addroff64(ar.addr, i)) in mem[id].mem64) &&
-  (forall i : nat :: 0 <= i < ar.count ==> ValidSrcUnAddr64(mem, id, addroff64(ar.addr, i), taint))
+  forall i : nat :: 0 <= i < ar.count ==> EvalAddrOff64(addroff64(ar.addr, i)) in mem[id].mem64 &&
+  forall i : nat :: 0 <= i < ar.count ==> ValidSrcUnAddr64(mem, id, addroff64(ar.addr, i), taint)
 }
 
 lemma lemma_ValidDstUnAddrs64(mem:Heaplets, id:heaplet_id, ar : Addrs64) 
@@ -175,8 +175,8 @@ predicate ValidDstAlAddrs64(mem:Heaplets, id:heaplet_id, ar : Addrs64)
   id in mem &&
   mem[id].Heaplet64? &&
   EvalAddrOff64(addroff64(ar.addr, 0)) % 8 == 0 && 
-  (forall i : nat :: 0 <= i < ar.count ==> EvalAddrOff64(addroff64(ar.addr, i)) in mem[id].mem64) &&
-  (forall i : nat :: 0 <= i < ar.count ==> ValidDstAlAddr64(mem, id, addroff64(ar.addr, i)))
+  forall i : nat :: 0 <= i < ar.count ==> EvalAddrOff64(addroff64(ar.addr, i)) in mem[id].mem64 &&
+  forall i : nat :: 0 <= i < ar.count ==> ValidDstAlAddr64(mem, id, addroff64(ar.addr, i))
 }
 
 predicate ValidSrcAlAddrs64(mem:Heaplets, id:heaplet_id, ar : Addrs64, taint:taint)
@@ -185,9 +185,9 @@ predicate ValidSrcAlAddrs64(mem:Heaplets, id:heaplet_id, ar : Addrs64, taint:tai
   id in mem &&
   mem[id].Heaplet64? &&
   EvalAddrOff64(addroff64(ar.addr, 0)) % 8 == 0 && 
-  (forall i : nat :: 0 <= i < ar.count ==> ValidAddrOff64(addroff64(ar.addr, i))) &&
-  (forall i : nat :: 0 <= i < ar.count ==> EvalAddrOff64(addroff64(ar.addr, i)) in mem[id].mem64) &&
-  (forall i : nat :: 0 <= i < ar.count ==> ValidSrcAlAddr64(mem, id, addroff64(ar.addr, i), taint))
+  forall i : nat :: 0 <= i < ar.count ==> ValidAddrOff64(addroff64(ar.addr, i)) &&
+  forall i : nat :: 0 <= i < ar.count ==> EvalAddrOff64(addroff64(ar.addr, i)) in mem[id].mem64 &&
+  forall i : nat :: 0 <= i < ar.count ==> ValidSrcAlAddr64(mem, id, addroff64(ar.addr, i), taint)
 }
 
 predicate AddrOffInAddrs64(a : AddrOff64, ar : Addrs64) {
@@ -217,9 +217,9 @@ lemma lemma_ValidSrcAlAddrs64(mem:Heaplets, id:heaplet_id, ar: Addrs64, taint : 
 // OnlyUpdates
 
 predicate OnlyUpdatesAddr64(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, ao : AddrOff64, taint:taint, v:uint64)
+  requires ValidAddrOff64(ao);
+  requires ValidDstUnAddr64(old_mem, id, ao);
 {
-  ValidAddrOff64(ao) && 
-  ValidDstUnAddr64(old_mem, id, ao) &&
   mem == old_mem[id := old_mem[id].(mem64 := old_mem[id].mem64[EvalAddrOff64(ao) := Heaplet64Entry(v, taint)])]
 }
 
@@ -233,9 +233,9 @@ predicate UpdatesAddr64(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, ao : 
 }
 
 predicate OnlyAddr64Modified(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, ao : AddrOff64)
+  requires ValidAddrOff64(ao);
+  requires ValidDstUnAddr64(old_mem, id, ao);
 {  
-  ValidAddrOff64(ao) &&
-  ValidDstUnAddr64(old_mem, id, ao) &&
   // I don't delelete any heaplet.
   (forall nid : heaplet_id :: nid in old_mem ==> nid in mem) && 
   // I don't modify any other heaplet.
@@ -249,14 +249,13 @@ predicate OnlyAddr64Modified(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, 
 
 predicate UpdatesAlAddrs64(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, 
                             ar : Addrs64, taint:taint, v: seq<uint64>)
- requires ValidAddrs64(ar)
- requires ValidSrcAlAddrs64(mem, id, ar, taint);
- requires forall i : nat :: 0 <= i < ar.count ==> ValidAddrOff64(addroff64(ar.addr, i));
+ requires ValidAddrs64(ar);
  requires |v| == ar.count;
 {
-  // TODO try & instead of two foralls.
-  (forall i : nat :: 0 <= i < ar.count ==>  mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, i))].t == taint) &&
-  (forall i : nat :: 0 <= i < ar.count ==> v[i] == mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, i))].v)
+ ValidSrcAlAddrs64(mem, id, ar, taint)  && 
+ forall i : nat :: 0 <= i < ar.count ==> ValidAddrOff64(addroff64(ar.addr, i)) &&
+ forall i : nat :: 0 <= i < ar.count ==> mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, i))].t == taint &&
+ forall i : nat :: 0 <= i < ar.count ==> v[i] == mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, i))].v
 }
 
 predicate OnlyAddrs64Modified(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, ar : Addrs64)
@@ -268,13 +267,12 @@ predicate OnlyAddrs64Modified(old_mem : Heaplets, mem : Heaplets, id:heaplet_id,
   // I don't modify any other heaplet.
   (forall nid : heaplet_id :: nid in old_mem && nid != id ==> nid in mem && mem[nid] == old_mem[nid]) &&
   // mem[id] is still a Healplet64
-  id in mem && mem[id].Heaplet64? && 
-  // I don't delete any of my addresess in id.
-  (forall naddr : uint64 :: naddr in old_mem[id].mem64 ==> naddr in mem[id].mem64) && 
-  // I only adjusted addresses in range.
+  id in mem && mem[id].Heaplet64? &&
+  // I only adjusted this one address range in old_mem[id].
   (forall naddr : uint64 ::
-   (naddr in old_mem[id].mem64 && naddr in mem[id].mem64 && 
-    (naddr < ar.addr || naddr > ar.addr + (ar.count - 1) * 8)) ==>
+    (naddr < ar.addr || naddr > ar.addr + (ar.count - 1) * 8) ==>
+    naddr in old_mem[id].mem64 ==> 
+    naddr in mem[id].mem64 && 
     mem[id].mem64[naddr] == old_mem[id].mem64[naddr])
 }
   
