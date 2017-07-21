@@ -29,36 +29,48 @@ import opened LoopUnrollProven
 import opened LoopUnrollUnrolled
 #endverbatim
 
+// Atributes:
+// input pointer
+// end pointer
+// 8 byte aligned
+// 64 byte chunks guaranteed
+// Proof
+//  Still using guard
+//  Can't prove how many iterations either.
+//  Can't prove input pointer == end pointer.
 procedure IterateBy64EndUpOverShouldBeOn(ghost id : heaplet_id)
   modifies efl; r8;
   reads    rsi;
   requires r8 <= rsi;
+  requires r8 % 8 == 0;
   requires (rsi - r8) % 64 == 0;
   requires rsi + 64 < 0x1_0000_0000_0000_0000;
   ensures r8 >= rsi;
 {
   lemma_BitwiseAdd64(); // for the decreases clause.
 
-  ghost var count := 0;
   ghost var io_ptr := r8;
-  ghost var io_end := rsi; // Comment.
+  ghost var io_end := rsi;                   // Comment.
+  ghost var items  := (rsi - r8) / 8; // How many items do we do, of size 8.
+  ghost var blocks := (rsi - r8) / 64; // How many blocks to do.
+  ghost var count := 0;                      // How many have we done.
   
   while (r8 < rsi)
    invariant r8 <= rsi + 64;
-   invariant count == (r8 - io_ptr) / 64;
    invariant r8 == io_ptr + count * 64;
    invariant (r8 - io_ptr) % 64 == 0;
    invariant (rsi - r8) % 64 == 0;
+   invariant count == (r8 - io_ptr) / 64;
+   invariant count + (rsi - r8) / 64 == blocks;
    decreases rsi - r8;
   {
     AddN(r8,64);
     count := count + 1;
   } 
-  assert r8 == rsi;
+//  assert count == (rsi - io_ptr) / 64;
+  assert count == blocks;
+//  assert r8 == rsi;
 } 
-
-
-
 
 /*
 procedure IterateBy64EndUpOn(ghost id : heaplet_id)
