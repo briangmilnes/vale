@@ -1,0 +1,115 @@
+/*
+  Do some testing on building and proving unrolled loops.
+  Basic results.
+
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "loopunroll.s.dfy" 
+include{:verbatim} "seqcomp.s.dfy" 
+include{:verbatim} "addrlogic.s.dfy" 
+
+#verbatim
+module LoopUnrollProven {
+
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened LoopUnrollModule
+import opened seqcomp
+import opened addrlogic
+
+#endverbatim
+
+procedure {:refined} {:bridge} AddN(inout operand r : uint64, inline n : uint8)
+    modifies efl;
+    requires r + n < 0x1_0000_0000_0000_0000;
+    ensures  r == BitwiseAdd64(old(r), n);
+{
+   lemma_BitwiseAdd64();
+   Add64Wrap(r, n);
+} 
+
+// This case works only without refined and without operator names, all must be operands.
+// requires {:refined false} @readtmpreg != @addtmpreg && @ioreg != @readtmpreg && @ioreg != @addtmpreg;
+// also fails to prove. 
+// GOOD 
+#verbatim
+predicate IsOReg (r : operand) {r.OReg?}
+#endverbatim
+
+procedure {:bridge} {:timeLimitMultiplier 3} ReadIncrStore(operand ioreg : uint64,
+                                             inout operand addtmpreg  : uint64,
+                                             ghost id : heaplet_id,
+                                             inline off : uint64)
+
+    modifies mem; efl;
+
+    requires IsOReg(@ioreg);
+    requires @ioreg != @addtmpreg;
+    requires/ensures ValidSrcAlAddr64(mem, id, addroff64(ioreg, off), Public);
+    ensures UpdatesAddr64(old(mem), mem, id, addroff64(old(ioreg), off), Public,
+               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(ioreg),off))].v, 8));
+    ensures OnlyAddr64Modified(old(mem), mem, id, addroff64(old(ioreg), off));
+{
+    lemma_BitwiseAdd64();
+    lemma_ValidSrcAlAddr64(mem, id, addroff64(ioreg,off), Public);
+    Load64(addtmpreg, ioreg, off * 8, Public, id);
+    incr64(addtmpreg);// Hard 8, http://www.imdb.com/title/tt0119256/. 
+    incr64(addtmpreg);
+    incr64(addtmpreg);
+    incr64(addtmpreg);
+    incr64(addtmpreg);
+    incr64(addtmpreg);
+    incr64(addtmpreg);
+    incr64(addtmpreg);
+    Store64(ioreg, addtmpreg, off * 8, Public, id);
+}     
+
+
+// TODO some bug here.
+procedure {:refined} {:bridge} SaveRegisters()
+    modifies stack; mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx; rsi;
+    requires/ensures HasStackSlots(stack, 20);
+{
+
+//  Sub32(rsp,16);  I don't see how to adjust the stack pointer.
+  StoreStack64(0, r8);
+  StoreStack64(2, r9);
+  StoreStack64(4, r10);
+  StoreStack64(6, r11);
+  StoreStack64(8, r12);
+  StoreStack64(10, r13);
+  StoreStack64(12, r14);
+  StoreStack64(14, r15);
+  StoreStack64(16, rbx);
+  StoreStack64(18, rsi);
+}         
+
+
+procedure {:refined} {:bridge} RestoreRegisters()
+    modifies stack; mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx; rsi;
+    requires HasStackSlots(stack, 20);
+{
+  LoadStack64(r8, 0);
+  LoadStack64(r9, 2);
+  LoadStack64(r10, 4);
+  LoadStack64(r11, 6);
+  LoadStack64(r12, 8);
+  LoadStack64(r13, 10);
+  LoadStack64(r14, 12);
+  LoadStack64(r15, 14);
+  LoadStack64(rbx, 16);
+  LoadStack64(rsi, 18);
+  // Add32(rsp,16); I don't see how to adjust the stack pointer.
+} 
+
+#verbatim
+} 
+#endverbatim

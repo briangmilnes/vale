@@ -10,6 +10,8 @@ include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
 include{:verbatim} "loopunroll.s.dfy" 
 include{:verbatim} "seqcomp.s.dfy" 
 include{:verbatim} "addrlogic.s.dfy" 
+include "loopunroll.proven.vad"
+include "loopunroll.unrolled.vad"
 
 #verbatim
 module LoopUnroll {
@@ -23,380 +25,117 @@ import opened x64_decls64_i
 import opened LoopUnrollModule
 import opened seqcomp
 import opened addrlogic
-
+import opened LoopUnrollProven
+import opened LoopUnrollUnrolled
 #endverbatim
 
-
-// Try with a zero address range.
-
-/*
-// The simple case to prove, registers in no addition.
-procedure {:refined} {:bridge} IncrementUint64(ghost id: heaplet_id) 
-    reads    rdi; rsi; r8;
-    modifies mem; efl; r9;
-    requires/ensures ValidSrcAlAddr64(mem, id, addroff64(r8,0), Public);
-    ensures r8 == old(r8);
-    ensures OnlyUpdatesAddr64(old(mem), mem, id, addroff64(old(r8),0), Public,
-                 BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),0))].v, 8));
+procedure IterateBy64EndUpOverShouldBeOn(ghost id : heaplet_id)
+  modifies efl; r8;
+  reads    rsi;
+  requires r8 <= rsi;
+  requires (rsi - r8) % 64 == 0;
+  requires rsi + 64 < 0x1_0000_0000_0000_0000;
+  ensures r8 >= rsi;
 {
-  lemma_BitwiseAdd64();
-  lemma_ValidSrcAlAddr64(mem, id, addroff64(r8,0), Public);
-  Load64(r9, r8, 0, Public, id);
-  Add64Wrap(r9,1); // Hard 8. 
-  Add64Wrap(r9,1);
-  Add64Wrap(r9,1);
-  Add64Wrap(r9,1);
-  Add64Wrap(r9,1);
-  Add64Wrap(r9,1);
-  Add64Wrap(r9,1);
-  Add64Wrap(r9,1);
-  Store64(r8, r9, 0, Public, id);
-}
-*/
+  lemma_BitwiseAdd64(); // for the decreases clause.
 
-procedure {:refined} {:bridge} AddN(inout operand r : uint64, inline n : uint8)
-    modifies efl;
-    requires r + n < 0x1_0000_0000_0000_0000;
-    ensures  r == BitwiseAdd64(old(r), n);
-{
-   lemma_BitwiseAdd64();
-   Add64Wrap(r, n);
-} 
-
-// This case works only without refined and without operator names, all must be operands.
-// requires {:refined false} @readtmpreg != @addtmpreg && @ioreg != @readtmpreg && @ioreg != @addtmpreg;
-// also fails to prove. 
-#verbatim
-predicate OnlyUpdatesAddr64'(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, ao : AddrOff64, taint:taint, v:uint64)
-{
-    ValidAddrOff64(ao) &&
-    ValidDstUnAddr64(old_mem, id, ao) &&
-    OnlyAddr64Modified(old_mem, mem, id, ao) && 
-    ValidDstUnAddr64(mem, id, ao) &&
-    mem[id].mem64[EvalAddrOff64(ao)].v == v &&
-    mem[id].mem64[EvalAddrOff64(ao)].t == taint
-}
-#endverbatim
-
-procedure {:bridge} {:timeLimitMultiplier 3} ReadIncrStore(inout operand ioreg : uint64,
-                                             inout operand addtmpreg  : uint64,
-                                             ghost id : heaplet_id,
-                                             inline off : uint64)
-
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
-
-    requires @ioreg != @addtmpreg;
-    requires/ensures ValidSrcAlAddr64(mem, id, addroff64(ioreg, off), Public);
-    ensures ioreg == old(ioreg);
-    ensures OnlyUpdatesAddr64'(old(mem), mem, id, addroff64(old(ioreg), off), Public,
-               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(ioreg),off))].v, 8));
-    ensures ValidDstAlAddr64(mem, id, addroff64(ioreg,off));
-{
-    lemma_BitwiseAdd64();
-    lemma_ValidSrcAlAddr64(mem, id, addroff64(ioreg,off), Public);
-    Load64(addtmpreg, ioreg, off * 8, Public, id);
-    incr64(addtmpreg);// Hard 8, http://www.imdb.com/title/tt0119256/. 
-    incr64(addtmpreg);
-    incr64(addtmpreg);
-    incr64(addtmpreg);
-    incr64(addtmpreg);
-    incr64(addtmpreg);
-    incr64(addtmpreg);
-    incr64(addtmpreg);
-    Store64(ioreg, addtmpreg, off * 8, Public, id);
-}     
-
-// Get rid of the recursion to try and unroll.
-/*
-procedure IncrementUint64UnrolledByHand1 (ghost id: heaplet_id)
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
-
-    requires r8 < 0x1_0000_0000_0000_0000 - 8;
-    requires ValidSrcAlAddr64(mem, id, addroff64(r8, 0), Public);
-
-    ensures OnlyUpdatesAddr64(old(mem), mem, id, addroff64(old(r8), 0), Public,
-               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8), 0))].v, 8));
-    ensures OnlyAdd64Modified(old(mem), mem, id, addroff64(old(r8), 0));
-{
-  lemma_ValidSrcAlAddr64(mem, id, addroff64(r8,0), Public);
-  ReadIncrStore(r8, r9, id, 0);
-  AddN(r8, 8);
-}
-*/
-
-/*
-procedure IncrementUint64UnrolledByHand2(ghost id: heaplet_id)
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
-
-    requires r8 < 0x1_0000_0000_0000_0000 - 16;
-    requires ValidSrcAlAddr64(mem, id, addroff64(r8, 0), Public);
-    requires ValidSrcAlAddr64(mem, id, addroff64(r8, 1), Public);
-
-    ensures UpdatesAddr64(old(mem), mem, id, addroff64(old(r8), 0), Public,
-               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8), 0))].v, 8));
-    ensures UpdatesAddr64(old(mem), mem, id, addroff64(old(r8), 1), Public,
-               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8), 1))].v, 8));
-    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 2));
-{
-  lemma_ValidSrcAlAddr64(mem, id, addroff64(r8, 0), Public);
-  lemma_ValidSrcAlAddr64(mem, id, addroff64(r8, 1), Public);
-  ReadIncrStore(r8, r9,  id, 0);
-  ReadIncrStore(r8, r10, id, 1);
-  AddN(r8, 16);
-}
-*/
-
-
-/*
-procedure IncrementUint64UnrolledByHand2s(ghost id : heaplet_id)
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
-    requires r8 < 0x1_0000_0000_0000_0000 - 16;
-    requires ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 2), Public);
-
-    ensures  UpdatesAddr64(old(mem), mem, id, addroff64(old(r8),0), Public,
-               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),0))].v, 8));
-    ensures  UpdatesAddr64(old(mem), mem, id, addroff64(old(r8),1), Public,
-               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),1))].v, 8));
-    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 2));
-{
-  lemma_BitwiseAdd64();
-  lemma_ValidSrcAlAddrs64(mem, id, addrs64(r8,2), Public);
-  ReadIncrStore(r8, r9,  id, 0);
-  ReadIncrStore(r8, r10, id, 1);
-  AddN(r8, 16);
-}
-*/
-
-/*
-// This works nicely but needs to have the seq replaced with a function of n.
-procedure IncrementUint64UnrolledByHand2DualSeqOutput(ghost id : heaplet_id)
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
-
-    requires r8 < 0x1_0000_0000_0000_0000 - 16;
-    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 2), Public);
-
-    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8),2), Public,
-               seq2(BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),0))].v, 8),
-                    BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),1))].v, 8)));
-    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 2));
-{
-  lemma_BitwiseAdd64();
-  lemma_ValidSrcAlAddrs64(mem, id, addrs64(r8,2), Public);
-  ReadIncrStore(r8, r9,  id, 0);
-  ReadIncrStore(r8, r10, id, 1);
-  AddN(r8, 16);
-}
-*/
-
-#verbatim
-function Plus8(old_mem : Heaplets, id: heaplet_id, ar : Addrs64, count : nat) : seq<uint64>
- requires 0 <= count <= ar.count;
- requires ValidDstAlAddrs64(old_mem, id, ar);
- ensures |Plus8(old_mem, id, ar, count)| == count;
- decreases count;
-{
-  lemma_ValidDstAlAddrs64(old_mem, id, ar);
-  if count == 0 then
-  []
-  else 
-    Plus8(old_mem, id, ar, count - 1) + 
-    [BitwiseAdd64(old_mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, count - 1))].v, 8)]
-}
-#endverbatim
-
-/*
-procedure IncrementUint64UnrolledByHand2Fun(ghost id : heaplet_id)
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
-
-    requires r8 < 0x1_0000_0000_0000_0000 - 16;
-    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 2), Public);
-
-    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8),2), Public,
-                  Plus8(old(mem), id, addrs64(old(r8),2), 2));
-    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 2));
-{
-  lemma_BitwiseAdd64();
-  lemma_ValidSrcAlAddrs64(mem, id, addrs64(r8,2), Public);
-  ReadIncrStore(r8, r9,  id, 0);
-  ReadIncrStore(r8, r10, id, 1);
-  AddN(r8, 16);
-}
-*/
-/*
-procedure IncrementUint64UnrolledByHand4Fun(ghost id : heaplet_id)
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
+  ghost var count := 0;
+  ghost var io_ptr := r8;
+  ghost var io_end := rsi; // Comment.
   
-    requires r8 < 0x1_0000_0000_0000_0000 - 32;
-    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 4), Public);
-
-    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8), 4), Public,
-                  Plus8(old(mem), id, addrs64(old(r8),4), 4));
-    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 4));
-{
-  lemma_BitwiseAdd64();
-  lemma_ValidSrcAlAddrs64(mem, id, addrs64(r8,2), Public);
-  ReadIncrStore(r8,  r9, id, 0);
-  ReadIncrStore(r8, r10, id, 1);
-  ReadIncrStore(r8, r11, id, 2);
-  ReadIncrStore(r8, r12, id, 3);
-  AddN(r8, 32);
-}
-*/
-
-/* It seems to like to prove from zero.
-procedure {:recursive} {:timeLimitMultiplier 2}  IncrementUint64Unrolled(ghost id : heaplet_id, inline step : nat, inline offset : nat)
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
-    requires r8 < 0x1_0000_0000_0000_0000 - (offset + step) * 8;
-    requires 1 <= step <= 8;
-    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), step), Public);
-//    ensures r8 == old(r8) + (offset + steps) * 8;
-
-//   ensures  UpdatesAlAddrs64(old(mem), mem, id,  addrs64(old(r8), step), Public,
-//                Plus8(old(mem), id, addrs64(old(r8), step), step));
-
-//   ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), step));
-{
-  lemma_BitwiseAdd64();
-  lemma_ValidSrcAlAddrs64(mem, id, addrs64(old(r8), step), Public);
-  inline if (step == 8) {
-    ReadIncrStore(r8, r9,  id, 7);
-    IncrementUint64Unrolled(id, step - 1, offset + 1);
-  } else if (step == 7) {
-    ReadIncrStore(r8, r10,  id, 6);
-    IncrementUint64Unrolled(id, step - 1, offset + 1);
-  } else if (step == 6) {
-    ReadIncrStore(r8, r11,  id, 5);
-    IncrementUint64Unrolled(id, step - 1, offset + 1);
-  } else if (step == 5) {
-    ReadIncrStore(r8, r12,  id, 4);
-    IncrementUint64Unrolled(id, step - 1, offset + 1);
-  } else if (step == 4) {
-    ReadIncrStore(r8, r13,  id, 3);
-    IncrementUint64Unrolled(id, step - 1, offset + 1);
-  } else if (step == 3) {
-    ReadIncrStore(r8, r14,  id, 2);
-    IncrementUint64Unrolled(id, step - 1, offset + 1);
-  } else if (step == 2) {
-    ReadIncrStore(r8, r15,  id, 1);
-    IncrementUint64Unrolled(id, step - 1, offset + 1);
-  } else if (step == 1) {                                    
-    ReadIncrStore(r8, rbx, id, 0);
-    AddN(r8, (offset * 8) % 0x1_00);
- }   
-}
-*/
-
-procedure {:recursive} {:timeLimitMultiplier 6}  IncrementUint64Unrolled(ghost id : heaplet_id, inline step : nat, inline steps : nat)
-    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
-    requires r8 < 0x1_0000_0000_0000_0000 - steps * 8;
-    requires step <= steps;
-    requires 1 <= steps <= 8;
-    requires 0 <= step <= 8;
-    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), steps), Public);
-    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), step));
-
-// Won't prove.
-//   ensures  UpdatesAlAddrs64(old(mem), mem, id,  addrs64(old(r8), step), Public,
-//                 Plus8(old(mem), id, addrs64(old(r8), step), step));
-{
-  lemma_BitwiseAdd64();
-  lemma_ValidSrcAlAddrs64(mem, id, addrs64(old(r8),steps), Public);
-  inline if (step == 8) {
-    ReadIncrStore(r8, r9,  id, 7);
-    IncrementUint64Unrolled(id, step - 1, steps);
-  } else if (step == 7) {
-    ReadIncrStore(r8, r10,  id, 6);
-    IncrementUint64Unrolled(id, step - 1, steps);
-  } else if (step == 6) {
-    ReadIncrStore(r8, r11,  id, 5);
-    IncrementUint64Unrolled(id, step - 1, steps);
-  } else if (step == 5) {
-    ReadIncrStore(r8, r12,  id, 4);
-    IncrementUint64Unrolled(id, step - 1, steps);
-  } else if (step == 4) {
-    ReadIncrStore(r8, r13,  id, 3);
-    IncrementUint64Unrolled(id, step - 1, steps);
-  } else if (step == 3) {
-    ReadIncrStore(r8, r14,  id, 2);
-    IncrementUint64Unrolled(id, step - 1, steps);
-  } else if (step == 2) {
-    ReadIncrStore(r8, r15,  id, 1);
-    IncrementUint64Unrolled(id, step - 1, steps);
-  } else if (step == 1) {                                    
-    ReadIncrStore(r8, rbx, id, 0); 
-    assert mem[id].mem64[EvalAddrOff64(addroff64(old(r8), 0))].v == 
-           BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8), 0))].v, 8);
-    IncrementUint64Unrolled(id, step - 1, steps);    
-    // Restart here.
-// Really really broken, without this, it proves. With this OnlyAddrs64Modified breaks.
-// Dropped requirements, whamo.
-   assert UpdatesAlAddrs64(old(mem), mem, id,  addrs64(old(r8), 1), Public,
-              Plus8(old(mem), id, addrs64(old(r8), 1), 1));
-  } else if (step == 0) {
-    AddN(r8, (steps * 8) % 0x1_00);
-   assert UpdatesAlAddrs64(old(mem), mem, id,  addrs64(old(r8), 0), Public,
-              Plus8(old(mem), id, addrs64(old(r8), 0), 0));
- }   
-}
-
-
-/*
-procedure {:refined} {:bridge} SaveRegisters()
-    modifies stack; mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx; rsi;
-    requires/ensures HasStackSlots(stack, 20);
-{
-
-//  Sub32(rsp,16);  I don't see how to adjust the stack pointer.
-  StoreStack64(0, r8);
-  StoreStack64(2, r9);
-  StoreStack64(4, r10);
-  StoreStack64(6, r11);
-  StoreStack64(8, r12);
-  StoreStack64(10, r13);
-  StoreStack64(12, r14);
-  StoreStack64(14, r15);
-  StoreStack64(16, rbx);
-  StoreStack64(18, rsi);
-}         
-
-
-procedure {:refined} {:bridge} RestoreRegisters()
-    modifies stack; mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx; rsi;
-    requires HasStackSlots(stack, 20);
-{
-  LoadStack64(r8, 0);
-  LoadStack64(r9, 2);
-  LoadStack64(r10, 4);
-  LoadStack64(r11, 6);
-  LoadStack64(r12, 8);
-  LoadStack64(r13, 10);
-  LoadStack64(r14, 12);
-  LoadStack64(r15, 14);
-  LoadStack64(rbx, 16);
-  LoadStack64(rsi, 18);
-  // Add32(rsp,16); I don't see how to adjust the stack pointer.
+  while (r8 < rsi)
+   invariant r8 <= rsi + 64;
+   invariant count == (r8 - io_ptr) / 64;
+   invariant r8 == io_ptr + count * 64;
+   invariant (r8 - io_ptr) % 64 == 0;
+   invariant (rsi - r8) % 64 == 0;
+   decreases rsi - r8;
+  {
+    AddN(r8,64);
+    count := count + 1;
+  } 
+  assert r8 == rsi;
 } 
 
 
-procedure IncrementVectorUnrolled1(ghost id : heaplet_id) 
+
+
+/*
+procedure IterateBy64EndUpOn(ghost id : heaplet_id)
+  modifies efl; r8;
+  reads    rsi;
+  requires r8 < rsi;
+  requires (rsi - r8) % 64 == 0;
+  requires rsi < 0x1_0000_0000_0000_0000;
+  ensures r8 == rsi;
+{
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+   decreases rsi - r8;
+  {
+    AddN(r8,64);
+  } 
+} 
+*/
+
+/*
+procedure IncrementUint64Unrolled8(ghost id : heaplet_id)
+    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
+    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 8), Public);
+
+    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8), 8), Public,
+                  Plus8(old(mem), id, addrs64(old(r8),8), 8));
+    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 8));
+    ensures r8 == BitwiseAdd64(old(r8),64);
+{
+  IncrementUint64Unrolled(id, 7);
+  AddN(r8, 64);
+}
+*/
+
+/*
+// Try and validate a loop with input in 64 byte chunks.
+procedure IncrementVectorUnrolled8(ghost id : heaplet_id) 
     reads    rdi; rsi;
     modifies stack; mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx; rsi; rdi;
-    requires HasStackSlots(stack,16);
-    requires r8 < 0x1_0000_0000_0000_0000 - rsi * 8;
+//    requires/ensures HasStackSlots(stack,16);
+    requires rsi > 0;
+    requires rdi > 0;
+    requires rdi + rsi + 64 < 0x1_0000_0000_0000_0000; // Take a guard.
     requires ValidSrcAlAddrs64(mem, id, addrs64(rdi, rsi), Public);
+    requires rsi % 64 == 0; // So we can chew off 8 * 8 segements.
+
 {
-  SaveRegisters();
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(rdi, rsi), Public);
+
+  // rdi - points to an aligned vector of 
+  // rsi - size of the vector in bytes.
+  //  SaveRegisters();
+  ghost var io_ptr := rdi;
+  ghost var io_cnt_bytes := rsi;
+  ghost var max_count := io_cnt_bytes / 64;
   Mov64(r8, rdi);
-  Add64(rsi, rdi);
+  Add64(rsi, rdi); // RSI is now the end pointer.
+  ghost var count := 0;
+  assert r8 == io_ptr + count * 64;
+  assert r8 + 64 < 0x1_0000_0000_0000_0000;
   while (r8 < rsi)
-   invariant true;   
-   decreases r8 - rsi;
+   invariant 
+     r8  == io_ptr + count * 64;
+     io_ptr <= r8;
+//     r8 <= io_ptr + max_count * 64;
+//     count <= max_count;
+   decreases rsi - r8;
    {
-     assume r8 < 0x1_0000_0000_0000_0000 - 1 * 8;
-     IncrementUint64Unrolled(id, 1, 1);
+     AddN(r8, 64);
+   //IncrementUint64Unrolled8(id);
+     count := count + 1;
    }
-  assume HasStackSlots(stack,16);
-  RestoreRegisters();
+   assert count == max_count;
+//  assert io_ptr <= r8 <= io_ptr + io_cnt_bytes + 64;
+//  RestoreRegisters();
 }
 */
 

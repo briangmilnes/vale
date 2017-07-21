@@ -162,6 +162,7 @@ lemma lemma_ValidSrcAlAddr64(mem:Heaplets, id:heaplet_id, ao : AddrOff64, t:tain
       ensures EvalAddrOff64(ao) in mem[id].mem64;
       ensures mem[id].mem64[EvalAddrOff64(ao)].t == t;
       ensures EvalAddrOff64(ao) % 8 == 0;
+      ensures ValidDstUnAddr64(mem, id, ao);
       ensures ValidDstAlAddr64(mem, id, ao);
       // Map to the old stuff for instructions.
       ensures ao.addr + ao.offset * 8 in mem[id].mem64;
@@ -216,6 +217,7 @@ lemma lemma_ValidSrcAlAddrs64(mem:Heaplets, id:heaplet_id, ar: Addrs64, taint : 
 
 // OnlyUpdates
 
+// Useable but dangerous in that one can not then roll up to blocks for proof.
 predicate OnlyUpdatesAddr64(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, ao : AddrOff64, taint:taint, v:uint64)
 {
   ValidAddrOff64(ao) && 
@@ -236,48 +238,104 @@ predicate OnlyAddr64Modified(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, 
 {  
   ValidAddrOff64(ao) &&
   ValidDstUnAddr64(old_mem, id, ao) &&
-  // I don't delelete any heaplet.
-  (forall nid : heaplet_id :: nid in old_mem ==> nid in mem) && 
-  // I don't modify any other heaplet.
-  (forall nid : heaplet_id :: nid in old_mem && nid != id ==> nid in mem && mem[nid] == old_mem[nid]) &&
-  // mem[id] is still a Healplet64
-  id in mem && mem[id].Heaplet64? &&
+  ValidDstUnAddr64(mem, id, ao) &&
+  id in mem && mem[id].Heaplet64? && 
+  // I didn't drop any addresses.
+  (forall naddr : int :: naddr in old_mem[id].mem64 ==> naddr in mem[id].mem64) && 
   // I only adjusted this one address in old_mem[id].
-  (forall naddr : uint64 :: naddr != EvalAddrOff64(ao) && naddr in old_mem[id].mem64 ==> 
-    naddr in mem[id].mem64 && mem[id].mem64[naddr] == old_mem[id].mem64[naddr])
+  (forall naddr : int :: 
+    (naddr != EvalAddrOff64(ao) && naddr in old_mem[id].mem64 && naddr in mem[id].mem64) ==>
+    mem[id].mem64[naddr] == old_mem[id].mem64[naddr])
 }
 
+
+// Why was I using requires here?
 predicate UpdatesAlAddrs64(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, 
                             ar : Addrs64, taint:taint, v: seq<uint64>)
- requires ValidAddrs64(ar)
- requires ValidSrcAlAddrs64(mem, id, ar, taint);
- requires forall i : nat :: 0 <= i < ar.count ==> ValidAddrOff64(addroff64(ar.addr, i));
- requires |v| == ar.count;
 {
-  // TODO try & instead of two foralls.
-  (forall i : nat :: 0 <= i < ar.count ==>  mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, i))].t == taint) &&
-  (forall i : nat :: 0 <= i < ar.count ==> v[i] == mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, i))].v)
+  ValidAddrs64(ar) &&
+  ValidDstUnAddrs64(old_mem, id, ar) &&
+  ValidSrcAlAddrs64(mem, id, ar, taint) &&
+  (forall i : nat :: 0 <= i < ar.count ==> ValidAddrOff64(addroff64(ar.addr, i))) &&
+  (|v| == ar.count ) &&
+  // mem[id] is still a Healplet64
+  id in mem && mem[id].Heaplet64? &&
+  // Restart here, try a combined predicate based on address range not count.
+  (forall i : nat :: 
+     (0 <= i < ar.count ==> 
+      (mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, i))].t == taint &&
+      v[i] == mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, i))].v)))
+
+// Putting the mod in here seems to fail.
+//  (forall naddr : nat :: 
+//    ((ar.addr <= naddr <= ar.addr + (ar.count - 1) * 8) && 
+//     (naddr in old_mem[id].mem64 && naddr in mem[id].mem64)) ==>
+//      mem[id].mem64[naddr].t == taint &&
+//      v[(naddr - ar.addr) % 8] == mem[id].mem64[naddr].v)
 }
 
 predicate OnlyAddrs64Modified(old_mem : Heaplets, mem : Heaplets, id:heaplet_id, ar : Addrs64)
 {  
   ValidAddrs64(ar) && 
   ValidDstUnAddrs64(old_mem, id, ar) && 
-  // I don't delelete any heaplet.
-  (forall nid : heaplet_id :: nid in old_mem ==> nid in mem) && 
-  // I don't modify any other heaplet.
-  (forall nid : heaplet_id :: nid in old_mem && nid != id ==> nid in mem && mem[nid] == old_mem[nid]) &&
   // mem[id] is still a Healplet64
   id in mem && mem[id].Heaplet64? && 
   // I don't delete any of my addresess in id.
-  (forall naddr : uint64 :: naddr in old_mem[id].mem64 ==> naddr in mem[id].mem64) && 
+  (forall naddr : int :: naddr in old_mem[id].mem64 ==> naddr in mem[id].mem64) && 
+
   // I only adjusted addresses in range.
-  (forall naddr : uint64 ::
-   (naddr in old_mem[id].mem64 && naddr in mem[id].mem64 && 
-    (naddr < ar.addr || naddr > ar.addr + (ar.count - 1) * 8)) ==>
+  (forall naddr : int ::
+    ((naddr < ar.addr || naddr > ar.addr + (ar.count - 1) * 8)  && 
+     (naddr in old_mem[id].mem64 && naddr in mem[id].mem64)) ==>
     mem[id].mem64[naddr] == old_mem[id].mem64[naddr])
+ // Let's try it by count. Bad 2 minutes proof time.
+//  (forall i : int :: 
+//   ((i < 0 || i >= ar.count) && 
+//          (ar.addr + i * 8) in old_mem[id].mem64 && (ar.addr + i * 8) in mem[id].mem64) ==>
+//     mem[id].mem64[ar.addr + i * 8] == old_mem[id].mem64[ar.addr + i * 8])
 }
-  
+
+lemma {:timeLimitMultiplier 3} lemma_OnlyAddrs64Modified_Extension
+         (mem0 : Heaplets, mem1: Heaplets, mem2: Heaplets, 
+          id:heaplet_id, addr : uint64, off : nat, taint : taint)
+    requires ValidSrcAlAddrs64(mem0, id, addrs64(addr, off + 1), taint)
+    requires ValidSrcAlAddrs64(mem1, id, addrs64(addr, off + 1), taint);
+    requires ValidSrcAlAddrs64(mem2, id, addrs64(addr, off + 1), taint);
+
+    requires OnlyAddrs64Modified(mem0, mem1, id, addrs64(addr, off));
+    requires OnlyAddr64Modified(mem1, mem2, id, addroff64(addr, off));
+
+    ensures  OnlyAddrs64Modified(mem0, mem2, id, addrs64(addr, off + 1));
+{ 
+  lemma_ValidSrcAlAddrs64(mem0, id, addrs64(addr, off + 1), taint);
+  lemma_ValidSrcAlAddrs64(mem1, id, addrs64(addr, off + 1), taint);
+  lemma_ValidSrcAlAddrs64(mem2, id, addrs64(addr, off + 1), taint);
+}    
+
+lemma {:timeLimitMultiplier 1} lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension
+         (mem0 : Heaplets, mem1: Heaplets, mem2: Heaplets, 
+          id:heaplet_id, addr : uint64, off : nat, taint : taint,
+                         v : seq<uint64>)
+    requires |v| == off + 1;           
+    requires ValidSrcAlAddrs64(mem0, id, addrs64(addr, off + 1), taint)
+    requires ValidSrcAlAddrs64(mem1, id, addrs64(addr, off + 1), taint);
+    requires ValidSrcAlAddrs64(mem2, id, addrs64(addr, off + 1), taint);
+
+    requires UpdatesAlAddrs64(mem0, mem1, id, addrs64(addr, off), taint, v[..off]);
+    requires OnlyAddrs64Modified(mem0, mem1, id, addrs64(addr, off));
+
+    requires UpdatesAddr64(mem1, mem2, id, addroff64(addr, off), taint, v[off]);
+    requires OnlyAddr64Modified(mem1, mem2, id, addroff64(addr, off));
+
+    ensures  UpdatesAlAddrs64(mem0, mem2, id, addrs64(addr, off + 1), taint, v);
+    ensures  OnlyAddrs64Modified(mem0, mem2, id, addrs64(addr, off + 1));
+{ 
+  lemma_ValidSrcAlAddrs64(mem0, id, addrs64(addr, off + 1), taint);
+  lemma_ValidSrcAlAddrs64(mem1, id, addrs64(addr, off + 1), taint);
+  lemma_ValidSrcAlAddrs64(mem2, id, addrs64(addr, off + 1), taint);
+  lemma_OnlyAddrs64Modified_Extension(mem0, mem1, mem2, id, addr, off, taint);
+} 
+
 // Temporary
 predicate inHeaplets(id : heaplet_id, mem : Heaplets) {
    id in mem
@@ -285,10 +343,11 @@ predicate inHeaplets(id : heaplet_id, mem : Heaplets) {
 
 predicate inMem64(id : uint64, mem: map<int, Heaplet64Entry>) {
    id in mem
-}         
+}
 
 predicate Heaplet64p(heaplet : Heaplet) {
   heaplet.Heaplet64?
 }         
+
 
 }

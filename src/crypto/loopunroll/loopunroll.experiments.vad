@@ -1,0 +1,265 @@
+/*
+//GOOD
+procedure IncrementUint64UnrolledByHand1 (ghost id: heaplet_id)
+    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
+
+    requires r8 < 0x1_0000_0000_0000_0000 - 8;
+    requires ValidSrcAlAddr64(mem, id, addroff64(r8, 0), Public);
+
+    ensures UpdatesAddr64(old(mem), mem, id, addroff64(old(r8), 0), Public,
+               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8), 0))].v, 8));
+    ensures OnlyAddr64Modified(old(mem), mem, id, addroff64(old(r8), 0));
+{
+  lemma_ValidSrcAlAddr64(mem, id, addroff64(r8,0), Public);
+  ReadIncrStore(r8, r9, id, 0);
+  AddN(r8, 8);
+}
+*/
+
+/*
+// GOOD
+procedure IncrementUint64UnrolledByHand2(ghost id: heaplet_id)
+    modifies mem; efl; rdx; rcx; r8; r9; r10;
+
+    requires r8 < 0x1_0000_0000_0000_0000 - 16;
+    requires/ensures ValidSrcAlAddr64(mem, id, addroff64(old(r8), 0), Public);
+    requires/ensures ValidSrcAlAddr64(mem, id, addroff64(old(r8), 1), Public);
+
+    ensures UpdatesAddr64(old(mem), mem, id, addroff64(old(r8), 0), Public,
+               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8), 0))].v, 8));
+    ensures UpdatesAddr64(old(mem), mem, id, addroff64(old(r8), 1), Public,
+               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8), 1))].v, 8));
+{
+  lemma_ValidSrcAlAddr64(mem, id, addroff64(r8, 0), Public);
+  lemma_ValidSrcAlAddr64(mem, id, addroff64(r8, 1), Public);
+  ReadIncrStore(r8, r9,  id, 0);
+  ReadIncrStore(r8, r10, id, 1);
+  AddN(r8, 16);
+}
+*/
+
+/*
+procedure IncrementUint64UnrolledByHand2s(ghost id : heaplet_id)
+    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
+    requires r8 < 0x1_0000_0000_0000_0000 - 16;
+    requires ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 2), Public);
+
+    ensures  UpdatesAddr64(old(mem), mem, id, addroff64(old(r8),0), Public,
+               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),0))].v, 8));
+    ensures  UpdatesAddr64(old(mem), mem, id, addroff64(old(r8),1), Public,
+               BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),1))].v, 8));
+    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 2));
+{
+  lemma_BitwiseAdd64();
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(r8,2), Public);
+  ReadIncrStore(r8, r9,  id, 0);
+  ReadIncrStore(r8, r10, id, 1);
+  AddN(r8, 16);
+}
+*/
+
+
+/*
+// This works nicely but needs to have the seq replaced with a function of n.
+// GOOD
+procedure IncrementUint64UnrolledByHand2DualSeqOutput(ghost id : heaplet_id)
+    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
+
+    requires r8 < 0x1_0000_0000_0000_0000 - 16;
+    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 2), Public);
+
+    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8),2), Public,
+               seq2(BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),0))].v, 8),
+                    BitwiseAdd64(old(mem)[id].mem64[EvalAddrOff64(addroff64(old(r8),1))].v, 8)));
+    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 2));
+{
+  lemma_BitwiseAdd64();
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(r8,2), Public);
+  ReadIncrStore(r8, r9,  id, 0);
+  ReadIncrStore(r8, r10, id, 1);
+  AddN(r8, 16);
+}
+*/
+
+/*
+// GOOD
+procedure IncrementUint64UnrolledByHand2Fun(ghost id : heaplet_id)
+    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15;
+
+    requires r8 < 0x1_0000_0000_0000_0000 - 16;
+    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 2), Public);
+
+    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8),2), Public,
+                  Plus8(old(mem), id, addrs64(old(r8),2), 2));
+    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 2));
+{
+  lemma_BitwiseAdd64();
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(r8,2), Public);
+  ReadIncrStore(r8, r9,  id, 0);
+  ReadIncrStore(r8, r10, id, 1);
+  AddN(r8, 16);
+}
+*/
+
+// Test null only modifies, null ranges.
+/*
+procedure {:timeLimitMultiplier 8} TestOnlyModifiesNullRange(ghost id : heaplet_id) 
+    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
+
+    requires r8 < 0x1_0000_0000_0000_0000 - 64;
+    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 8), Public);
+
+    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8), 0), Public,
+                  Plus8(old(mem), id, addrs64(old(r8),8), 0));
+    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 0));
+{
+} 
+*/
+
+// With the right extension lemmas, 19 to prove it.
+/*
+procedure {:timeLimitMultiplier 8} IncrementUint64UnrolledByHand8(ghost id : heaplet_id)
+    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
+
+    requires r8 < 0x1_0000_0000_0000_0000 - 64;
+    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 8), Public);
+
+    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8), 8), Public,
+                  Plus8(old(mem), id, addrs64(old(r8), 8), 8));
+    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 8));
+    ensures r8 == old(r8) + 64;
+{
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(r8, 8), Public);
+
+  ghost var mem0 := mem;
+  ReadIncrStore(r8, rbx,  id, 0); 
+  ghost var mem1 := mem; 
+  lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem1, id, old(r8), 0, Public,
+    Plus8(old(mem), id, addrs64(old(r8), 1), 1));
+
+  ReadIncrStore(r8, r15,  id, 1);
+  ghost var mem2 := mem; 
+  lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem1, mem2, id, old(r8), 1, Public,
+    Plus8(old(mem), id, addrs64(old(r8), 2), 2));
+
+  ReadIncrStore(r8, r14,  id, 2);
+  ghost var mem3 := mem; 
+  lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem2, mem3, id, old(r8), 2, Public,
+    Plus8(old(mem), id, addrs64(old(r8), 3), 3));
+
+  ReadIncrStore(r8, r13,  id, 3);
+  ghost var mem4 := mem; 
+  lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem3, mem4, id, old(r8), 3, Public,
+    Plus8(old(mem), id, addrs64(old(r8), 4), 4));
+
+  ReadIncrStore(r8, r12,  id, 4);
+  ghost var mem5 := mem; 
+  lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem4, mem5, id, old(r8), 4, Public,
+    Plus8(old(mem), id, addrs64(old(r8), 5), 5));
+
+  ReadIncrStore(r8, r11,  id, 5);
+  ghost var mem6 := mem; 
+  lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem5, mem6, id, old(r8), 5, Public,
+    Plus8(old(mem), id, addrs64(old(r8), 6), 6));
+
+  ReadIncrStore(r8, r10,  id, 6);
+  ghost var mem7 := mem; 
+  lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem6, mem7, id, old(r8), 6, Public,
+    Plus8(old(mem), id, addrs64(old(r8), 7), 7));
+
+  ReadIncrStore(r8, r9,   id, 7);
+  ghost var mem8 := mem; 
+  lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem7, mem8, id, old(r8), 7, Public,
+    Plus8(old(mem), id, addrs64(old(r8), 8), 8));
+
+  lemma_BitwiseAdd64();
+  AddN(r8, 64);
+}
+*/
+
+/*
+// Now with a 19s proof of the above, will this call also prove? YES.
+procedure IncrementUint64Unrolled8(ghost id : heaplet_id)
+    modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
+    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 8), Public);
+
+    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8), 8), Public,
+                  Plus8(old(mem), id, addrs64(old(r8),8), 8));
+    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 8));
+    ensures r8 == old(r8) + 64;
+{
+  IncrementUint64UnrolledByHand8(id);
+}
+*/
+
+/*
+#verbatim
+function method {:opaque} OpaqueMod(x:int, y:int):int requires y > 0 { x % y }
+// In order  r9, r10, r11, r12, r13, r14, r15, rbx
+
+function method GetReg(r : nat, step : nat) : x86reg
+   requires 0 <= step < 8;
+   requires 0 <= r < 8;
+{
+   var i := (r + (7 - step)) % 8;
+         if i == 0 then X86R9
+    else if i == 1 then X86R10
+    else if i == 2 then X86R11
+    else if i == 3 then X86R12
+    else if i == 4 then X86R13
+    else if i == 5 then X86R14
+    else if i == 6 then X86R15
+    else                   X86Ebx // Will this give me 64 bit?
+}
+#endverbatim
+*/
+
+/* Although this may be doable, it's just not worth the time. I'll take the
+hand unrolled one anyday.
+procedure {:recursive} {:timeLimitMultiplier 2} IncrementUint64Unrolled(ghost id : heaplet_id, inline step : nat,
+          inout operand reg0  : uint64, 
+          inout operand reg1  : uint64, 
+          inout operand reg2  : uint64, 
+          inout operand reg3  : uint64, 
+          inout operand reg4  : uint64, 
+          inout operand reg5  : uint64, 
+          inout operand reg6  : uint64, 
+          inout operand reg7  : uint64)
+
+    modifies mem; efl; rdx; rcx; r9; r10; r11; r12; r13; r14; r15; rbx;
+    reads r8;
+    requires 0 <= step < 8;
+
+    requires {:refined false}
+     @reg0 == OReg(GetReg(0, step)); // @7 == 0, @6 == 1
+     @reg1 == OReg(GetReg(1, step)); // @7 == 1, @6 == 2 
+     @reg2 == OReg(GetReg(2, step)); // @7 == 2, @6 == 3
+     @reg3 == OReg(GetReg(3, step)); // ...
+     @reg4 == OReg(GetReg(4, step));
+     @reg5 == OReg(GetReg(5, step));
+b     @reg6 == OReg(GetReg(6, step));
+     @reg7 == OReg(GetReg(7, step));
+
+    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), step + 1), Public);
+
+    ensures UpdatesAlAddrs64(old(mem), mem, id,  addrs64(old(r8), step + 1), Public,
+                  Plus8(old(mem), id, addrs64(old(r8), step + 1), step + 1));
+    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), step + 1));
+
+{
+  lemma_BitwiseAdd64();
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(old(r8), step + 1), Public);
+  inline if (step > 0) {
+    IncrementUint64Unrolled(id, (step - 1), reg1, reg2, reg3, reg4, reg5, reg6, reg7, reg0);
+    ghost var mem0 := mem; 
+    ReadIncrStore(r8, reg0, id, step  % 0x1_0000_0000_0000_0000);
+    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), step, Public,
+          Plus8(old(mem), id, addrs64(old(r8), step + 1), step + 1));
+  } else  if (step == 0) {                                    
+    ghost var mem0 := mem; 
+    ReadIncrStore(r8, reg0, id, 0); 
+    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 0, Public,
+          Plus8(old(mem), id, addrs64(old(r8), 1), 1));
+ }
+}
+*/
