@@ -49,6 +49,7 @@
     6.		Aligned Addrs64
 		7.		Writes OnlyWrites Addr64
 		8.		Writes OnlyWrites Addrs64
+		9.		Tails
    
 TODO
 
@@ -486,6 +487,31 @@ lemma lemma_ValidAddrs64_Tail(ar : Addrs64)
               forall j : nat :: 0 <= j <= i ==>
                EvalAddrOff64(addroff64(ar.addr, i)) == EvalAddrOff64(addroff64(ar.addr + j * 8, i - j));
 {}
+
+lemma {:timeLimitMultiplier 3} lemma_OnlyWrites_Range_Range_Ext
+         (mem0 : Heaplets, mem1 : Heaplets, mem2: Heaplets, id : heaplet_id, 
+         base : uint64, ptr : uint64, items : nat, more_items : nat, taint : taint)
+    requires ptr == base + items * 8;
+    requires ValidSrcAlAddrs64(mem0, id, addrs64(base, items + more_items), taint);
+    requires ValidSrcAlAddrs64(mem1, id, addrs64(base, items + more_items), taint);
+    requires ValidSrcAlAddrs64(mem2, id, addrs64(base, items + more_items), taint);
+
+    requires OnlyWritesAddrs64(mem0, mem1, id, addrs64(base, items));
+    requires OnlyWritesAddrs64(mem1, mem2, id, addrs64(ptr, more_items));
+
+    ensures  OnlyWritesAddrs64(mem0, mem2, id, addrs64(base, items + more_items));
+{
+  lemma_ValidSrcAlAddrs64(mem0, id, addrs64(base, items + more_items), taint);
+  lemma_ValidSrcAlAddrs64(mem1, id, addrs64(base, items + more_items), taint);
+  lemma_ValidSrcAlAddrs64(mem2, id, addrs64(base, items + more_items), taint);
+}    
+
+
+/*
+		9.	Tails
+
+    When working with an address range, I can change the pointer and have a valid address.
+*/
 
 lemma lemma_ValidSrcAlAddrs64_Fixed_Tail_Off(mem:Heaplets, id:heaplet_id, ar: Addrs64, tail : nat, 
                                off : nat, taint : taint)

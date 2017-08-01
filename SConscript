@@ -37,7 +37,7 @@ verify_options = {
   'src/crypto/aes/dtestgcm.dfy': None,
   'obj/crypto/aes/aes-x64/ctr.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /errorLimit:1'), # + ' /noVerify',
   'obj/crypto/loopunroll/loopunroll.gen.dfy': BuildOptions(dafny_default_args_nonlarith),
-  'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nonlarith),
+  'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /timeLimit:30'),
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_nonlarith),
 
