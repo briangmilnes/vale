@@ -10,8 +10,7 @@ include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
 include{:verbatim} "loopunroll.s.dfy" 
 include{:verbatim} "seqcomp.s.dfy" 
 include{:verbatim} "addrlogic.s.dfy" 
-include "loopunroll.proven.vad"
-include "loopunroll.unrolled.vad"
+include "loopunroll.examples.vad"
 
 #verbatim
 module LoopUnroll {
@@ -27,50 +26,9 @@ import opened seqcomp
 import opened addrlogic
 import opened LoopUnrollProven
 import opened LoopUnrollUnrolled
+import opened LoopUnrollExamples
 #endverbatim
 
-// Atributes:
-// input pointer
-// end pointer
-// 8 byte aligned
-// 64 byte chunks guaranteed
-// Proof
-//  Still using guard
-//  Can't prove how many iterations either.
-//  Can't prove input pointer == end pointer.
-procedure IterateBy64EndUpOverShouldBeOn(ghost id : heaplet_id)
-  modifies efl; r8;
-  reads    rsi;
-  requires r8 <= rsi;
-  requires r8 % 8 == 0;
-  requires (rsi - r8) % 64 == 0;
-  requires rsi + 64 < 0x1_0000_0000_0000_0000;
-  ensures r8 >= rsi;
-{
-  lemma_BitwiseAdd64(); // for the decreases clause.
-
-  ghost var io_ptr := r8;
-  ghost var io_end := rsi;                   // Comment.
-  ghost var items  := (rsi - r8) / 8; // How many items do we do, of size 8.
-  ghost var blocks := (rsi - r8) / 64; // How many blocks to do.
-  ghost var count := 0;                      // How many have we done.
-  
-  while (r8 < rsi)
-   invariant r8 <= rsi + 64;
-   invariant r8 == io_ptr + count * 64;
-   invariant (r8 - io_ptr) % 64 == 0;
-   invariant (rsi - r8) % 64 == 0;
-   invariant count == (r8 - io_ptr) / 64;
-   invariant count + (rsi - r8) / 64 == blocks;
-   decreases rsi - r8;
-  {
-    AddN(r8,64);
-    count := count + 1;
-  } 
-//  assert count == (rsi - io_ptr) / 64;
-  assert count == blocks;
-//  assert r8 == rsi;
-} 
 
 /*
 procedure IterateBy64EndUpOn(ghost id : heaplet_id)
@@ -96,9 +54,9 @@ procedure IncrementUint64Unrolled8(ghost id : heaplet_id)
     modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
     requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), 8), Public);
 
-    ensures  UpdatesAlAddrs64(old(mem), mem, id, addrs64(old(r8), 8), Public,
+    ensures  WritesAddrs64(old(mem), mem, id, addrs64(old(r8), 8), Public,
                   Plus8(old(mem), id, addrs64(old(r8),8), 8));
-    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), 8));
+    ensures OnlyWritesAddrs64(old(mem), mem, id, addrs64(old(r8), 8));
     ensures r8 == BitwiseAdd64(old(r8),64);
 {
   IncrementUint64Unrolled(id, 7);

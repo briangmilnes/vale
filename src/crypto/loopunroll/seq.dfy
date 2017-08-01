@@ -5,14 +5,16 @@ include "../../lib/collections/Seqs.s.dfy"
 include "../../arch/x64/def.s.dfy"
 include "../../arch/x64/vale.i.dfy"
 include "../../lib/util/dafny_wrappers.i.dfy"
-include "addrlogic.proven.s.dfy"
+include "addrlogic.s.dfy"
+include "seq.proven.dfy"
 
-module addrlogic {
+module seqmodule {
 
 import opened x64_def_s
 import opened types_s
 import opened x64_vale_i
 import opened dafny_wrappers_i
-import opened addrlogicproven
+import opened addrlogic
+import opened seqproven
 
 }

@@ -1,0 +1,149 @@
+/*
+  Do some testing on building and proving unrolled loops.
+
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "addrlogic.s.dfy" 
+include{:verbatim} "seq.proven.dfy"
+include{:verbatim} "seq.dfy"
+include "seq.provenvad.1.vad"
+
+#verbatim
+module seqvadproven {
+
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened addrlogic
+import opened seqmodule
+import opened seqvadproven1
+#endverbatim
+
+procedure {:timeLimitMultiplier 1} ModifyInputN1NoTail(ghost id : heaplet_id)
+  modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
+  reads    rsi;
+
+  requires r8 <= rsi;
+           r8 % 8 == 0;
+           rsi < 0x1_0000_0000_0000_0000;
+           (rsi - r8) % 8 == 0;
+           ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+
+  ensures 
+    let items := (old(rsi) - old(r8)) / 8;
+    let ar := addrs64(old(r8), items);
+    ValidSrcAlAddrs64(mem, id, ar, Public);
+    WritesAddrs64(old(mem), mem, id, ar, Public, Add8Seq(old(mem), id, ar, items));
+    OnlyWritesAddrs64(old(mem), mem, id, ar);
+    r8 == rsi;
+{
+  ghost var io_ptr := old(r8);
+  ghost var io_end := old(rsi);                  // Comment.
+  ghost var items  := (old(rsi) - r8) / 8;       // How many items do we do, of size 8.
+  ghost var count : nat := 0;               // How many have we done.
+
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
+  lemma_ValidSrcAlAddrs64_Tails(mem, id, addrs64(io_ptr, items), Public);
+
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+   invariant (r8 - io_ptr) % 8 == 0;     
+   invariant (rsi - r8) % 8 == 0;
+   invariant count == (r8 - io_ptr) / 8;
+   invariant count <= items;
+   invariant r8 == io_ptr + count * 8;
+   invariant WritesAddrs64(old(mem), mem, id, addrs64(io_ptr, count), Public,
+                  Add8Seq(old(mem), id, addrs64(io_ptr, count), count));
+   invariant OnlyWritesAddrs64(old(mem), mem, id, addrs64(io_ptr, count));
+   invariant ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
+   invariant (r8 < rsi) ==> ValidSrcAlAddr64(mem, id, addroff64(r8, 0), Public);
+   decreases rsi - r8;
+  {
+    ghost var mem1 := mem;
+    Add8(r8, r9, id, 0);
+    AddN(r8, 8);
+    lemma_Writes_OnlyWrites_Range_Addr_Ext
+          (old(mem), mem1, mem,
+           id, io_ptr, count, Public,
+           Add8Seq(old(mem), id, addrs64(io_ptr, count + 1), count + 1));
+   count := count + 1;
+  } 
+  assert count == items;
+  assert r8 == rsi;
+} 
+
+procedure {:recursive} {:timeLimitMultiplier 6}  Add8Unrolled (ghost id : heaplet_id, inline step : nat)
+    modifies mem; efl; rdx; rcx; r9; r10; r11; r12; r13; r14; r15; rbx;
+    reads r8;
+
+    requires 0 <= step < 8;
+    requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), step + 1), Public);
+    ensures WritesAddrs64(old(mem), mem, id,  addrs64(old(r8), step + 1), Public,
+                         Add8Seq(old(mem), id, addrs64(old(r8), step + 1), step + 1));
+    ensures OnlyWritesAddrs64(old(mem), mem, id, addrs64(old(r8), step + 1));
+
+{
+  lemma_BitwiseAdd64();
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(old(r8), step + 1), Public);
+
+  inline if (step == 7) {
+    Add8Unrolled(id, step - 1);
+    ghost var mem0 := mem; 
+    Add8(r8, r9,  id,  7);
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 7, Public,
+        Add8Seq(old(mem), id, addrs64(old(r8), 8), 8));
+  } else if (step == 6) {
+    Add8Unrolled(id, step - 1);
+    ghost var mem0 := mem; 
+    Add8(r8, r10,  id, 6);
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 6, Public,
+           Add8Seq(old(mem), id, addrs64(old(r8), 7), 7));
+  } else  if (step == 5) { 
+    Add8Unrolled(id, step - 1);
+    ghost var mem0 := mem; 
+    Add8(r8, r11,  id, 5);
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 5, Public,
+          Add8Seq(old(mem), id, addrs64(old(r8), 6), 6));
+  } else if (step == 4) {
+    Add8Unrolled(id, step - 1);
+    ghost var mem0 := mem; 
+    Add8(r8, r12,  id, 4);
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 4, Public,
+          Add8Seq(old(mem), id, addrs64(old(r8), 5), 5));
+  } else if (step == 3) {
+    Add8Unrolled(id, step - 1);
+    ghost var mem0 := mem; 
+    Add8(r8, r13,  id, 3);
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 3, Public,
+          Add8Seq(old(mem), id, addrs64(old(r8), 4), 4));
+  } else if (step == 2) {
+    Add8Unrolled(id, step - 1);
+    ghost var mem0 := mem; 
+    Add8(r8, r14,  id, 2);
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 2, Public,
+          Add8Seq(old(mem), id, addrs64(old(r8), 3), 3));
+  } else if (step == 1) {
+    Add8Unrolled(id, step - 1);
+    ghost var mem0 := mem; 
+    Add8(r8, r15,  id, 1);
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 1, Public,
+          Add8Seq(old(mem), id, addrs64(old(r8), 2), 2));
+  } else   if (step == 0) {                                    
+    ghost var mem0 := mem; 
+    Add8(r8, rbx, id, 0); 
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 0, Public,
+          Add8Seq(old(mem), id, addrs64(old(r8), 1), 1));
+ }
+}
+
+#verbatim
+} 
+#endverbatim

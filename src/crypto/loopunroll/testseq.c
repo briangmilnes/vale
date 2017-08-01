@@ -1,4 +1,4 @@
-/* Test code to learn about loopunrolling loops in Vale.
+/* Test code to learn about seq loops in Vale.
    BG Milnes, 30 July 2017
 */
 
@@ -172,14 +172,12 @@ void test_IncrementVectorUnrolled8() {
 }
 
 
-void test_increments()
+void test_seq() {
   printf("Loopunroll tests.\n");
-    test_IncrementVectorUnrolled1();
-    test_IncrementVectorUnrolled4();
-    test_IncrementVectorUnrolled8();
+  printf("Nothing coded yet.\n");
   printf("Loopunroll tests completed.\n");
 }
 
 int __cdecl main(void) {
-  test_Increments();
+  test_seq();
 }

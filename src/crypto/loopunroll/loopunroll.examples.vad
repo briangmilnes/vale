@@ -1,0 +1,331 @@
+/*
+  Do some testing on building and proving unrolled loops.
+  Basic results.
+
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "../../lib/math/div_nonlinear.i.dfy"
+
+include{:verbatim} "loopunroll.s.dfy" 
+include{:verbatim} "seqcomp.s.dfy" 
+include{:verbatim} "addrlogic.s.dfy" 
+include{:verbatim} "loopunroll.tails.dfy"
+include{:verbatim} "proof.dfy"
+include "loopunroll.unrolled.vad"
+
+#verbatim
+module LoopUnrollExamples {
+
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened LoopUnrollModule
+import opened seqcomp
+import opened addrlogic
+import opened LoopUnrollProven
+import opened LoopUnrollUnrolled
+import opened tails
+import opened proof
+
+#endverbatim
+
+// A series of examples leading to the final goal:
+//
+// An input copy loop proving correctness for 64 bit aligned data.
+// That copies in arbitrary N * 8 byte units.
+// And a pair of predicates that summarize the loop and post invariant.
+// 
+// We only prove the fastest loop here:
+// input start pointer, 
+// input end pointer,
+// output start pointer.
+//
+// 0) Prove the loop with no unrolled calls.
+// 1) Walk through input only in 64 byte blocks, aligned, no tail.
+// 2) Walk through input only in N * 8 bytes blocks, no tail.
+// 3) Operand it.
+// 4) Read memory, put it in a register.
+// 
+
+// 0) 
+// Get the shift theorems first, shift an addroff
+
+
+
+procedure {:timeLimitMultiplier 1} WalkThroughInputN1NoTail(ghost id : heaplet_id)
+  modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
+  reads    rsi;
+
+  requires r8 <= rsi;
+           r8 % 8 == 0;
+           rsi < 0x1_0000_0000_0000_0000;
+           (rsi - r8) % 8 == 0;
+           ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+
+  ensures 
+    let items := (old(rsi) - old(r8)) / 8;
+    let ar := addrs64(old(r8), items);
+    ValidSrcAlAddrs64(mem, id, ar, Public);
+    WritesAddrs64(old(mem), mem, id, ar, Public, Plus8(old(mem), id, ar, items));
+    OnlyWritesAddrs64(old(mem), mem, id, ar);
+
+  ensures r8 == rsi;
+{
+  ghost var io_ptr := old(r8);
+  ghost var io_end := old(rsi);                  // Comment.
+  ghost var items  := (old(rsi) - r8) / 8;       // How many items do we do, of size 8.
+  ghost var count : nat := 0;               // How many have we done.
+
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
+  lemma_ValidSrcAlAddrs64_Tails(mem, id, addrs64(io_ptr, items), Public);
+
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+   invariant (r8 - io_ptr) % 8 == 0;     
+   invariant (rsi - r8) % 8 == 0;
+   invariant count == (r8 - io_ptr) / 8;
+   invariant count <= items;
+   invariant r8 == io_ptr + count * 8;
+   invariant WritesAddrs64(old(mem), mem, id, addrs64(io_ptr, count), Public,
+                  Plus8(old(mem), id, addrs64(io_ptr, count), count));
+   invariant OnlyWritesAddrs64(old(mem), mem, id, addrs64(io_ptr, count));
+   invariant ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
+   invariant (r8 < rsi) ==> ValidSrcAlAddr64(mem, id, addroff64(r8, 0), Public);
+   decreases rsi - r8;
+  {
+    ghost var mem1 := mem;
+    ghost var v  := Plus8(old(mem), id, addrs64(io_ptr, count), count);
+    ghost var v' := Plus8(old(mem), id, addrs64(io_ptr, count + 1), count + 1);
+    assert SeqLength(v) == count;
+    assert SeqLength(v') == count + 1;
+//    assert v == v[..count];
+
+    // count = 0, v(),v'(0), trim(v',0) == empty == v.
+    // count = 1, v(0), v'(0,1) trim(v',1) == v(0), v == v(0).
+    // Is this a logic bug or a failure to prove?
+    //assert trim(v',count) == v;
+
+    assert WritesAddrs64(old(mem), mem1, id, addrs64(io_ptr, count), Public, v);
+    ReadIncrStore(r8, r9, id, 0);
+    assert WritesAddrs64(old(mem), mem1, id, addrs64(io_ptr, count), Public, v);
+    AddN(r8, 8);
+    assert WritesAddrs64(old(mem), mem1, id, addrs64(io_ptr, count), Public, v);
+
+    // It can't prove that v'[..count] == v.
+
+    assert WritesAddrs64(old(mem), mem1, id, addrs64(io_ptr, count), Public, v');
+
+    lemma_Writes_OnlyWrites_Range_Addr_Ext'
+           (old(mem), mem1, mem, id, io_ptr, count, Public,
+           Plus8(old(mem), id, addrs64(io_ptr, count + 1), count + 1));
+    count := count + 1;
+  } 
+  assert count == items;
+  assert r8 == rsi;
+} 
+
+
+/*
+// Atributes:
+// input pointer
+// end pointer
+// 8 byte aligned
+// 64 byte chunks guaranteed
+// Proof
+// iterations, blocks.
+procedure WalkThroughInput64NoTail(ghost id : heaplet_id)
+  modifies efl; r8;
+  reads    rsi;
+  requires r8 <= rsi;
+  requires r8 % 8 == 0;
+  requires (rsi - r8) % 64 == 0;
+  requires rsi < 0x1_0000_0000_0000_0000;
+  ensures r8 == rsi;
+{
+  lemma_BitwiseAdd64(); // for the decreases clause.
+
+  ghost var io_ptr := r8;
+  ghost var io_end := rsi;                   // Comment.
+  ghost var items  := (rsi - r8) / 8; // How many items do we do, of size 8.
+  ghost var blocks := (rsi - r8) / 64; // How many blocks to do.
+  ghost var count := 0;                      // How many have we done.
+  
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+   invariant r8 == io_ptr + count * 64;
+   invariant (r8 - io_ptr) % 64 == 0;
+   invariant (rsi - r8) % 64 == 0;
+   invariant count == (r8 - io_ptr) / 64;
+   invariant count + (rsi - r8) / 64 == blocks;
+   decreases rsi - r8;
+  {
+    AddN(r8,64);
+    count := count + 1;
+  } 
+  assert count == blocks;
+} 
+*/
+
+// Atributes:
+// input pointer
+// end pointer
+// N byte aligned
+// N * 8 byte chunks guaranteed
+// Proof
+// iterations, blocks.
+
+/*
+procedure WalkThroughInputN8NoTail(ghost id : heaplet_id, inline items_per_block : uint16)
+  modifies efl; r8;
+  reads    rsi;
+
+  requires r8 <= rsi;
+  requires r8 % 8 == 0;
+  requires items_per_block > 0;
+  requires rsi + (items_per_block * 8) < 0x1_0000_0000_0000_0000;
+  requires (rsi - r8) % (items_per_block * 8) == 0;
+
+  ensures r8 == rsi;
+{
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_div_auto((items_per_block * 8)); // For math involing items_per_block * 8.
+  lemma_mod_auto((items_per_block * 8));
+
+  ghost var io_ptr := r8;
+  ghost var io_end := rsi;                  // Comment.
+  ghost var items  := (rsi - r8) / 8;       // How many items do we do, of size 8.
+  ghost var blocks := (rsi - r8) / (items_per_block * 8); // How many blocks to do.
+  ghost var count := 0;                     // How many have we done.
+
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+//   invariant r8 == io_ptr + count * (items_per_block * 8); Won't prove in the general case.
+   invariant (r8 - io_ptr) % (items_per_block * 8) == 0;     
+   invariant (rsi - r8) % (items_per_block * 8) == 0;
+   invariant count == (r8 - io_ptr) / (items_per_block * 8); 
+   invariant count + (rsi - r8) / (items_per_block * 8) == blocks;
+   decreases rsi - r8;
+  {
+    AddN(r8, (items_per_block * 8));
+    count := count + 1;
+  } 
+  assert count == blocks;
+  assert r8 == rsi;
+} 
+*/
+
+// Step 3 -- go to operands, just to see they work.
+/*
+procedure WalkThroughInputN8NoTailOperands(ghost id : heaplet_id, 
+                                   inline items_per_block : uint16, 
+                                   inout operand io_ptr     : uint64,
+                                   inout operand io_end_ptr : uint64)
+  modifies efl; 
+
+  requires io_ptr <= io_end_ptr;
+  requires io_ptr % 8 == 0;
+  requires items_per_block > 0;
+  requires io_end_ptr + (items_per_block * 8) < 0x1_0000_0000_0000_0000;
+  requires (io_end_ptr - io_ptr) % (items_per_block * 8) == 0;
+
+  ensures io_ptr == io_end_ptr;
+{
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_div_auto((items_per_block * 8)); // For math involing items_per_block * 8.
+  lemma_mod_auto((items_per_block * 8));
+
+  ghost var items  := (io_end_ptr - io_ptr) / 8;       // How many items do we do, of size 8.
+  ghost var blocks := (io_end_ptr - io_ptr) / (items_per_block * 8); // How many blocks to do.
+  ghost var count := 0;                               // How many have we done.
+
+  while (io_ptr < io_end_ptr)
+   invariant io_ptr <= io_end_ptr;
+//   invariant io_ptr == old(io_ptr) + count * (items_per_block * 8); Won't prove in the general case.
+   invariant (io_ptr - old(io_ptr)) % (items_per_block * 8) == 0;     
+   invariant (io_end_ptr - io_ptr) % (items_per_block * 8) == 0;
+   invariant count == (io_ptr - old(io_ptr)) / (items_per_block * 8); 
+   invariant count + (io_end_ptr - io_ptr) / (items_per_block * 8) == blocks;
+   decreases io_end_ptr - io_ptr;
+  {
+    AddN(io_ptr, (items_per_block * 8));
+    count := count + 1;
+  } 
+  assert count == blocks;
+  assert io_ptr == io_end_ptr;
+} 
+*/
+
+// Step 4 
+// Come back to this, prove it without unrolling first.
+/*
+procedure WalkThroughInputN8NoTailWTF(ghost id : heaplet_id, inline items_per_block : uint16)
+  modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
+  reads    rsi;
+
+  requires r8 <= rsi;
+           r8 % 8 == 0;
+           0 < items_per_block <= 64;
+           rsi + (items_per_block * 8) < 0x1_0000_0000_0000_0000;
+          (rsi - r8) % (items_per_block * 8) == 0;
+          ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+
+  ensures 
+    ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+    OnlyWritesAddrs64(old(mem), mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8));
+
+  ensures r8 == rsi;
+{
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+  lemma_div_auto((items_per_block * 8)); // For math involing items_per_block * 8.
+  lemma_mod_auto((items_per_block * 8));
+
+  ghost var mem0 := mem;
+  ghost var io_ptr := r8;
+  ghost var io_end := rsi;                  // Comment.
+  ghost var items  := (rsi - r8) / 8;       // How many items do we do, of size 8.
+  ghost var blocks := (rsi - r8) / (items_per_block * 8); // How many blocks to do.
+  ghost var count : nat := 0;                     // How many have we done.
+
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+//   invariant r8 == io_ptr + count * (items_per_block * 8); Won't prove in the general case.
+   invariant (r8 - io_ptr) % (items_per_block * 8) == 0;     
+   invariant (rsi - r8) % (items_per_block * 8) == 0;
+   invariant count == (r8 - io_ptr) / (items_per_block * 8); 
+   invariant count + (rsi - r8) / (items_per_block * 8) == blocks;
+   invariant 0 <= count;
+   invariant 0 <= items_per_block * count;
+   invariant 0 <= items_per_block * (count + 1);
+   invariant OnlyWritesAddrs64(mem0, mem, id, addrs64(io_ptr, items_per_block * count));
+   decreases rsi - r8;
+  {
+   lemma_Writes_OnlyWrites_Range_Rang_Ext(mem0, old(mem), mem, id, io_ptr,
+                                          items_per_block * count,  
+                                          items_per_block,
+                                          Public, 
+                                          Plus8(old(mem), id, 
+                                                addrs64(old(r8), items_per_block * (count + 1)),
+                                                items_per_block * (count + 1)));
+    assume ValidSrcAlAddrs64(mem, id, addrs64(r8, 8), Public);
+    IncrementUint64Unrolled(id, 7);
+    AddN(r8, (items_per_block * 8));
+    count := count + 1;
+  } 
+  assert count == blocks;
+  assert r8 == rsi;
+} 
+*/
+
+
+#verbatim
+} 
+#endverbatim

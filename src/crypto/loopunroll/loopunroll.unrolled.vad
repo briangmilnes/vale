@@ -30,23 +30,6 @@ import opened LoopUnrollProven
 #endverbatim
 
 
-#verbatim
-function Plus8(old_mem : Heaplets, id: heaplet_id, ar : Addrs64, count : nat) : seq<uint64>
- requires 0 <= count <= ar.count;
- requires ValidDstAlAddrs64(old_mem, id, ar);
- ensures |Plus8(old_mem, id, ar, count)| == count;
- decreases count;
-{
-  lemma_ValidDstAlAddrs64(old_mem, id, ar);
-  if count == 0 then
-  []
-  else 
-    Plus8(old_mem, id, ar, count - 1) + 
-    [BitwiseAdd64(old_mem[id].mem64[EvalAddrOff64(addroff64(ar.addr, count - 1))].v, 8)]
-}
-#endverbatim
-
-
 // This is the best version of all. Hand unrlled yet recursively unrollable.
 procedure {:recursive} {:timeLimitMultiplier 6}  IncrementUint64Unrolled (ghost id : heaplet_id, inline step : nat)
     modifies mem; efl; rdx; rcx; r9; r10; r11; r12; r13; r14; r15; rbx;
@@ -54,9 +37,9 @@ procedure {:recursive} {:timeLimitMultiplier 6}  IncrementUint64Unrolled (ghost 
 
     requires 0 <= step < 8;
     requires/ensures ValidSrcAlAddrs64(mem, id, addrs64(old(r8), step + 1), Public);
-    ensures UpdatesAlAddrs64(old(mem), mem, id,  addrs64(old(r8), step + 1), Public,
+    ensures WritesAddrs64(old(mem), mem, id,  addrs64(old(r8), step + 1), Public,
                   Plus8(old(mem), id, addrs64(old(r8), step + 1), step + 1));
-    ensures OnlyAddrs64Modified(old(mem), mem, id, addrs64(old(r8), step + 1));
+    ensures OnlyWritesAddrs64(old(mem), mem, id, addrs64(old(r8), step + 1));
 
 {
   lemma_BitwiseAdd64();
@@ -66,48 +49,48 @@ procedure {:recursive} {:timeLimitMultiplier 6}  IncrementUint64Unrolled (ghost 
     IncrementUint64Unrolled(id, step - 1);
     ghost var mem0 := mem; 
     ReadIncrStore(r8, r9,  id,  7);
-    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 7, Public,
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 7, Public,
           Plus8(old(mem), id, addrs64(old(r8), 8), 8));
   } else if (step == 6) {
     IncrementUint64Unrolled(id, step - 1);
     ghost var mem0 := mem; 
     ReadIncrStore(r8, r10,  id, 6);
-    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 6, Public,
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 6, Public,
           Plus8(old(mem), id, addrs64(old(r8), 7), 7));
   } else  if (step == 5) { 
     IncrementUint64Unrolled(id, step - 1);
     ghost var mem0 := mem; 
     ReadIncrStore(r8, r11,  id, 5);
-    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 5, Public,
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 5, Public,
           Plus8(old(mem), id, addrs64(old(r8), 6), 6));
   } else if (step == 4) {
     IncrementUint64Unrolled(id, step - 1);
     ghost var mem0 := mem; 
     ReadIncrStore(r8, r12,  id, 4);
-    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 4, Public,
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 4, Public,
           Plus8(old(mem), id, addrs64(old(r8), 5), 5));
   } else if (step == 3) {
     IncrementUint64Unrolled(id, step - 1);
     ghost var mem0 := mem; 
     ReadIncrStore(r8, r13,  id, 3);
-    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 3, Public,
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 3, Public,
           Plus8(old(mem), id, addrs64(old(r8), 4), 4));
   } else if (step == 2) {
     IncrementUint64Unrolled(id, step - 1);
     ghost var mem0 := mem; 
     ReadIncrStore(r8, r14,  id, 2);
-    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 2, Public,
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 2, Public,
           Plus8(old(mem), id, addrs64(old(r8), 3), 3));
   } else if (step == 1) {
     IncrementUint64Unrolled(id, step - 1);
     ghost var mem0 := mem; 
     ReadIncrStore(r8, r15,  id, 1);
-    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 1, Public,
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 1, Public,
           Plus8(old(mem), id, addrs64(old(r8), 2), 2));
   } else   if (step == 0) {                                    
     ghost var mem0 := mem; 
     ReadIncrStore(r8, rbx, id, 0); 
-    lemma_UpdatesAlAddrs64_OnlyAddrs64Modified_Extension(old(mem), mem0, mem, id, old(r8), 0, Public,
+    lemma_Writes_OnlyWrites_Range_Addr_Ext(old(mem), mem0, mem, id, old(r8), 0, Public,
           Plus8(old(mem), id, addrs64(old(r8), 1), 1));
  }
 }

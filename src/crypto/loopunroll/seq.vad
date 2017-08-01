@@ -1,0 +1,100 @@
+/*
+  Do some testing on building and proving unrolled loops.
+
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "addrlogic.s.dfy" 
+include{:verbatim} "seq.dfy"
+include "seq.provenvad.vad"
+include{:verbatim} "seq.tobeproved.dfy"
+
+#verbatim
+module seqvad {
+
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened addrlogic
+import opened seqmodule
+import opened seqtobeproven
+import opened seqvadproven
+
+#endverbatim
+
+procedure {:timeLimitMultiplier 1} ModifyInput81NoTail(ghost id : heaplet_id)
+  modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
+  reads    rsi;
+
+  requires 
+           r8 <= rsi;
+           r8 % 8 == 0;
+           rsi < 0x1_0000_0000_0000_0000;
+           (rsi - r8) % 64 == 0;
+           (rsi - r8) >= 64;
+           ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+
+  ensures 
+    let items   := (old(rsi) - old(r8)) / 8;
+    let ar := addrs64(old(r8), items);
+    ValidSrcAlAddrs64(mem, id, ar, Public);
+    WritesAddrs64(old(mem), mem, id, ar, Public, Add8Seq(old(mem), id, ar, items));
+    OnlyWritesAddrs64(old(mem), mem, id, ar);
+    r8 == rsi;
+{
+  ghost var io_ptr := old(r8);
+  ghost var io_end := old(rsi);                  // Comment.
+  ghost var items  := (old(rsi) - r8) / 8;       // How many items do we do, of size 8.
+  ghost var count_items : nat := 0;              // How many items have we done.
+
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_mod_auto(64); 
+  lemma_div_auto(64); 
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
+  lemma_ValidSrcAlAddrs64_Tails(mem, id, addrs64(io_ptr, items), Public);
+
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+   invariant (r8 < rsi) ==> (rsi - r8) >= 64;
+   invariant (r8 - io_ptr) % 64 == 0;     
+   invariant (rsi - r8) % 64 == 0;
+   invariant count_items == (r8 - io_ptr) / 8;
+   invariant count_items <= items;
+   invariant r8 == io_ptr + count_items * 8;
+   invariant WritesAddrs64(old(mem), mem, id, addrs64(io_ptr, count_items), Public,
+                     Add8Seq(old(mem), id, addrs64(io_ptr, count_items), count_items));
+   invariant OnlyWritesAddrs64(old(mem), mem, id, addrs64(io_ptr, count_items));
+   invariant ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
+   invariant (r8 < rsi) ==> ValidSrcAlAddrs64(mem, id, addrs64(r8, 8), Public);
+   decreases rsi - r8;
+  {
+    ghost var mem1 := mem;
+    Add8Unrolled(id, 7);  
+//    assume ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, count_items + 8), Public);
+
+    lemma_Writes_OnlyWrites_Range_Range_Ext
+           (old(mem), mem1, mem, id,
+           io_ptr, r8, count_items, 8, Public,
+           Add8Seq(old(mem), id, addrs64(io_ptr, count_items + 8), count_items + 8));
+
+    AddN(r8, 64); // Can I do this with inline in some way? So I can use items_per_batch?
+    count_items   := count_items + 8;
+
+//    assume ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
+  } 
+  assert count_items == items;
+  assert r8 == rsi;
+} 
+
+
+#verbatim
+
+} 
+#endverbatim
+
