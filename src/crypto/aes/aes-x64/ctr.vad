@@ -229,7 +229,7 @@ procedure {:refined} {:timeLimitMultiplier 3} CTREncryptOneBlockStdCall(
      forall j :: 0 <= j <= 10 ==>
 // Chris, take out the valid src addr, it proves in isolation.
 // Leave it out and it times out.
-//         (ValidSrcAddr(mem, key_heap_id, rdi + 16 * j, 128, Secret) &&
+         (ValidSrcAddr(mem, key_heap_id, rdi + 16 * j, 128, Secret) &&
           mem[key_heap_id].quads[rdi + 16*j].v == Quadword(w[4*j], w[4*j+1], w[4*j+2], w[4*j+3]));
 
      key_ptr % 16 == 0;
