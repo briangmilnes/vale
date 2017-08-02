@@ -7,7 +7,7 @@ import os, os.path
 import sys
 
 # Imported identifiers defined in the SConstruct file
-Import('env', 'BuildOptions', 'dafny_default_args', 'dafny_default_args_nonlarith')
+Import('env', 'BuildOptions', 'dafny_default_args_nlarith', 'dafny_default_args_larith')
 
 #
 # Verify *.vad and *.dfy under src/test/ and tools/vale/test/
@@ -22,29 +22,28 @@ Export('verify_paths')
 # Table of special-case Dafny source which requires non-default arguments
 #
 verify_options = {
-  'src/arch/arm/nlarith.s.dfy': BuildOptions(dafny_default_args),
-  'src/arch/arm/bitvectors.i.dfy': BuildOptions(dafny_default_args_nonlarith + ' /proverOpt:OPTIMIZE_FOR_BV=true'),
-  'src/crypto/aes/aes-x64/aes_main.i.dfy': BuildOptions(dafny_default_args_nonlarith),
-  'src/lib/math/mul_nonlinear.i.dfy': BuildOptions(dafny_default_args),
-  'src/lib/math/div_nonlinear.i.dfy': BuildOptions(dafny_default_args),
-  'src/crypto/hashing/sha-arm/bit-vector-lemmas.i.dfy': BuildOptions(dafny_default_args_nonlarith + ' /proverOpt:OPTIMIZE_FOR_BV=true'),
-  'src/crypto/hashing/sha-x64/sha256_vale_main.i.dfy': BuildOptions(dafny_default_args_nonlarith),
-  'src/lib/math/div.i.dfy': BuildOptions(dafny_default_args_nonlarith + ' /timeLimit:60'),
-  'src/lib/util/operations.i.dfy': BuildOptions(dafny_default_args_nonlarith + ' /proverOpt:OPTIMIZE_FOR_BV=true'),
-  'obj/crypto/aes/cbc.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /timeLimit:120'),
-  'obj/crypto/aes/aes-x64/cbc.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /timeLimit:120'),
-  'src/crypto/aes/dtestaes.dfy': None,
-  'src/crypto/aes/dtestgcm.dfy': None,
-  'obj/crypto/aes/aes-x64/ctr.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /errorLimit:1'), # + ' /noVerify',
-  'obj/crypto/loopunroll/loopunroll.gen.dfy': BuildOptions(dafny_default_args_nonlarith),
-  'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nonlarith + ' /timeLimit:30'),
+  'src/arch/arm/nlarith.s.dfy': BuildOptions(dafny_default_args_nlarith),
+  'src/arch/arm/bitvectors.i.dfy': BuildOptions(dafny_default_args_larith + ' /proverOpt:OPTIMIZE_FOR_BV=true'),
+  'src/crypto/aes/aes-x64/aes_main.i.dfy': BuildOptions(dafny_default_args_larith),
+  'src/lib/math/mul_nonlinear.i.dfy': BuildOptions(dafny_default_args_nlarith),
+  'src/lib/math/div_nonlinear.i.dfy': BuildOptions(dafny_default_args_nlarith),
+  'src/crypto/hashing/sha-arm/bit-vector-lemmas.i.dfy': BuildOptions(dafny_default_args_larith + ' /proverOpt:OPTIMIZE_FOR_BV=true'),
+  'src/crypto/hashing/sha-x64/sha256_vale_main.i.dfy': BuildOptions(dafny_default_args_larith),
+  'src/lib/math/div.i.dfy': BuildOptions(dafny_default_args_larith + ' /timeLimit:60'),
+  'src/lib/util/operations.i.dfy': BuildOptions(dafny_default_args_larith + ' /proverOpt:OPTIMIZE_FOR_BV=true'),
+  'obj/crypto/aes/cbc.gen.dfy': BuildOptions(dafny_default_args_larith + ' /timeLimit:120'),
+  'obj/crypto/aes/aes-x64/cbc.gen.dfy': BuildOptions(dafny_default_args_larith + ' /timeLimit:120'),
+  'obj/crypto/aes/aes-x64/ctr.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /errorLimit:1'), # + ' /noVerify',
+  'obj/crypto/loopunroll/loopunroll.gen.dfy': BuildOptions(dafny_default_args_nlarith),
+  'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'),
+
   # .dfy files default to this set of options
-  '.dfy': BuildOptions(dafny_default_args_nonlarith),
+  '.dfy': BuildOptions(dafny_default_args_larith),
 
   'tools/Vale/test/vale-debug.vad': None,
 
   # .vad files default to this set of options when compiling .gen.dfy
-  '.vad': BuildOptions(dafny_default_args_nonlarith)
+  '.vad': BuildOptions(dafny_default_args_larith)
 
   # Disable verification by adding 'filename': None
 }
@@ -65,19 +64,6 @@ sha_asm = env.ExtractValeCode(
 sha_c_h = env.ExtractDafnyCode(['src/crypto/hashing/sha256_main.i.dfy'])
 sha_include_dir = os.path.split(str(sha_c_h[0][1]))[0]
 env.BuildTest(['src/crypto/hashing/testsha256.c', sha_asm[0], sha_c_h[0][0]], sha_include_dir, 'testsha256')
-
-#
-# build cbc-exe
-#
-if env['TARGET_ARCH']=='x86' or env['TARGET_ARCH']=='amd64':   # x86 and x64 only
-  cbc_asm = env.ExtractValeCode(
-    ['src/crypto/aes/$AES_ARCH_DIR/aes.vad', 'src/crypto/aes/$AES_ARCH_DIR/cbc.vad'], # Vale source
-    'src/crypto/aes/$AES_ARCH_DIR/cbc_main.i.dfy',              # Dafny main
-    'cbc'                                                       # Base name for the ASM files and EXE
-    )
-  env.BuildTest(['src/crypto/aes/testcbc.c', cbc_asm[0]], '', 'testcbc')
-else:
-  print('Not building AES-CBC for this target architecture')  
 
 #
 # build ctr-exe
@@ -118,6 +104,20 @@ if env['TARGET_ARCH']=='amd64':
 else:
   print('Not building Seq for this target architecture')  
 
+
+#
+# build cbc-exe
+#
+if env['TARGET_ARCH']=='x86' or env['TARGET_ARCH']=='amd64':   # x86 and x64 only
+  cbc_asm = env.ExtractValeCode(
+    ['src/crypto/aes/$AES_ARCH_DIR/aes.vad', 'src/crypto/aes/$AES_ARCH_DIR/cbc.vad'], # Vale source
+    'src/crypto/aes/$AES_ARCH_DIR/cbc_main.i.dfy',              # Dafny main
+    'cbc'                                                       # Base name for the ASM files and EXE
+    )
+  env.BuildTest(['src/crypto/aes/testcbc.c', cbc_asm[0]], '', 'testcbc')
+else:
+  print('Not building AES-CBC for this target architecture')  
+
 #
 # build aes-exe
 #
@@ -128,7 +128,6 @@ if env['TARGET_ARCH']=='x86' or env['TARGET_ARCH']=='amd64':   # x86 and x64 onl
     'aes'                                            # Base name for the ASM files and EXE
     )
   env.BuildTest(['src/crypto/aes/testaes.c', aes_asm[0]], 'src/crypto/aes', 'testaes')
-  env.BuildDafnyTest(['src/crypto/aes/dtestaes.dfy'], dafny_default_args, 'dtestaes')
 else:
   print('Not building AES for this target architecture')
 
@@ -144,7 +143,7 @@ if env['TARGET_ARCH']=='amd64' and sys.platform == "win32":     # x64-only; not 
   env.BuildTest(['src/crypto/poly1305/testpoly1305.c', poly1305_asm[0]], 'src/crypto/poly1305', 'testpoly1305')
 else:
   print('Not building Poly1305 for this target architecture')
- 
+
 if 'KREMLIN_HOME' in os.environ:
   kremlin_path = os.environ['KREMLIN_HOME']
 else:
@@ -174,4 +173,3 @@ if env['OPENSSL_PATH'] != None:
     poly1305_obj = engineenv.Object('obj/poly1305_openssl', poly1305_asm[0])
     engine = engineenv.SharedLibrary(target='obj/EverestSha256.dll',
       source=[everest_sha256, everest_glue, sha256_obj, sha256asm_obj, poly1305_obj, '$OPENSSL_PATH/libcrypto.lib'])
-

@@ -141,19 +141,22 @@ let rec emit_stmt (ps:print_state) (s:stmt):unit =
   | SCalc (oop, contents) ->
       ps.PrintLine ("calc " + (match oop with None -> "" | Some op -> string_of_bop op + " ") + "{");
       ps.Indent();
-      List.iter (fun cc ->
-        match cc with
-        | CalcLine e -> ps.PrintLine ((string_of_exp e) + ";")
-        | CalcHint (oop, ss) ->
-            (match oop with | None -> () | Some op -> ps.Unindent(); ps.PrintLine(string_of_bop op); ps.Indent());
-            emit_block ps ss
+      List.iter (fun {calc_exp = e; calc_op = oop; calc_hints = hints} ->
+        ps.PrintLine ((string_of_exp e) + ";");
+        (match oop with | None -> () | Some op -> ps.Unindent(); ps.PrintLine(string_of_bop op); ps.Indent());
+        List.iter (emit_block ps) hints
       ) contents;
       ps.Unindent();
       ps.PrintLine("}")
-  | SVar (x, tOpt, g, a, eOpt) ->
+  | SVar (x, tOpt, Immutable, XGhost, [], Some e) ->
+      let st = match tOpt with None -> "" | Some t -> ":" + (string_of_typ t) in
+      ps.PrintLine ("let " + (sid x) + st + " := " + (string_of_exp e) + ";")
+  | SVar (x, tOpt, _, g, a, eOpt) ->
       let st = match tOpt with None -> "" | Some t -> ":" + (string_of_typ t) in
       let rhs = match eOpt with None -> "" | Some e -> " := " + (string_of_exp e) in
       ps.PrintLine ((string_of_var_storage g) + "var " + (sid x) + st + rhs + ";")
+  | SAlias (x, y) ->
+      ps.PrintLine ("let " + (sid x) + " @= " + (sid y) + ";")
   | SAssign ([], EOp (Uop (UCustomAssign s), [e])) ->
       ps.PrintLine ((string_of_exp e) + " " + s + ";")
   | SAssign (lhss, EOp (Uop (UCustomAssign s), [e])) ->

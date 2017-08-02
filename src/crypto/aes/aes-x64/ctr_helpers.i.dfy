@@ -175,6 +175,8 @@ predicate CTRInvInit(g : G,
 }
 
 predicate IvReq(g : G, iv_reg : uint64, iv_ctr : Quadword) {
+//  reveal_upper64();
+//  reveal_lower64();
   iv_ctr.mid_lo  == upper64(iv_reg) &&
   iv_ctr.lo      == lower64(iv_reg)
 }

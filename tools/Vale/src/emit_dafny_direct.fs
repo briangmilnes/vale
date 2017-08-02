@@ -183,12 +183,12 @@ let need_rel_chain (exp:exp):bool =
   | EOp (Bop op, [e1; e2]) -> if is_rel_op op then is_rel_expr (skip_loc e1) else false
   | _ -> false
 
-let rec create_chaining_rel (built_ins:BuiltIns) (loc:loc) (x:exp) (chain:ResizeArray<Expression>) (ops:ResizeArray<BinaryExpr.Opcode>) (prefixLimits:ResizeArray<Expression>) (first_op_tok:IToken ref):Expression =
+let rec create_chaining_rel (built_ins:BuiltIns) (loc:loc) (x:exp) (chain:ResizeArray<Expression>) (ops:ResizeArray<BinaryExpr.Opcode>) (opLocs:ResizeArray<IToken>) (prefixLimits:ResizeArray<Expression>) (first_op_tok:IToken ref):Expression =
   match x with
   | EOp (Bop op, [e1; e2]) ->
       if is_rel_expr (skip_loc e1)
       then
-        let e = create_chaining_rel built_ins (one_loc_of_exp loc e1) (skip_loc e1) chain ops prefixLimits first_op_tok in
+        let e = create_chaining_rel built_ins (one_loc_of_exp loc e1) (skip_loc e1) chain ops opLocs prefixLimits first_op_tok in
         let left = chain.Item(chain.Count-1) in
         let right = create_expression built_ins loc e2 in
         let tok = create_token loc (string_of_bop op) in
@@ -204,6 +204,7 @@ let rec create_chaining_rel (built_ins:BuiltIns) (loc:loc) (x:exp) (chain:Resize
         let op = bop2opcode op in
         chain.Add(right)
         ops.Add(op)
+        opLocs.Add(tok)
         prefixLimits.Add(null)
         new BinaryExpr(tok, BinaryExpr.Opcode.And, e, new BinaryExpr(tok, op, left, right)) :> Expression
       else
@@ -215,6 +216,7 @@ let rec create_chaining_rel (built_ins:BuiltIns) (loc:loc) (x:exp) (chain:Resize
         first_op_tok := tok;
         chain.Add(left)
         chain.Add(right)
+        opLocs.Add(tok)
         ops.Add(op)
         prefixLimits.Add(null)
         new BinaryExpr(tok, op, left, right) :> Expression
@@ -267,10 +269,11 @@ and create_expression (built_ins:BuiltIns) (loc:loc) (x:exp):Expression =
           then
             let chain = new ResizeArray<Expression>() in
             let ops = new ResizeArray<BinaryExpr.Opcode>() in
+            let opLocs = new ResizeArray<IToken>() in
             let prefix_limits = new ResizeArray<Expression>() in
             let (first_op_tok:IToken ref) = ref null in
-            let e = create_chaining_rel built_ins loc x chain ops prefix_limits first_op_tok in
-            new ChainingExpression(!first_op_tok, chain, ops, prefix_limits, e) :> Expression
+            let e = create_chaining_rel built_ins loc x chain ops opLocs prefix_limits first_op_tok in
+            new ChainingExpression(!first_op_tok, chain, ops, opLocs, prefix_limits) :> Expression
           else
               let tok = create_token loc (string_of_bop op) in
               let opcode = bop2opcode op in
@@ -442,8 +445,42 @@ let rec create_stmt (built_ins:BuiltIns) (loc:loc) (s:stmt):ResizeArray<Statemen
         let s = new AssertStmt(start_tok, end_tok, exp, null, attrs) :> Statement in
         stmts.Add(s)
         stmts
-    | SCalc _ -> err "unsupported feature: 'calc' not yet implemented for Dafny direct"
-    | SVar (x, tOpt, g, a, eOpt) ->
+    | SCalc (oop, contents) ->
+        let start_tok = create_token loc "calc" in
+        let end_tok = create_token loc "}" in
+        let defOp = CalcStmt.DefaultOp in
+        let makeCalcOp op = CalcStmt.BinaryCalcOp(bop2opcode op) :> CalcStmt.CalcOp in
+        let makeCalcOpOpt op = match oop with None -> defOp | Some op -> makeCalcOp op in
+        let calcOp = makeCalcOpOpt oop in
+        let resOp = ref calcOp in
+        let checkOp nextOp =
+          let maybeOp = (!resOp).ResultOp(nextOp) in
+          if maybeOp = null then err "bad calc op" else
+          resOp := maybeOp
+          in
+        let lines = new ResizeArray<Expression>() in
+        let hints = new ResizeArray<BlockStmt>() in
+        let stepOps = new ResizeArray<CalcStmt.CalcOp>() in
+        let attrs = null in
+        let len = List.length contents in
+        let addContents {calc_exp = e; calc_op = oop; calc_hints = chs} =
+          let exp = create_expression built_ins loc e in
+          lines.Add(exp)
+          if lines.Count = len then lines.Add(exp) // Dafny expects redundant last expression
+          let subhints = new ResizeArray<Statement>() in
+          let start_tok = create_token loc "{" in
+          let end_tok = create_token loc "}" in
+          List.iter (fun ss -> subhints.Add(create_block_stmt built_ins loc ss)) chs
+          hints.Add(new BlockStmt(start_tok, end_tok, subhints))
+          let stepOp = match oop with None -> calcOp | Some op -> makeCalcOp op in
+          checkOp stepOp
+          stepOps.Add(stepOp)
+          in
+        List.iter addContents contents
+        let s = new CalcStmt(start_tok, end_tok, calcOp, lines, hints, stepOps, attrs) in
+        stmts.Add(s)
+        stmts
+    | SVar (x, tOpt, _, g, a, eOpt) ->
         let is_ghost:bool = var_storage_to_bool g in
         let start_tok =
             if is_ghost then create_token loc "ghost"
@@ -468,6 +505,7 @@ let rec create_stmt (built_ins:BuiltIns) (loc:loc) (s:stmt):ResizeArray<Statemen
             let s = new VarDeclStmt(start_tok, end_tok, lhss, update) :> Statement in
             stmts.Add(s)
             stmts
+    | SAlias _ -> internalErr "SAlias"
     | SAssign ([], e) ->
         let exp = create_expression built_ins loc e in
         let end_tok = create_token loc ";" in
@@ -590,7 +628,10 @@ let build_fun (built_ins:BuiltIns) (loc:loc) (f:fun_decl):Function =
     in
 
   // Assuming is not static or protected
-  let f = Function(tok, sid f.fname, false, false, not is_function_method, typeArgs, formals, resultType, reqs, reads, ens, new Specification<Expression>(decreases, null), body, attrs, null) in
+  let f =
+    Function(
+      tok, sid f.fname, false, false, not is_function_method, typeArgs, formals, null, resultType,
+      reqs, reads, ens, new Specification<Expression>(decreases, null), body, attrs, null) in
   f.BodyStartTok <- create_token loc "{";
   f.BodyEndTok <- create_token loc "}";
   built_ins.CreateArrowTypeDecl(formals.Count);
