@@ -36,6 +36,7 @@ verify_options = {
   'obj/crypto/aes/aes-x64/ctr.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /errorLimit:1'), # + ' /noVerify',
   'obj/crypto/loopunroll/loopunroll.gen.dfy': BuildOptions(dafny_default_args_nlarith),
   'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'),
+  'obj/crypto/loopunroll/memcpy.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'+ ' /noNLarith' + ' /errorLimit:3'), # + ' /traceverify' + ' /z3opt:TRACE=true' ' /trace' + ' /traceTimes' + ' /tracePOs'),
 
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_larith),
@@ -101,6 +102,19 @@ if env['TARGET_ARCH']=='amd64':
      'seq'
     )
   env.BuildTest(['src/crypto/loopunroll/testseq.c', seq_asm[0]], '', 'testseq')
+else:
+  print('Not building Seq for this target architecture')  
+
+#
+# build memcpy-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  memcpy_asm = env.ExtractValeCode(
+    ['src/crypto/loopunroll/memcpy.vad'], # Vale source
+     'src/crypto/loopunroll/memcpy_main.i.dfy',
+     'memcpy'
+    )
+  env.BuildTest(['src/crypto/loopunroll/testmemcpy.c', memcpy_asm[0]], '', 'testmemcpy')
 else:
   print('Not building Seq for this target architecture')  
 

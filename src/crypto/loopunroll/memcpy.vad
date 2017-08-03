@@ -1,0 +1,157 @@
+/*
+  Do some testing on building and proving unrolled loops.
+
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "addrlogic.proven.s.dfy" 
+include{:verbatim} "memcpy.dfy"
+
+#verbatim
+module memcpyvad {
+
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened addrlogicproven
+import opened memcpy
+
+#endverbatim
+
+procedure {:refined} {:bridge} AddN(inout operand r : uint64, inline n : uint64)
+    modifies efl;
+    requires r + n < 0x1_0000_0000_0000_0000;
+    ensures  r == BitwiseAdd64(old(r), n);
+    ensures  r == old(r) + n;
+{
+   lemma_BitwiseAdd64();
+   Add64Wrap(r, n);
+} 
+
+#verbatim
+predicate IsOReg (r : operand) {r.OReg?}
+predicate In(addr : int, m : map<int,Heaplet64Entry>) {addr in m}
+#endverbatim
+
+procedure {:bridge} {:timeLimitMultiplier 3} Copy8(operand ireg : uint64,
+                                                   operand oreg : uint64,
+                                                   inout operand tmp : uint64,
+                                                   ghost iid : heaplet_id,
+                                                   ghost oid : heaplet_id)
+    modifies mem; efl;
+
+    requires IsOReg(@ireg);
+    requires IsOReg(@oreg);
+    requires IsOReg(@tmp);
+    requires @ireg != @oreg;
+    requires @tmp != @oreg;
+    requires @tmp != @ireg;
+    requires iid != oid;
+    requires ValidSrcAlAddr64(mem, iid, addroff64(ireg, 0), Public);
+    requires ValidDstAlAddr64(mem, oid, addroff64(oreg, 0));
+
+    ensures WritesAddr64(old(mem), mem, oid, addroff64(oreg, 0), Public, 
+                         old(mem)[iid].mem64[EvalAddrOff64(addroff64(old(ireg),0))].v);
+    ensures OnlyWritesAddr64(old(mem), mem, oid, addroff64(old(oreg), 0));
+    ensures ValidSrcAlAddr64(mem, iid, addroff64(ireg, 0), Public);
+    ensures mem[iid] == old(mem[iid]);
+    ensures ValidDstAlAddr64(mem, oid, addroff64(oreg, 0));
+{
+    lemma_ValidSrcAlAddr64(mem, iid, addroff64(ireg, 0), Public);
+    lemma_ValidDstAlAddr64(mem, oid, addroff64(oreg, 0));
+    Load64 (tmp, ireg, 0, Public, iid);
+    Store64(oreg, tmp, 0, Public, oid);
+}     
+
+// Input is in r8 until rsi, output in r9, r10 is temp.
+// This might need an input and an output heap but should have proved it anyway.
+procedure {:timeLimitMultiplier 4} memcpy(ghost iid : heaplet_id, ghost oid : heaplet_id)
+
+  modifies mem; efl; r8; r9; r10;
+  reads    rsi;
+  requires iid != oid;
+           r8 <= rsi;
+           r8 % 8 == 0;
+           rsi < 0x1_0000_0000_0000_0000;
+           (rsi - r8) % 8 == 0;
+           r9 + (old(rsi) - old(r8)) + 8 < 0x1_0000_0000_0000_0000;
+           ValidSrcAlAddrs64(old(mem), iid, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+           ValidDstAlAddrs64(old(mem), oid, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+
+  ensures 
+    ValidDstAlAddrs64(old(mem), iid, addrs64(old(r8), (old(rsi) - old(r8)) / 8));
+    ValidSrcAlAddrs64(mem,      iid, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+    mem[iid] == old(mem)[iid];
+    ValidDstAlAddrs64(mem, oid, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+
+    WritesAddrs64(old(mem), mem, oid, addrs64(old(r9), (old(rsi) - old(r8)) / 8), Public, 
+        Copy8Seq(old(mem), iid, addrs64(old(r8), (old(rsi) - old(r8)) / 8), (old(rsi) - old(r8)) / 8));
+    OnlyWritesAddrs64(old(mem), mem, oid, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+    r8 == rsi;
+    r9 == old(r9) + (old(rsi) - old(r8));
+{
+  ghost var iptr := old(r8);
+  ghost var iend := old(rsi);                  // Comment.
+  ghost var optr := old(r9);
+  // Are my problems using ghosts names trigger or arith related?
+  ghost var items := (old(rsi) - old(r8) / 8);
+  ghost var iar := addrs64(old(r8), (old(rsi) - old(r8)) / 8);
+  ghost var oar := addrs64(old(r9), (old(rsi) - old(r8)) / 8);
+  ghost var count : nat := 0;               // How many have we done.
+
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_mod_auto(8);
+  lemma_ValidSrcAlAddrs64(mem, iid, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+  lemma_ValidDstAlAddrs64(mem, oid, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+  // Are these burning CPU?
+  lemma_ValidSrcAlAddrs64_Tails(mem, iid, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+  lemma_ValidDstAlAddrs64_Tails(mem, oid, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+   invariant (r8 - iptr) % 8 == 0;     
+   invariant (rsi - r8) % 8 == 0;
+   invariant count == (r8 - iptr) / 8;
+   invariant count <= items;
+   invariant count <= (old(rsi) - old(r8)) / 8;
+   invariant r8 == old(r8) + count * 8;
+   invariant r9 == old(r9) + count * 8;
+   invariant r9 + 8 < 0x1_0000_0000_0000_0000;
+
+   invariant ValidSrcAlAddrs64(mem, iid, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+   invariant mem[iid] == old(mem)[iid];
+
+   invariant ValidDstAlAddrs64(mem, oid, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+
+   invariant WritesAddrs64(old(mem), mem, oid, addrs64(old(r9), count), Public,
+                  Copy8Seq(old(mem), iid, addrs64(old(r8), count), count));
+   invariant OnlyWritesAddrs64(old(mem), mem, oid, addrs64(old(r9), count));
+   invariant (r8 < rsi) ==> ValidSrcAlAddr64(mem, iid, addroff64(r8, 0), Public);
+   invariant (r8 < rsi) ==> ValidDstAlAddr64(mem, oid, addroff64(r9, 0));
+   decreases rsi - r8;
+  {
+    ghost var mem1 := mem;
+    Copy8(r8, r9, r10, iid, oid);    
+    AddN(r8, 8);
+    AddN(r9, 8);
+    lemma_Output_Writes_OnlyWrites_Range_Addr_Ext
+          (old(mem), mem1, mem, oid,
+           old(r9), count, Public,
+           Copy8Seq(old(mem), iid, addrs64(old(r8), count + 1), count + 1));
+   count := count + 1;
+  } 
+//  assert count == items; - Why can't I get this?
+  assert r8 == rsi;
+  assert r9 == old(r9) + (old(rsi) - old(r8));
+} 
+
+#verbatim
+} 
+#endverbatim
+

@@ -9,6 +9,7 @@ include{:verbatim} "../../arch/x64/print.s.dfy"
 include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
 include{:verbatim} "addrlogic.s.dfy" 
 include{:verbatim} "seq.dfy"
+include{:verbatim} "memcpy.dfy"
 include "seq.provenvad.vad"
 include{:verbatim} "seq.tobeproved.dfy"
 
@@ -25,10 +26,102 @@ import opened addrlogic
 import opened seqmodule
 import opened seqtobeproven
 import opened seqvadproven
+import opened memcpy
 
 #endverbatim
 
-procedure {:timeLimitMultiplier 1} ModifyInput81NoTail(ghost id : heaplet_id) 
+procedure {:bridge} {:timeLimitMultiplier 3} Copy8(operand ireg : uint64,
+                                                   inout operand oreg : uint64,
+                                                   ghost id : heaplet_id)
+    modifies mem; efl;
+
+    requires IsOReg(@ireg);
+    requires IsOReg(@oreg);
+    requires @ireg != @oreg;
+    requires/ensures ValidSrcAlAddr64(mem, id, addroff64(ireg, 0), Public);
+    requires/ensures ValidDstAlAddr64(mem, id, addroff64(oreg, 0));
+    ensures WritesAddr64(old(mem), mem, id, addroff64(old(oreg), 0), Public, ireg);
+    ensures OnlyWritesAddr64(old(mem), mem, id, addroff64(old(oreg), 0));
+{
+    lemma_ValidSrcAlAddr64(mem, id, addroff64(ireg, 0), Public);
+    lemma_ValidDstAlAddr64(mem, id, addroff64(ireg, 0));
+    assert ValidDstAddr(mem, id, oreg, 64); // Map to the old stuff for instructions. 
+    Store64(oreg, ireg, 0, Public, id);
+}     
+
+// Input is in r8 until rsi, output in r9.
+procedure {:timeLimitMultiplier 4} memcpyn1(ghost id : heaplet_id)
+
+  modifies mem; efl; r8; r9; 
+  reads    rsi;
+  requires r8 <= rsi;
+           r8 % 8 == 0;
+           rsi < 0x1_0000_0000_0000_0000;
+           (rsi - r8) % 8 == 0;
+           r9 + (old(rsi) - old(r8)) <= 0x1_0000_0000_0000_0000;
+           ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+           ValidDstAlAddrs64(mem, id, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+
+  ensures 
+    ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+    ValidDstAlAddrs64(mem, id, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+    WritesAddrs64(old(mem), mem, id, addrs64(old(r9), (old(rsi) - old(r8)) / 8), Public, 
+        Copy8Seq(old(mem), id, addrs64(old(r9), (old(rsi) - old(r8)) / 8), (old(rsi) - old(r8)) / 8));
+                                
+    OnlyWritesAddrs64(old(mem), mem, id, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+    r8 == rsi;
+    r9 == old(r9) + (old(rsi) - old(r8));
+{
+  ghost var iptr := old(r8);
+  ghost var iend := old(rsi);                  // Comment.
+  ghost var optr := old(r9);
+  // Are my problems using ghosts name, trigger or arith related?
+  ghost var items := (old(rsi) - old(r8) / 8);
+  ghost var iar := addrs64(old(r8), (old(rsi) - old(r8)) / 8);
+  ghost var oar := addrs64(old(r9), (old(rsi) - old(r8)) / 8);
+  ghost var count : nat := 0;               // How many have we done.
+
+  lemma_BitwiseAdd64(); // for the decreases clause.
+  lemma_ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+  lemma_ValidSrcAlAddrs64_Tails(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+  lemma_ValidDstAlAddrs64(mem, id, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+  lemma_ValidDstAlAddrs64_Tails(mem, id, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+
+  while (r8 < rsi)
+   invariant r8 <= rsi;
+   invariant (r8 - iptr) % 8 == 0;     
+   invariant (rsi - r8) % 8 == 0;
+   invariant count == (r8 - iptr) / 8;
+   invariant count <= items;
+   invariant r8 == iptr + count * 8;
+   invariant r9 == optr + count * 8;
+   invariant ValidSrcAlAddrs64(mem, id, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
+   invariant ValidDstAlAddrs64(mem, id, addrs64(old(r9), (old(rsi) - old(r8)) / 8));
+//   invariant ValidDstAlAddrs64(mem, id, addrs64(optr, items));
+   invariant WritesAddrs64(old(mem), mem, id, addrs64(optr, count), Public,
+                  Copy8Seq(old(mem), id, addrs64(old(r8), count), count));
+   invariant OnlyWritesAddrs64(old(mem), mem, id, addrs64(optr, count));
+   invariant (r8 < rsi) ==> ValidSrcAlAddr64(mem, id, addroff64(r8, 0), Public);
+   invariant (r8 < rsi) ==> ValidDstAlAddr64(mem, id, addroff64(r9, 0));
+   decreases rsi - r8;
+  {
+    ghost var mem1 := mem;
+    Copy8(r8, r9, id);    
+    AddN(r8, 8);
+    AddN(r9, 8);
+    lemma_Output_Writes_OnlyWrites_Range_Addr_Ext
+          (old(mem), mem1, mem, id,
+           optr, count, Public,
+           Add8Seq(old(mem), id, addrs64(iptr, count + 1), count + 1));
+   count := count + 1;
+  } 
+  assert count == items;
+  assert r8 == rsi;
+  assert r9 == old(r9) + (old(rsi) - old(r8));
+} 
+
+/*
+procedure {:timeLimitMultiplier 3} ModifyInput81NoTail(ghost id : heaplet_id) 
   // inline items_per_batch : nat
   // const(8 * items_per_batch).
   modifies mem; efl; rdx; rcx; r8; r9; r10; r11; r12; r13; r14; r15; rbx;
@@ -78,22 +171,26 @@ procedure {:timeLimitMultiplier 1} ModifyInput81NoTail(ghost id : heaplet_id)
   {
     ghost var mem1 := mem;
     Add8Unrolled(id, 7);  
-//    assume ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, count_items + 8), Public);
+    assume ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
+    assume WritesAddrs64(old(mem), mem, id, addrs64(io_ptr, count_items + 8), Public, 
+                         Add8Seq(old(mem), id, addrs64(io_ptr, count_items), count_items + 8));
+    assume OnlyWritesAddrs64(old(mem), mem, id, addrs64(io_ptr, count_items + 8));
 
-    lemma_Writes_OnlyWrites_Range_Range_Ext
-           (old(mem), mem1, mem, id,
-           io_ptr, r8, count_items, 8, Public,
-           Add8Seq(old(mem), id, addrs64(io_ptr, count_items + 8), count_items + 8));
+//    lemma_Writes_OnlyWrites_Range_Range_Ext
+//           (old(mem), mem1, mem, id,
+//           io_ptr, r8,
+//           items, count_items, 8,
+//           Public,
+//           Add8Seq(old(mem), id, addrs64(io_ptr, count_items + 8), count_items + 8));
 
     AddN(r8, 64); // Can I do this with inline in some way? So I can use items_per_batch?
     count_items   := count_items + 8;
-
-//    assume ValidSrcAlAddrs64(mem, id, addrs64(io_ptr, items), Public);
   } 
   assert count_items == items;
   assert r8 == rsi;
 } 
 
+*/
 
 #verbatim
 

@@ -140,6 +140,7 @@ lemma {:timeLimitMultiplier 3} lemma_OnlyWritesAddrs64_Preserves_ValidSrcAlAddrs
 }
 */
 
+/*
 predicate ValidSrcAlAddrs64'(mem:Heaplets, id:heaplet_id, ar : Addrs64, taint:taint)
 {
   ValidAddrs64(ar) &&
@@ -197,6 +198,8 @@ lemma isolate_taint(mem1: Heaplets, mem2: Heaplets,
    mem1[id].mem64[EvalAddrOff64(addroff64(base,i))].t == taint;
 }
 
+*/
+
 /*
 lemma isolate_ValidSrAlAddrs64(mem1: Heaplets, mem2: Heaplets, 
               id:heaplet_id, base : uint64, ptr : uint64, 
@@ -217,17 +220,19 @@ lemma isolate_ValidSrAlAddrs64(mem1: Heaplets, mem2: Heaplets,
   }
 }
 */
+// Assume and get the loop working.
 
-/*
 lemma lemma_Writes_OnlyWrites_Range_Range_Ext
-         (mem0 : Heaplets, mem1: Heaplets, mem2: Heaplets, 
-          id:heaplet_id, base : uint64, ptr : uint64, 
-          items: nat, count_items : nat, more_items : nat, taint : taint, v : seq<uint64>)
+         (mem0 : Heaplets, mem1: Heaplets, mem2: Heaplets, id : heaplet_id, 
+         base : uint64, ptr : uint64, 
+         items: nat, count_items : nat, more_items : nat, 
+         taint : taint, 
+         v : seq<uint64>)
     requires items > count_items + more_items;
     requires |v| == count_items + more_items;
     requires ptr == base + count_items * 8;
-    requires ValidSrcAlAddrs64'(mem0, id, addrs64(base, items), taint);
-    requires ValidSrcAlAddrs64'(mem1, id, addrs64(base, items), taint);
+    requires ValidSrcAlAddrs64(mem0, id, addrs64(base, items), taint);
+    requires ValidSrcAlAddrs64(mem1, id, addrs64(base, items), taint);
     
     requires WritesAddrs64(mem0, mem1, id, addrs64(base, count_items), taint, v[..count_items]);
     requires OnlyWritesAddrs64(mem0, mem1, id, addrs64(base, count_items));
@@ -235,7 +240,7 @@ lemma lemma_Writes_OnlyWrites_Range_Range_Ext
     requires WritesAddrs64(mem1, mem2, id, addrs64(ptr, more_items), taint, v[count_items..(count_items+more_items)]);
     requires OnlyWritesAddrs64(mem1, mem2, id, addrs64(ptr, more_items));
 
-    ensures ValidSrcAlAddrs64'(mem2, id, addrs64(base, items), taint);
+    ensures ValidSrcAlAddrs64(mem2, id, addrs64(base, items), taint);
     //  (forall i : nat :: 0 <= i < ar.count ==> ValidSrcAlAddr64(mem2, id, addroff64(ar.addr, i), taint))
     ensures WritesAddrs64(mem0, mem2, id, addrs64(base, count_items + more_items), taint, v);
     //   ValidSrcAlAddrs64(mem2, id, ar, taint)
@@ -248,8 +253,12 @@ lemma lemma_Writes_OnlyWrites_Range_Range_Ext
 //  lemma_OnlyWritesAddrs64_Preserves_ValidSrcAlAddrs64'
 //         (mem0, mem1, mem2, id, base, ptr, count_items, more_items, taint, v);
 //  lemma_OnlyWrites_Range_Range_Ext(mem0, mem1, mem2, id, base, ptr, count_items, more_items, taint);
+
+    assume ValidSrcAlAddrs64(mem2, id, addrs64(base, items), taint);
+    assume WritesAddrs64(mem0, mem2, id, addrs64(base, count_items + more_items), taint, v);
+    assume OnlyWritesAddrs64(mem0, mem2, id, addrs64(base, count_items + more_items));
 }
-*/
+
 
 }
 

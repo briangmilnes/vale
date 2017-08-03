@@ -470,7 +470,7 @@ lemma {:timeLimitMultiplier 3} lemma_Writes_OnlyWrites_Range_Addr_Ext
 } 
 
 
-// These two work nicely when one has a loop over a loop.
+// These two may work nicely when one has a loop over a loop, someday.
 
 
 lemma lemma_subsequence_ext(items : nat, more_items : nat, v : seq<uint64>)
@@ -506,6 +506,48 @@ lemma {:timeLimitMultiplier 3} lemma_OnlyWrites_Range_Range_Ext
   lemma_ValidSrcAlAddrs64(mem2, id, addrs64(base, items + more_items), taint);
 }    
 
+
+lemma {:timeLimitMultiplier 3} lemma_Output_OnlyWrites_Range_Addr_Ext
+         (mem0 : Heaplets, mem1: Heaplets, mem2: Heaplets, 
+          id:heaplet_id, addr : uint64, off : nat, taint : taint)
+    requires ValidDstAlAddrs64(mem0, id, addrs64(addr, off + 1));
+    requires ValidDstAlAddrs64(mem1, id, addrs64(addr, off + 1));
+
+    requires OnlyWritesAddrs64(mem0, mem1, id, addrs64(addr, off));
+    requires OnlyWritesAddr64(mem1, mem2, id, addroff64(addr, off));
+
+    ensures OnlyWritesAddrs64(mem0, mem2, id, addrs64(addr, off + 1));
+    ensures ValidDstAlAddrs64(mem2, id, addrs64(addr, off + 1));
+
+{ 
+  lemma_ValidDstAlAddrs64(mem0, id, addrs64(addr, off + 1));
+  lemma_ValidDstAlAddrs64(mem1, id, addrs64(addr, off + 1));
+  lemma_ValidDstAlAddrs64(mem2, id, addrs64(addr, off + 1));
+}    
+
+lemma {:timeLimitMultiplier 3} lemma_Output_Writes_OnlyWrites_Range_Addr_Ext
+         (mem0 : Heaplets, mem1: Heaplets, mem2: Heaplets, 
+          id:heaplet_id, addr : uint64, off : nat, taint : taint, v : seq<uint64>)
+    requires |v| == off + 1;
+    requires ValidDstAlAddrs64(mem0, id, addrs64(addr, off + 1));
+    requires ValidDstAlAddrs64(mem1, id, addrs64(addr, off + 1));
+
+    requires WritesAddrs64(mem0, mem1, id, addrs64(addr, off), taint, v[..off]);
+    requires OnlyWritesAddrs64(mem0, mem1, id, addrs64(addr, off));
+
+    requires WritesAddr64(mem1, mem2, id, addroff64(addr, off), taint, v[off]);
+    requires OnlyWritesAddr64(mem1, mem2, id, addroff64(addr, off));
+
+    ensures WritesAddrs64(mem0, mem2, id, addrs64(addr, off + 1), taint, v);
+    ensures OnlyWritesAddrs64(mem0, mem2, id, addrs64(addr, off + 1));
+    ensures ValidDstAlAddrs64(mem2, id, addrs64(addr, off + 1));
+
+{ 
+  lemma_ValidDstAlAddrs64(mem0, id, addrs64(addr, off + 1));
+  lemma_ValidDstAlAddrs64(mem1, id, addrs64(addr, off + 1));
+  lemma_ValidDstAlAddrs64(mem2, id, addrs64(addr, off + 1));
+  lemma_Output_OnlyWrites_Range_Addr_Ext(mem0, mem1, mem2, id, addr, off, taint);
+} 
 
 /*
 		9.	Tails
@@ -560,6 +602,55 @@ lemma lemma_ValidSrcAlAddrs64_Tails(mem:Heaplets, id:heaplet_id, ar: Addrs64, ta
          ValidSrcAlAddr64(mem, id, addroff64(ar.addr + tail * 8, off), taint);
  {
    lemma_ValidSrcAlAddrs64_Fixed_Tail(mem, id, ar, tail, taint);
+ }
+} 
+
+lemma lemma_ValidDstAlAddrs64_Fixed_Tail_Off(mem:Heaplets, id:heaplet_id, ar: Addrs64, tail : nat, off : nat)
+      requires ValidAddrs64(ar);
+      requires ValidDstAlAddrs64(mem, id, ar);
+      requires 0 <= tail < ar.count;
+      requires 0 <= off < (ar.count - tail);
+      ensures ValidDstAlAddr64(mem, id, addroff64(ar.addr + tail * 8, off));
+{
+  lemma_ValidDstAlAddrs64(mem, id, ar);
+  if (tail == 0) {
+  } else {
+   assert EvalAddrOff64(addroff64(ar.addr + tail * 8, off)) == 
+    EvalAddrOff64(addroff64(ar.addr, off + tail));
+   lemma_ValidDstAlAddrs64_Fixed_Tail_Off(mem, id, ar, tail - 1, off);
+  }
+}
+
+lemma lemma_ValidDstAlAddrs64_Fixed_Tail(mem:Heaplets, id:heaplet_id, ar: Addrs64, tail : nat)
+      requires ValidAddrs64(ar);
+      requires ValidDstAlAddrs64(mem, id, ar);
+      requires 0 <= tail < ar.count;
+      ensures forall off : nat :: 0 <= off < (ar.count - tail) ==>
+        ValidDstAlAddr64(mem, id, addroff64(ar.addr + tail * 8, off));
+{
+  lemma_ValidDstAlAddrs64(mem, id, ar);
+  forall off : nat | 0 <= off < (ar.count - tail) 
+   ensures ValidDstAlAddr64(mem, id, addroff64(ar.addr + tail * 8, off));
+   {
+      lemma_ValidDstAlAddrs64_Fixed_Tail_Off(mem, id, ar, tail, off);
+   } 
+}
+
+// This lemma when in a verbatim fails to trigger. -bgm 
+
+lemma lemma_ValidDstAlAddrs64_Tails(mem:Heaplets, id:heaplet_id, ar: Addrs64)
+      requires ValidAddrs64(ar);
+      requires ValidDstAlAddrs64(mem, id, ar);
+      ensures 
+       forall tail :: 0 <= tail < ar.count ==>
+        forall off : nat :: 0 <= off < (ar.count - tail) ==>
+         ValidDstAlAddr64(mem, id, addroff64(ar.addr + tail * 8, off));
+{
+  forall tail : nat | 0 <= tail < ar.count
+   ensures forall off : nat :: 0 <= off < (ar.count - tail) ==>
+         ValidDstAlAddr64(mem, id, addroff64(ar.addr + tail * 8, off));
+ {
+   lemma_ValidDstAlAddrs64_Fixed_Tail(mem, id, ar, tail);
  }
 } 
 
