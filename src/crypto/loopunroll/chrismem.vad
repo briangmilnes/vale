@@ -1,0 +1,336 @@
+/*
+  Do some testing on Chris's better memory model.
+
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "../../arch/x86/def.s.dfy"
+include{:verbatim} "../../arch/x86/vale.i.dfy"
+include "../../arch/x86/decls.vad"
+
+include "chrismem.proven.vad"
+include{:verbatim} "chrismem.dfy"
+
+#verbatim
+module chrismem {
+
+import opened dafny_wrappers_i
+import opened x86def_s_temp = x86_def_s
+import opened x86vale_temp = x86_vale_i
+import opened x86decls_temp = x86_decls_i
+import opened chrismemproven
+import opened chrismemdfy
+
+#endverbatim
+
+/*
+// Work on adding predicates instead of raw definitions.
+procedure{:refined}{:timeLimitMultiplier 2} Copy64Pred(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    reads
+        esi; edi;
+    modifies
+       mem; eax; ebx; ecx; edx; ebp;
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcAddrs32'(mem, src_id, esi, 16, taint);
+        ValidDstAddrs32'(mem, dst_id, edi, 16);
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesAddrs32(old(mem), mem, dst_id, edi, 16);
+        WritesAddrs32(mem, dst_id, edi, 16, taint, 
+          Copy32Seq(old(mem), src_id, old(esi), 16, 16, taint));
+{
+    LoadArray32(eax, esi, 0, taint, src_id);
+    LoadArray32(ebx, esi, 1, taint, src_id);
+    LoadArray32(ecx, esi, 2, taint, src_id);
+    LoadArray32(edx, esi, 3, taint, src_id);
+    LoadArray32(ebp, esi, 4, taint, src_id);
+    StoreArray32(edi, eax, 0, taint, dst_id);
+    StoreArray32(edi, ebx, 1, taint, dst_id);
+    StoreArray32(edi, ecx, 2, taint, dst_id);
+    StoreArray32(edi, edx, 3, taint, dst_id);
+    StoreArray32(edi, ebp, 4, taint, dst_id);
+    LoadArray32(eax, esi, 5, taint, src_id);
+    LoadArray32(ebx, esi, 6, taint, src_id);
+    LoadArray32(ecx, esi, 7, taint, src_id);
+    LoadArray32(edx, esi, 8, taint, src_id);
+    LoadArray32(ebp, esi, 9, taint, src_id);
+    StoreArray32(edi, eax, 5, taint, dst_id);
+    StoreArray32(edi, ebx, 6, taint, dst_id);
+    StoreArray32(edi, ecx, 7, taint, dst_id);
+    StoreArray32(edi, edx, 8, taint, dst_id);
+    StoreArray32(edi, ebp, 9, taint, dst_id);
+    LoadArray32(eax, esi, 10, taint, src_id);
+    LoadArray32(ebx, esi, 11, taint, src_id);
+    LoadArray32(ecx, esi, 12, taint, src_id);
+    LoadArray32(edx, esi, 13, taint, src_id);
+    LoadArray32(ebp, esi, 14, taint, src_id);
+    StoreArray32(edi, eax, 10, taint, dst_id);
+    StoreArray32(edi, ebx, 11, taint, dst_id);
+    StoreArray32(edi, ecx, 12, taint, dst_id);
+    StoreArray32(edi, edx, 13, taint, dst_id);
+    StoreArray32(edi, ebp, 14, taint, dst_id);
+    LoadArray32(eax, esi, 15, taint, src_id);
+    StoreArray32(edi, eax, 15, taint, dst_id);
+}
+*/
+
+/*
+// This loop has a fixed size and useses too many registers.
+procedure Copy64Loop(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    reads
+        esi; edi;
+    modifies
+        mem; efl; eax; ebx; ecx; edx;
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcAddrs32'(mem, src_id, esi, 16, taint);
+        ValidDstAddrs32'(mem, dst_id, edi, 16);
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesAddrs32(old(mem), mem, dst_id, edi, 16);
+        WritesAddrs32(mem, dst_id, edi, 16, taint, 
+           Copy32Seq(old(mem), src_id, old(esi), 16, 16, taint));
+{
+    Mov(ebx, esi);
+    Mov(ecx, edi);
+    Mov(edx, esi);
+    Add(edx, 64);
+    ghost var index:int := 0;
+    while (ebx < edx)
+        invariant
+            0 <= index <= 16;
+            ebx == esi + 4 * index;
+            ecx == edi + 4 * index;
+            edx == esi + 4 * 16;
+            ValidSrcAddrs32'(mem, src_id, esi, 16, taint);
+            ValidDstAddrs32'(mem, dst_id, edi, 16);
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesAddrs32(old(mem), mem, dst_id, edi, 16);
+            WritesAddrs32(mem, dst_id, edi, index, taint,
+               Copy32Seq(old(mem), src_id, old(esi), index, index, taint));
+        decreases (16 - index);
+    {
+        LoadArrayPtr32(eax, ebx, index, taint, src_id);
+        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
+        Add(ebx, 4);
+        Add(ecx, 4);
+        index := index + 1;
+    }
+}
+*/
+
+
+/*
+// This loop uses too many registers.
+// Input is esi, copied into ebx.
+// Aribtrary aligned input end is in edx.
+// Output is edi.
+procedure {:timeLimitMultiplier 1} Copy64LoopArbitraryAlignedSize
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads
+        esi; edi; edx;
+    modifies
+        mem; efl; eax; ebx; ecx;
+    requires/ensures
+        edx >= esi; 
+        (edx - esi) % 4 == 0;
+        src_id != dst_id;
+        ValidSrcAddrs32'(mem, src_id, esi, items, taint);
+        ValidDstAddrs32'(mem, dst_id, edi, items);
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesAddrs32(old(mem), mem, dst_id, edi, items);
+        WritesAddrs32(mem, dst_id, edi, items, taint, 
+         Copy32Seq(old(mem), src_id, old(esi), items, items, taint));
+{
+    Mov(ebx, esi);
+    Mov(ecx, edi);
+    ghost var index : int := 0;
+    while (ebx < edx)
+        invariant
+            0 <= index <= items;
+            ebx == esi + 4 * index;
+            ecx == edi + 4 * index;
+            ValidSrcAddrs32'(mem, src_id, esi, items, taint);
+            ValidDstAddrs32'(mem, dst_id, edi, items);
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesAddrs32(old(mem), mem, dst_id, edi, items);
+            WritesAddrs32(mem, dst_id, edi, index, taint,
+               Copy32Seq(old(mem), src_id, old(esi), index, index, taint));
+        decreases ((items) - index);
+    {
+        LoadArrayPtr32 (eax, ebx, index, taint, src_id);
+        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
+        Add(ebx, 4);
+        Add(ecx, 4);
+
+        index := index + 1;
+    }
+}
+*/
+
+/*
+// Input is esi, modified.
+// Aribtrary aligned input end is in edx.
+// Output is edi, modified.
+// Essentially, to keep register pressure down we will caller save and use our
+// input and output registers to move along our data.
+// This leaves more registers for loop unrolling.
+procedure {:timeLimitMultiplier 1} Copy64LoopArbitraryAlignedSizeModifyInpOutPtr
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads
+        edx;
+    modifies
+        mem; esi; edi; efl; eax;
+    requires
+        edx >= esi; 
+        (edx - esi) % 4 == 0;
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcAddrs32'(mem, src_id, old(esi), items, taint);
+        ValidDstAddrs32'(mem, dst_id, old(edi), items);
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesAddrs32(old(mem), mem, dst_id, old(edi), items);
+        WritesAddrs32(mem, dst_id, old(edi), items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items, taint));
+{
+    ghost var index : int := 0;
+    while (esi < edx)
+        invariant
+            0 <= index <= items;
+            esi == old(esi) + 4 * index;
+            edi == old(edi) + 4 * index;
+            ValidSrcAddrs32'(mem, src_id, old(esi), items, taint);
+            ValidDstAddrs32'(mem, dst_id, old(edi), items);
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesAddrs32(old(mem), mem, dst_id, old(edi), items);
+            WritesAddrs32(mem, dst_id, old(edi), index, taint,
+               Copy32Seq(old(mem), src_id, old(esi), index, index, taint));
+        decreases ((items) - index);
+    {
+        LoadArrayPtr32 (eax, esi, index, taint, src_id);
+        StoreArrayPtr32(edi, eax, index, taint, dst_id);
+        Add(esi, 4);
+        Add(edi, 4);
+
+        index := index + 1;
+    }
+}
+*/
+
+// Question: Why can't I say old(mem) in Copy32 with a requires/ensures for my valid src addr?
+
+/*
+// But it's the right path: ensure that this is maintaining the maximal address space
+// in order to prevent union theorems in the caller.
+// But it's wrong on using address logic instead of just an offset.
+procedure {:bridge} {:timeLimitMultiplier 3} Copy32 
+         (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id,
+          operand src : uint32,
+          operand dst : uint32,
+          inout operand tmp  : uint32,
+          inline max_range : nat,
+          inline off : nat)
+
+    modifies mem; efl;
+    requires IsOReg(@src) && IsOReg(@dst) && IsOReg(@tmp);
+             @src != @dst  && @src != @tmp  && @dst != @tmp;             
+
+    requires/ensures 
+        off < max_range;
+        ValidSrcAddrs32'(mem, src_id, src + 4 * off, max_range - off, taint);
+        ValidDstAddrs32'(mem, dst_id, dst + 4 * off, max_range - off);
+
+    ensures 
+         OnlyHeapletChanged(old(mem), mem, dst_id);
+         OnlyWritesAddrs32(old(mem), mem, dst_id, dst + 4 * off, max_range);
+         WritesAddrs32(mem, dst_id, dst + 4 * off, 1, taint,
+           Copy32Seq(mem, src_id, src + 4 * off, 1, 1, taint));
+{
+   lemma_addr32_off(off);
+   LoadArray32(tmp, src, off, taint, src_id);
+   StoreArray32(dst, tmp, off, taint, dst_id);
+}     
+*/
+
+// Try again with the ptr version.
+procedure {:bridge} {:timeLimitMultiplier 3} Copy32 
+         (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id,
+          operand src : uint32,
+          operand dst : uint32,
+          inout operand tmp  : uint32,
+          inline max_range : nat,
+          inline off : nat)
+
+    modifies mem; efl;
+    requires IsOReg(@src) && IsOReg(@dst) && IsOReg(@tmp);
+             @src != @dst  && @src != @tmp  && @dst != @tmp;             
+
+    requires/ensures 
+        off < max_range;
+        ValidSrcAddrs32'(mem, src_id, src, max_range - off, taint);
+        ValidDstAddrs32'(mem, dst_id, dst, max_range - off);
+
+    ensures 
+         OnlyHeapletChanged(old(mem), mem, dst_id);
+         OnlyWritesAddrs32(old(mem), mem, dst_id, dst, max_range);
+         WritesAddrs32(mem, dst_id, dst + 4 * off, 1, taint,
+           Copy32Seq(mem, src_id, src + 4 * off, 1, 1, taint));
+{
+   lemma_addr32_off(off);
+   LoadArrayPtr32(tmp, src, off, taint, src_id);
+   StoreArrayPtr32(dst, tmp, off, taint, dst_id);
+}     
+
+/*
+// Input is esi, Output is edi, up to four unrollings.
+// 
+procedure {:recursive} {:timeLimitMultiplier 1} Copy32Unrolled
+         (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, 
+          inline max_range : nat, inline step : nat)
+
+    requires 1 < max_range;         // Must have at least on address to write.
+    requires step + 1 < max_range;  // And more than step as it runs to zero.
+    requires 0 <= step < 2;
+    reads esi; edi;
+    modifies mem; efl; ebx; ecx; edx; ebp;
+
+    requires/ensures
+             src_id != dst_id;
+             ValidSrcAddrs32'(mem, src_id, esi, max_range, taint);
+             ValidDstAddrs32'(mem, dst_id, edi, max_range);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+//        OnlyWritesAddrs32(old(mem), mem, dst_id, edi, step + 1);
+        WritesAddrs32(mem, dst_id, edi, step + 1, taint,
+          Copy32Seq(mem, src_id, esi, step + 1, step + 1, taint));
+{
+//  inline if (step == 3) {
+//    Copy32Unrolled(taint, src_id, dst_id, step - 1);
+//    Copy32(taint, src_id, dst_id, esi, edi, ebx, 3);
+//  } else if (step == 2) {
+//    Copy32Unrolled(taint, src_id, dst_id, step - 1);
+//    Copy32(taint, src_id, dst_id, esi, edi, ecx, 2);
+//  } else 
+   inline if (step == 1) {
+    Copy32Unrolled(taint, src_id, dst_id, max_range, step - 1);
+    lemma_addr32_src(edi);
+    assert ValidDstAddrs32'(mem, dst_id, edi, max_range); // Have
+    assert ValidDstAddrs32'(mem, dst_id, edi + 4 * 1, max_range - 1); // Need
+    Copy32(taint, src_id, dst_id, esi, edi, edx, max_range, 1);
+   } else if (step == 0) {                                    
+       Copy32(taint, src_id, dst_id, esi, edi, ebp, max_range, 0);
+   }
+}
+*/
+  
+#verbatim
+}
+#endverbatim

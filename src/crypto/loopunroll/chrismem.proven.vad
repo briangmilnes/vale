@@ -1,0 +1,246 @@
+/*
+  Do some testing on Chris's better memory model.
+
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "../../arch/x86/def.s.dfy"
+include{:verbatim} "../../arch/x86/vale.i.dfy"
+include "../../arch/x86/decls.vad"
+
+include{:verbatim} "chrismem.base.dfy"    
+
+#verbatim
+module chrismemproven {
+
+import opened dafny_wrappers_i
+import opened x86def_s_temp = x86_def_s
+import opened x86vale_temp = x86_vale_i
+import opened x86decls_temp = x86_decls_i
+import opened chrismembasedfy
+#endverbatim
+ 
+procedure{:refined}{:bridge} LoadArray32(out operand dst:uint32, operand src:uint32, inline i:int,
+    inline taint:taint, ghost id:heaplet_id)
+    reads
+        mem;
+//    requires{:verbatim} 
+//       forall src : int {:trigger addr32(src,i)} :: addr32(src,i) == addr32(src + 4 * i, 0);
+
+    requires/ensures
+//        forall src : int :: addr32(src,i) == addr32(src + 4 * i, 0);
+        mem?[id];
+        mem[id] is WordHeaplet;
+        mem[id].words?[addr32(old(src), i)];
+        mem[id].words[addr32(old(src), i)].t == taint;
+    ensures
+        dst == mem[id].words[addr32(old(src), i)].v;
+{
+    Load(dst, src, 4 * i, taint, id);
+}
+ 
+procedure{:refined}{:bridge} StoreArray32(operand dst:uint32, operand src:uint32, inline i:int,
+    inline taint:taint, ghost id:heaplet_id)
+    modifies
+        mem;
+    requires
+        mem?[id];
+        mem[id] is WordHeaplet;
+        mem[id].words?[addr32(dst, i)];
+    ensures
+        mem == old(mem)[id := old(mem)[id].(words := old(mem)[id].words[addr32(dst, i) := WordHeapletEntry(src, taint)])];
+{
+    Store(dst, src, 4 * i, taint, id);
+}
+ 
+procedure{:refined}{:bridge} LoadArrayPtr32(out operand dst:uint32, operand src:uint32, ghost i:int,
+    inline taint:taint, ghost id:heaplet_id)
+    let
+        a := addr32(old(src) - 4 * i, i);
+    reads
+        mem;
+    requires/ensures
+        mem?[id];
+        mem[id] is WordHeaplet;
+        mem[id].words?[a];
+        mem[id].words[a].t == taint;
+    ensures
+        dst == mem[id].words[a].v;
+{
+    Load(dst, src, 0, taint, id);
+}
+ 
+procedure{:refined}{:bridge} StoreArrayPtr32(operand dst:uint32, operand src:uint32, ghost i:int,
+    inline taint:taint, ghost id:heaplet_id)
+    let
+        a := addr32(dst - 4 * i, i);
+    modifies
+        mem;
+    requires
+        mem?[id];
+        mem[id] is WordHeaplet;
+        mem[id].words?[a];
+    ensures
+        mem == old(mem)[id := old(mem)[id].(words := old(mem)[id].words[a := WordHeapletEntry(src, taint)])];
+{
+    Store(dst, src, 0, taint, id);
+}
+ 
+procedure{:refined}{:bridge} Mov(inout operand dst:uint32, operand src:uint32)
+    ensures
+        dst == old(src);
+{
+    Mov32(dst, src);
+}
+ 
+procedure{:refined}{:bridge} Add(inout operand dst:uint32, operand src:uint32)
+    requires
+        src + dst < 0x1_0000_0000;
+    modifies
+        efl;
+    ensures
+        dst == old(dst) + old(src);
+{
+    Add32(dst, src);
+}
+
+procedure{:refined}{:timeLimitMultiplier 2} Copy64(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    reads
+        esi; edi;
+    modifies
+        eax; ebx; ecx; edx; ebp;
+        mem;
+    requires/ensures
+        src_id != dst_id;
+        mem?[src_id];
+        mem?[dst_id];
+        mem[src_id] is WordHeaplet;
+        mem[dst_id] is WordHeaplet;
+        forall i :: 0 <= i < 16 ==>
+            mem[src_id].words?[addr32(esi, i)]
+         && mem[src_id].words[addr32(esi, i)].t == taint;
+        forall i :: 0 <= i < 16 ==> mem[dst_id].words?[addr32(edi, i)];
+    ensures
+        mem == old(mem)[dst_id := mem[dst_id]]; 
+        forall i :: 0 <= i < 16 ==>
+            mem[dst_id].words?[addr32(edi, i)]
+         && mem[dst_id].words[addr32(edi, i)] == mem[src_id].words[addr32(esi, i)];
+       // I did not add any address space.
+       forall i :: i < 0 || i >= 16 ==>
+            mem[dst_id].words?[addr32(edi, i)] ==> old(mem)[dst_id].words?[addr32(edi, i)];
+      // I did not modify anything else but my target.
+       forall i :: i < 0 || i >= 16 ==>
+          mem[dst_id].words?[addr32(edi, i)] ==> 
+          mem[dst_id].words[addr32(edi, i)] == old(mem)[dst_id].words[addr32(edi, i)];
+{
+    LoadArray32(eax, esi, 0, taint, src_id);
+    LoadArray32(ebx, esi, 1, taint, src_id);
+    LoadArray32(ecx, esi, 2, taint, src_id);
+    LoadArray32(edx, esi, 3, taint, src_id);
+    LoadArray32(ebp, esi, 4, taint, src_id);
+    StoreArray32(edi, eax, 0, taint, dst_id);
+    StoreArray32(edi, ebx, 1, taint, dst_id);
+    StoreArray32(edi, ecx, 2, taint, dst_id);
+    StoreArray32(edi, edx, 3, taint, dst_id);
+    StoreArray32(edi, ebp, 4, taint, dst_id);
+    LoadArray32(eax, esi, 5, taint, src_id);
+    LoadArray32(ebx, esi, 6, taint, src_id);
+    LoadArray32(ecx, esi, 7, taint, src_id);
+    LoadArray32(edx, esi, 8, taint, src_id);
+    LoadArray32(ebp, esi, 9, taint, src_id);
+    StoreArray32(edi, eax, 5, taint, dst_id);
+    StoreArray32(edi, ebx, 6, taint, dst_id);
+    StoreArray32(edi, ecx, 7, taint, dst_id);
+    StoreArray32(edi, edx, 8, taint, dst_id);
+    StoreArray32(edi, ebp, 9, taint, dst_id);
+    LoadArray32(eax, esi, 10, taint, src_id);
+    LoadArray32(ebx, esi, 11, taint, src_id);
+    LoadArray32(ecx, esi, 12, taint, src_id);
+    LoadArray32(edx, esi, 13, taint, src_id);
+    LoadArray32(ebp, esi, 14, taint, src_id);
+    StoreArray32(edi, eax, 10, taint, dst_id);
+    StoreArray32(edi, ebx, 11, taint, dst_id);
+    StoreArray32(edi, ecx, 12, taint, dst_id);
+    StoreArray32(edi, edx, 13, taint, dst_id);
+    StoreArray32(edi, ebp, 14, taint, dst_id);
+    LoadArray32(eax, esi, 15, taint, src_id);
+    StoreArray32(edi, eax, 15, taint, dst_id);
+}
+ 
+procedure Copy64Loop(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    reads
+        esi; edi;
+    modifies
+        eax; ebx; ecx; edx;
+        efl;
+        mem;
+    requires/ensures
+        src_id != dst_id;
+        mem?[src_id];
+        mem?[dst_id];
+        mem[src_id] is WordHeaplet;
+        mem[dst_id] is WordHeaplet;
+        forall i :: 0 <= i < 16 ==>
+            mem[src_id].words?[addr32(esi, i)]
+         && mem[src_id].words[addr32(esi, i)].t == taint;
+        forall i :: 0 <= i < 16 ==> mem[dst_id].words?[addr32(edi, i)];
+        esi + 64 < 0x1_0000_0000;
+        edi + 64 < 0x1_0000_0000;
+    ensures
+        mem == old(mem)[dst_id := mem[dst_id]]; 
+        forall i :: 0 <= i < 16 ==>
+            mem[dst_id].words?[addr32(edi, i)]
+         && mem[dst_id].words[addr32(edi, i)] == mem[src_id].words[addr32(esi, i)];
+       // I did not add any address space.
+       forall i :: i < 0 || i >= 16 ==>
+            mem[dst_id].words?[addr32(edi, i)] ==> old(mem)[dst_id].words?[addr32(edi, i)];
+      // I did not modify anything else but my target.
+       forall i :: i < 0 || i >= 16 ==>
+          mem[dst_id].words?[addr32(edi, i)] ==> 
+          mem[dst_id].words[addr32(edi, i)] == old(mem)[dst_id].words[addr32(edi, i)];
+
+{
+    Mov(ebx, esi);
+    Mov(ecx, edi);
+    Mov(edx, esi);
+    Add(edx, 64);
+    ghost var index:int := 0;
+    while (ebx < edx)
+        invariant
+            0 <= index <= 16;
+            ebx == esi + 4 * index;
+            ecx == edi + 4 * index;
+            edx == esi + 4 * 16;
+            mem?[src_id];
+            mem?[dst_id];
+            mem[src_id] is WordHeaplet;
+            mem[dst_id] is WordHeaplet;
+            forall i :: 0 <= i < 16 ==>
+                mem[src_id].words?[addr32(esi, i)]
+             && mem[src_id].words[addr32(esi, i)].t == taint;
+            mem == old(mem)[dst_id := mem[dst_id]];
+            forall i :: 0 <= i < 16 ==> mem[dst_id].words?[addr32(edi, i)];
+            forall i :: 0 <= i < index ==>
+                mem[dst_id].words[addr32(edi, i)] == mem[src_id].words[addr32(esi, i)];
+             // I did not add any address space.
+              forall i :: i < 0 || i >= 16 ==>
+               mem[dst_id].words?[addr32(edi, i)] ==> old(mem)[dst_id].words?[addr32(edi, i)];
+             // I did not modify anything else but my target.
+             forall i :: i < 0 || i >= 16 ==>
+                mem[dst_id].words?[addr32(edi, i)] ==> 
+               mem[dst_id].words[addr32(edi, i)] == old(mem)[dst_id].words[addr32(edi, i)];
+        decreases (16 - index);
+    {
+        LoadArrayPtr32(eax, ebx, index, taint, src_id);
+        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
+        Add(ebx, 4);
+        Add(ecx, 4);
+        index := index + 1;
+    }
+}
+
+#verbatim
+}
+#endverbatim
