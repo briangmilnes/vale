@@ -273,19 +273,25 @@ procedure {:bridge} {:timeLimitMultiplier 3} Copy32
              @src != @dst  && @src != @tmp  && @dst != @tmp;             
 
     requires/ensures 
-        off < max_range;
-        ValidSrcAddrs32'(mem, src_id, src, max_range - off, taint);
-        ValidDstAddrs32'(mem, dst_id, dst, max_range - off);
+        off < max_range + 1;
+        ValidSrcAddrs32'(mem, src_id, src, max_range, taint);
+        ValidDstAddrs32'(mem, dst_id, dst, max_range);
 
     ensures 
          OnlyHeapletChanged(old(mem), mem, dst_id);
          OnlyWritesAddrs32(old(mem), mem, dst_id, dst, max_range);
+         ValidSrcAddrs32'(mem, src_id, src + 4 * off, 1, taint); // Having to put this in is annoying.
          WritesAddrs32(mem, dst_id, dst + 4 * off, 1, taint,
            Copy32Seq(mem, src_id, src + 4 * off, 1, 1, taint));
 {
    lemma_addr32_off(off);
+   assert ValidSrcAddrs32'(mem, src_id, src, off, taint);
    LoadArrayPtr32(tmp, src, off, taint, src_id);
    StoreArrayPtr32(dst, tmp, off, taint, dst_id);
+   assert ValidSrcAddrs32'(mem, src_id, src, max_range, taint); // have
+   assert addr32(src, 0) <= addr32(src + 4 * off, 1);
+   assert addr32(src + 4 * off, 1) <= addr32(src, max_range);
+   assert ValidSrcAddrs32'(mem, src_id, src + 4 * off, 1, taint);   // need
 }     
 
 /*

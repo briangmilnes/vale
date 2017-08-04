@@ -98,7 +98,7 @@ function Copy32(mem : Heaplets, id: heaplet_id, base : int, size: int, i : nat) 
   mem[id].words[(addr32(base, i))].v
 }
 
-// Question: should this have taint?
+// Question: should this have taint? Answer No, what breaks.
 // For an address range of base and size, generate the prefix subsequence of count elements.
 function Copy32Seq(mem : Heaplets, id: heaplet_id, base : int, size : nat, count : nat, taint : taint) : seq<uint32>
  requires ValidSrcAddrs32'(mem, id, base, size, taint);

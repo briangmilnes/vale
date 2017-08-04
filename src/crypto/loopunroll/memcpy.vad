@@ -122,7 +122,6 @@ procedure {:timeLimitMultiplier 4} memcpy(ghost iid : heaplet_id, ghost oid : he
    invariant count <= (old(rsi) - old(r8)) / 8;
    invariant r8 == old(r8) + count * 8;
    invariant r9 == old(r9) + count * 8;
-   invariant r9 + 8 < 0x1_0000_0000_0000_0000;
 
    invariant ValidSrcAlAddrs64(mem, iid, addrs64(old(r8), (old(rsi) - old(r8)) / 8), Public);
    invariant mem[iid] == old(mem)[iid];
@@ -146,7 +145,7 @@ procedure {:timeLimitMultiplier 4} memcpy(ghost iid : heaplet_id, ghost oid : he
            Copy8Seq(old(mem), iid, addrs64(old(r8), count + 1), count + 1));
    count := count + 1;
   } 
-//  assert count == items; - Why can't I get this?
+//  assert count == items; // Why can't I get this?
   assert r8 == rsi;
   assert r9 == old(r9) + (old(rsi) - old(r8));
 } 

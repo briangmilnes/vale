@@ -37,6 +37,7 @@ verify_options = {
   'obj/crypto/loopunroll/loopunroll.gen.dfy': BuildOptions(dafny_default_args_nlarith),
   'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'),
   'obj/crypto/loopunroll/memcpy.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'+ ' /noNLarith' + ' /errorLimit:3'), # + ' /traceverify' + ' /z3opt:TRACE=true' ' /trace' + ' /traceTimes' + ' /tracePOs'),
+  'obj/crypto/loopunroll/chrismem.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3'),
 
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_larith),
@@ -91,6 +92,20 @@ if env['TARGET_ARCH']=='amd64':
   env.BuildTest(['src/crypto/loopunroll/testloopunroll.c', loopunroll_asm[0]], '', 'testloopunroll')
 else:
   print('Not building LOOPUNROLL for this target architecture')  
+
+#
+# build chrismem-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  chrismem_asm = env.ExtractValeCode(
+    ['src/crypto/loopunroll/chrismem.vad'], # Vale source
+     'src/crypto/loopunroll/chrismem_main.i.dfy',
+     'chrismem'
+    )
+  env.BuildTest(['src/crypto/loopunroll/testchrismem.c', chrismem_asm[0]], '', 'testchrismem')
+else:
+  print('Not building Seq for this target architecture')  
+
 
 #
 # build seq-exe
