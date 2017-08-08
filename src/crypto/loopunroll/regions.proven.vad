@@ -10,23 +10,27 @@ include{:verbatim} "../../arch/x86/def.s.dfy"
 include{:verbatim} "../../arch/x86/vale.i.dfy"
 include "../../arch/x86/decls.vad"
 
-include{:verbatim} "chrismem.base.dfy"    
+include{:verbatim} "regions.base.dfy"    
 
 #verbatim
-module chrismemproven {
+module regionsproven {
 
 import opened dafny_wrappers_i
 import opened x86def_s_temp = x86_def_s
 import opened x86vale_temp = x86_vale_i
 import opened x86decls_temp = x86_decls_i
-import opened chrismembasedfy
+import opened regionsbasedfy
 #endverbatim
  
 procedure{:refined}{:bridge} LoadArray32(out operand dst:uint32, operand src:uint32, inline i:int,
     inline taint:taint, ghost id:heaplet_id)
     reads
         mem;
+//    requires{:verbatim} 
+//       forall src : int {:trigger addr32(src,i)} :: addr32(src,i) == addr32(src + 4 * i, 0);
+
     requires/ensures
+//        forall src : int :: addr32(src,i) == addr32(src + 4 * i, 0);
         mem?[id];
         mem[id] is WordHeaplet;
         mem[id].words?[addr32(old(src), i)];

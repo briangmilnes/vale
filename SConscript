@@ -38,7 +38,7 @@ verify_options = {
   'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'),
   'obj/crypto/loopunroll/memcpy.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'+ ' /noNLarith' + ' /errorLimit:3'), # + ' /traceverify' + ' /z3opt:TRACE=true' ' /trace' + ' /traceTimes' + ' /tracePOs'),
   'obj/crypto/loopunroll/chrismem.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3'),
-
+  'obj/crypto/loopunroll/regions.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3' + ' /noNLarith'),
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_larith),
 
@@ -103,6 +103,19 @@ if env['TARGET_ARCH']=='amd64':
      'chrismem'
     )
   env.BuildTest(['src/crypto/loopunroll/testchrismem.c', chrismem_asm[0]], '', 'testchrismem')
+else:
+  print('Not building Seq for this target architecture')  
+
+#
+# build regions-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  regions_asm = env.ExtractValeCode(
+    ['src/crypto/loopunroll/regions.vad'], # Vale source
+     'src/crypto/loopunroll/regions_main.i.dfy',
+     'regions'
+    )
+  env.BuildTest(['src/crypto/loopunroll/testregions.c', regions_asm[0]], '', 'testregions')
 else:
   print('Not building Seq for this target architecture')  
 
