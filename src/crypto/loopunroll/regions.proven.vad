@@ -20,6 +20,8 @@ import opened x86def_s_temp = x86_def_s
 import opened x86vale_temp = x86_vale_i
 import opened x86decls_temp = x86_decls_i
 import opened regionsbasedfy
+
+
 #endverbatim
  
 procedure{:refined}{:bridge} LoadArray32(out operand dst:uint32, operand src:uint32, inline i:int,
@@ -239,6 +241,602 @@ procedure Copy64Loop(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:h
         Add(ecx, 4);
         index := index + 1;
     }
+}
+
+// Work on adding predicates instead of raw definitions.
+procedure{:refined}{:timeLimitMultiplier 2} Copy64Pred(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    reads
+        esi; edi;
+    modifies
+       mem; eax; ebx; ecx; edx; ebp;
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, esi, 16, taint);
+        ValidDstReg32(mem, dst_id, edi, 16);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, edi, 16);
+        WritesReg32(mem, dst_id, edi, 16, 16, taint,
+          Copy32Seq(old(mem), src_id, old(esi), 16, 16));
+{
+    LoadArray32(eax, esi, 0, taint, src_id);
+    LoadArray32(ebx, esi, 1, taint, src_id);
+    LoadArray32(ecx, esi, 2, taint, src_id);
+    LoadArray32(edx, esi, 3, taint, src_id);
+    LoadArray32(ebp, esi, 4, taint, src_id);
+    StoreArray32(edi, eax, 0, taint, dst_id);
+    StoreArray32(edi, ebx, 1, taint, dst_id);
+    StoreArray32(edi, ecx, 2, taint, dst_id);
+    StoreArray32(edi, edx, 3, taint, dst_id);
+    StoreArray32(edi, ebp, 4, taint, dst_id);
+    LoadArray32(eax, esi, 5, taint, src_id);
+    LoadArray32(ebx, esi, 6, taint, src_id);
+    LoadArray32(ecx, esi, 7, taint, src_id);
+    LoadArray32(edx, esi, 8, taint, src_id);
+    LoadArray32(ebp, esi, 9, taint, src_id);
+    StoreArray32(edi, eax, 5, taint, dst_id);
+    StoreArray32(edi, ebx, 6, taint, dst_id);
+    StoreArray32(edi, ecx, 7, taint, dst_id);
+    StoreArray32(edi, edx, 8, taint, dst_id);
+    StoreArray32(edi, ebp, 9, taint, dst_id);
+    LoadArray32(eax, esi, 10, taint, src_id);
+    LoadArray32(ebx, esi, 11, taint, src_id);
+    LoadArray32(ecx, esi, 12, taint, src_id);
+    LoadArray32(edx, esi, 13, taint, src_id);
+    LoadArray32(ebp, esi, 14, taint, src_id);
+    StoreArray32(edi, eax, 10, taint, dst_id);
+    StoreArray32(edi, ebx, 11, taint, dst_id);
+    StoreArray32(edi, ecx, 12, taint, dst_id);
+    StoreArray32(edi, edx, 13, taint, dst_id);
+    StoreArray32(edi, ebp, 14, taint, dst_id);
+    LoadArray32(eax, esi, 15, taint, src_id);
+    StoreArray32(edi, eax, 15, taint, dst_id);
+}
+
+// This loop has a fixed size and uses too many registers.
+procedure Copy64LoopPred(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    reads
+        esi; edi;
+    modifies
+        mem; efl; eax; ebx; ecx; edx;
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, esi, 16, taint);
+        ValidDstReg32(mem, dst_id, edi, 16);
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, edi, 16);
+        WritesReg32(mem, dst_id, edi, 16, 16, taint, 
+           Copy32Seq(old(mem), src_id, old(esi), 16, 16));
+{
+    Mov(ebx, esi);
+    Mov(ecx, edi);
+    Mov(edx, esi);
+    Add(edx, 64);
+    ghost var index:int := 0;
+    while (ebx < edx)
+        invariant
+            0 <= index <= 16;
+            ebx == esi + 4 * index;
+            ecx == edi + 4 * index;
+            edx == esi + 4 * 16;
+            (ebx < edx) ==> ValidSrcRegPtr32(mem, src_id, esi, 16, taint, ebx, index);
+            (ebx < edx) ==> ValidDstRegPtr32(mem, dst_id, edi, 16, ecx, index);
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, edi, 16);
+            WritesReg32(mem, dst_id, edi, 16, index, taint,
+               Copy32Seq(old(mem), src_id, old(esi), 16, 16));
+        decreases (16 - index);
+    {
+        LoadArrayPtr32(eax, ebx, index, taint, src_id);
+        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
+        Add(ebx, 4);
+        Add(ecx, 4);
+        index := index + 1;
+    }
+}
+
+
+// This loop uses too many registers.
+// Input is esi, copied into ebx.
+// Aribtrary aligned input end is in edx.
+// Output is edi.
+procedure Copy64LoopArbitraryAlignedSize
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads
+        esi; edi; edx;
+    modifies
+        mem; efl; eax; ebx; ecx;
+    requires/ensures
+        edx >= esi; 
+        (edx - esi) % 4 == 0;
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, esi, items, taint);
+        ValidDstReg32(mem, dst_id, edi, items);
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, edi, items);
+        WritesReg32(mem, dst_id, edi, items, items, taint, 
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    Mov(ebx, esi);
+    Mov(ecx, edi);
+    ghost var index : int := 0;
+    while (ebx < edx)
+        invariant
+            0 <= index <= items;
+            ebx == esi + 4 * index;
+            ecx == edi + 4 * index;
+            (ebx < edx) ==> ValidSrcRegPtr32(mem, src_id, esi, items, taint, ebx, index);
+            (ebx < edx) ==> ValidDstRegPtr32(mem, dst_id, edi, items, ecx, index);
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, edi, items);
+            WritesReg32(mem, dst_id, edi, items, index, taint,
+               Copy32Seq(old(mem), src_id, old(esi), items, items));
+        decreases (items - index);
+    {
+        LoadArrayPtr32 (eax, ebx, index, taint, src_id);
+        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
+        Add(ebx, 4);
+        Add(ecx, 4);
+        index := index + 1;
+    }
+}
+
+// Input is esi, modified.
+// Aribtrary aligned input end is in edx.
+// Output is edi, modified.
+// Essentially, to keep register pressure down we will caller save and use our
+// input and output registers to move along our data.
+// This leaves more registers for loop unrolling.
+procedure Copy64LoopArbitraryAlignedSizeModifyInpOutPtr
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads
+        edx;
+    modifies
+        mem; esi; edi; efl; eax;
+    requires
+        edx >= esi; 
+        (edx - esi) % 4 == 0;
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, old(esi), items, taint);
+        ValidDstReg32(mem, dst_id, old(edi), items);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+        WritesReg32(mem, dst_id, old(edi), items, items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    ghost var index : int := 0;
+    while (esi < edx)
+        invariant
+            0 <= index <= items;
+            esi == old(esi) + 4 * index;
+            edi == old(edi) + 4 * index;
+            (esi < edx) ==> ValidSrcRegPtr32(mem, src_id, old(esi), items, taint, esi, index);
+            (esi < edx) ==> ValidDstRegPtr32(mem, dst_id, old(edi), items, edi, index);
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+            WritesReg32(mem, dst_id, old(edi), items, index, taint,
+               Copy32Seq(old(mem), src_id, old(esi), items, items));
+        decreases ((items) - index);
+    {
+        LoadArrayPtr32 (eax, esi, index, taint, src_id);
+        StoreArrayPtr32(edi, eax, index, taint, dst_id);
+        Add(esi, 4);
+        Add(edi, 4);
+        index := index + 1;
+    }
+}
+
+
+// Use the RegPtr offset style.
+procedure {:bridge} {:timeLimitMultiplier 3} Copy32 
+         (ghost src_id    : heaplet_id, 
+          ghost dst_id    : heaplet_id,
+          ghost   src     : uint32,
+          ghost   dst     : uint32,
+          ghost  reg_size : nat,
+          inline taint    : taint,
+          operand srcptr  : uint32,
+          operand dstptr  : uint32,
+          ghost   off     : nat,
+          inline   add    : nat,
+          inout operand tmp : uint32)
+
+    modifies mem; efl;
+    requires IsOReg(@srcptr) && IsOReg(@dstptr) && IsOReg(@tmp);
+             @srcptr != @dstptr  && @srcptr != @tmp  && @dstptr != @tmp;
+
+    requires/ensures 
+        off + add < reg_size;
+        ValidSrcRegPtrs32(mem, src_id, src, reg_size, taint, srcptr, off, add);
+        ValidDstRegPtrs32(mem, dst_id, dst, reg_size,        dstptr, off, add);
+        WritesReg32(mem, dst_id, dst, reg_size, off + add, taint,
+                   Copy32Seq(old(mem), src_id, src, reg_size, reg_size));
+
+    ensures 
+         OnlyHeapletChanged(old(mem), mem, dst_id);
+         OnlyWritesReg32(old(mem), mem, dst_id, dst, reg_size);
+         WritesReg32(mem, dst_id, dst, reg_size, off + add + 1, taint,
+                   Copy32Seq(old(mem), src_id, src, reg_size, reg_size));
+{
+   // Can't get rid of Chris's LoadArray32 style.
+   LoadArray32 (tmp,    srcptr, add, taint, src_id);
+   StoreArray32(dstptr,    tmp, add, taint, dst_id);
+}     
+
+
+// Input is esi, modified.
+// Aribtrary aligned input end is in edx.
+// Output is edi, modified.
+// Tmp is eax;
+
+procedure CopyLoopArbitraryAlignedSizeModifyInpOutPtrCall
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads
+        edx;
+    modifies
+        efl; mem; esi; edi; eax;
+    requires
+        edx >= esi; 
+        (edx - esi) % 4 == 0;
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, old(esi), items, taint);
+        ValidDstReg32(mem, dst_id, old(edi), items);
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+        WritesReg32(mem, dst_id, old(edi), items, items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    ghost var items' : nat := (old(edx) - old(esi)) / 4;
+    ghost var index : int := 0;
+    while (esi < edx)
+        invariant
+            ValidSrcReg32(mem, src_id, old(esi), items, taint);
+            ValidDstReg32(mem, dst_id, old(edi), items);
+
+            0 <= index <= items;
+            esi == old(esi) + 4 * index;
+            edi == old(edi) + 4 * index;
+  
+            (esi < edx) ==> ValidSrcRegPtr32(mem, src_id, old(esi), items, taint, esi, index);
+            (esi < edx) ==> ValidDstRegPtr32(mem, dst_id, old(edi), items, edi, index);
+
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+            WritesReg32(mem, dst_id, old(edi), items, index, taint,
+               Copy32Seq(old(mem), src_id, old(esi), items, items));
+        decreases (items - index);
+    {
+        Copy32(src_id, dst_id, old(esi), old(edi), items', taint, esi, edi, index, 0, eax);
+        Add(esi, 4);
+        Add(edi, 4);
+        index := index + 1;
+    }
+}
+
+// Input is esi, Output is edi, up to four unrollings.
+procedure {:recursive} {:timeLimitMultiplier 1} Copy32Unrolled
+         (ghost src_id:heaplet_id, ghost dst_id:heaplet_id, 
+          ghost srcbase : uint32, ghost dstbase : uint32, 
+          ghost reg_size : nat, 
+          ghost off : nat, inline step : nat, inline taint:taint)
+
+    reads esi; edi;
+    modifies mem; efl; eax; ebx; ecx; ebp; 
+
+    requires
+       1 <= reg_size;          // Must have at least on address to write.
+       off + step < reg_size; 
+       0 <= step < 4;
+       srcbase != dstbase;
+
+    requires/ensures 
+           src_id != dst_id; 
+           ValidSrcRegPtrs32(mem, src_id, srcbase, reg_size, taint, esi, off, step);
+           ValidDstRegPtrs32(mem, dst_id, dstbase, reg_size,        edi, off, step);
+           WritesReg32(mem, dst_id, dstbase, reg_size, off, taint,
+                 Copy32Seq(old(mem), src_id, srcbase, reg_size, reg_size));
+    ensures
+         OnlyHeapletChanged(old(mem), mem, dst_id);
+         OnlyWritesReg32(old(mem), mem, dst_id, dstbase, reg_size);
+         // This means I wrote off + step + 1 of the output in total.
+         WritesReg32(mem, dst_id, dstbase, reg_size, off + step + 1, taint,
+                   Copy32Seq(old(mem), src_id, srcbase, reg_size, reg_size));
+{
+  inline if (step == 3) {
+       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ebp);
+  } else if (step == 2) {
+       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ecx);
+  } else if (step == 1) {
+       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ebx);
+   } else if (step == 0) {                                    
+       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, eax);
+   }
+}
+
+// Input is esi, modified.
+// Aribtrary aligned input end is in edx.
+// Output is edi, modified.
+// Try calling the unrolled loop with a single step.
+procedure CopyLoopOverUnrolled1
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads edx;
+    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    requires
+        edx >= esi; 
+        (edx - esi) % 4 == 0;
+        old(esi) != old(edi); // Necessary?
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, old(esi), items, taint);
+        ValidDstReg32(mem, dst_id, old(edi), items);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+        WritesReg32(mem, dst_id, old(edi), items, items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    ghost var index   : int := 0;
+    ghost var srcbase : uint32 := old(esi);
+    ghost var dstbase : uint32 := old(edi);
+    lemma_regdiff_loop_ge(edx, esi, 4);
+    while (esi < edx)
+        invariant
+            ValidSrcReg32(mem, src_id, srcbase, items, taint);
+            ValidDstReg32(mem, dst_id, dstbase, items);
+
+            0 <= index <= items;
+            index == items - (edx - esi) / 4;
+            esi == srcbase + 4 * index;
+            edi == dstbase + 4 * index;
+            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (edx - esi) % 4 == 0;
+            (esi < edx) ==> (edx - esi) >= 4; 
+
+            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 0);
+            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 0);
+
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
+            WritesReg32(mem, dst_id, dstbase, items, index, taint, 
+               Copy32Seq(old(mem), src_id, srcbase, items, items));
+          decreases (edx - esi);
+    {
+        Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 0, taint);
+        Add(esi, 4);
+        Add(edi, 4);
+        index := index + 1;
+    }
+  assert items == index; 
+  assert edx - esi == 0;
+}
+
+
+
+procedure CopyLoopOverUnrolled2
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads edx;
+    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    requires
+        edx >= esi; 
+        (edx - esi) % 8 == 0;
+        old(esi) != old(edi);
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, old(esi), items, taint);
+        ValidDstReg32(mem, dst_id, old(edi), items);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+        WritesReg32(mem, dst_id, old(edi), items, items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    ghost var index   : int := 0;
+    ghost var srcbase : uint32 := old(esi);
+    ghost var dstbase : uint32 := old(edi);
+    lemma_regdiff_loop_ge(edx, esi, 8);
+    while (esi < edx)
+        invariant
+            ValidSrcReg32(mem, src_id, srcbase, items, taint);
+            ValidDstReg32(mem, dst_id, dstbase, items);
+
+            0 <= index <= items;
+            index == items - (edx - esi) / 4;
+            esi == srcbase + 4 * index;
+            edi == dstbase + 4 * index;
+            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (edx - esi) % 8 == 0;
+            (esi < edx) ==> (edx - esi) >= 8; // lemma above
+
+            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 1);
+            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 1);
+
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
+            WritesReg32(mem, dst_id, dstbase, items, index, taint,
+               Copy32Seq(old(mem), src_id, srcbase, items, items));
+          decreases (edx - esi);
+    {
+        Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 1, taint);
+        Add(esi, 8);
+        Add(edi, 8);
+        index := index + 2;
+    }
+  assert items == index; 
+  assert edx - esi == 0;
+}
+
+// TODO it would be nice if this was parameterized on regisers.
+procedure {:timeLimitMultiplier 1} CopyLoopOverUnrolledN
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, inline n : uint8)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads edx;
+    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    requires
+        0 < n <= 4;
+        edx >= esi; 
+        (edx - esi) % (n * 4) == 0;
+        old(esi) != old(edi);
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, old(esi), items, taint);
+        ValidDstReg32(mem, dst_id, old(edi), items);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+        WritesReg32(mem, dst_id, old(edi), items, items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    ghost var index   : int := 0;
+    ghost var srcbase : uint32 := old(esi);
+    ghost var dstbase : uint32 := old(edi);
+    lemma_regdiff_loop_ge_uint32(edx, esi, n);
+    while (esi < edx)
+        invariant
+            ValidSrcReg32(mem, src_id, srcbase, items, taint);
+            ValidDstReg32(mem, dst_id, dstbase, items);
+
+            0 <= index <= items;
+            index == items - (edx - esi) / 4;
+            esi == srcbase + 4 * index;
+            edi == dstbase + 4 * index;
+            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (edx - esi) % (n * 4) == 0;
+            (esi < edx) ==> (edx - esi) >= (n * 4); // lemma above
+
+            (esi < edx) ==> 0 <= index + n - 1 < items;
+            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, n - 1);
+            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, n - 1);
+
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
+            WritesReg32(mem, dst_id, dstbase, items, index, taint,
+               Copy32Seq(old(mem), src_id, srcbase, items, items));
+          decreases (edx - esi);
+    {
+     // Bryan, constant folding issues.
+        inline if (n == 1) {
+          Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 0, taint);
+         } else if (n == 2) {
+          Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 1, taint);
+         } else if (n == 3) {
+          Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 2, taint);
+         } else {
+          Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 3, taint);
+         }         
+        ghost var esi' := esi;
+        Add(esi, const(n * 4));
+        Add(edi, const(n * 4));
+        index := index + n;
+    }
+  assert items == index; 
+  assert edx - esi == 0;
+}
+
+//
+// Just checking that calls to the above prove.
+procedure {:timeLimitMultiplier 1} CallCopyLoopOverUnrolledN
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, inline n : uint8)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads edx;
+    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    requires
+        0 < n <= 4;
+        edx >= esi; 
+        (edx - esi) % (n * 4) == 0;
+        old(esi) != old(edi);
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, old(esi), items, taint);
+        ValidDstReg32(mem, dst_id, old(edi), items);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+        WritesReg32(mem, dst_id, old(edi), items, items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+  CopyLoopOverUnrolledN(taint, src_id, dst_id, n);
+}
+
+procedure CopyLoopOverUnrolled4
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads edx;
+    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    requires
+        edx >= esi; 
+        (edx - esi) % 16 == 0;
+        old(esi) != old(edi);
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, old(esi), items, taint);
+        ValidDstReg32(mem, dst_id, old(edi), items);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+        WritesReg32(mem, dst_id, old(edi), items, items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    ghost var index   : int := 0;
+    ghost var srcbase : uint32 := old(esi);
+    ghost var dstbase : uint32 := old(edi);
+    lemma_regdiff_loop_ge(edx, esi, 16);
+    while (esi < edx)
+        invariant
+            ValidSrcReg32(mem, src_id, srcbase, items, taint);
+            ValidDstReg32(mem, dst_id, dstbase, items);
+
+            0 <= index <= items;
+            index == items - (edx - esi) / 4;
+            esi == srcbase + 4 * index;
+            edi == dstbase + 4 * index;
+            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (edx - esi) % 16 == 0;
+            (esi < edx) ==> (edx - esi) >= 16; // lemma above
+
+            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 1);
+            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 1);
+
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
+            WritesReg32(mem, dst_id, dstbase, items, index, taint,
+               Copy32Seq(old(mem), src_id, srcbase, items, items));
+          decreases (edx - esi);
+    {
+        Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 3, taint);
+        Add(esi, 16);
+        Add(edi, 16);
+        index := index + 4;
+    }
+  assert items == index; 
+  assert edx - esi == 0;
 }
 
 #verbatim
