@@ -2,6 +2,8 @@
 
 Brian Milnes, 9 Aug 2017
 
+   Reduce separation logic.
+
    I've been having quite a difficult time learning Vale and really making the proofs of
 simple things go through smoothly without the butterfly effect. A large chunk of this
 problem has been our separation logic. Chris, Bryan and I have been working on changing
@@ -29,6 +31,8 @@ type Heaplets = map<heaplet_id, Heaplet>
    It's a very simple separation logic in which one assumes that each data structure is a
 contiguous block of memory. And that each heaplet describes a separate data structure and
 they may share addresses, but it's not the same memory.
+WRONG HeapletsExclusive HeapletsConsistent
+
 
 <verbatim>
   predicates ValidSrcAddr(h:Heaplets, id:heaplet_id, addr:int, size:int, taint:taint)
@@ -65,7 +69,7 @@ they may share addresses, but it's not the same memory.
    It was quite possible that our implementations could be modifying addresses in
    our heaplets, writing garbage out of range, and we would not catch the error in proof.
 
-<h2>The New Separationc Logic</h2>
+<h2>The New Addressing</h2>
 
   Chris's new approach uses the same data structures but controls triggering by wrapping all
 address calcuation in functions like:

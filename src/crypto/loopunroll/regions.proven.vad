@@ -750,7 +750,7 @@ procedure CopyLoopOverUnrolled4
             rdi == dstbase + 8 * index;
             (rsi < rdx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
             (rdx - rsi) % 32 == 0;
-            (rsi < rdx) ==> (rdx - rsi) >= 16; // lemma above
+            (rsi < rdx) ==> (rdx - rsi) >= 16; // lemma above  32? 
 
             (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, 1);
             (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, 1);
