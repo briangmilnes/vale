@@ -1,0 +1,434 @@
+<h1>Vale Separation Logic</h1>
+
+Brian Milnes, 9 Aug 2017
+
+   I've been having quite a difficult time learning Vale and really making the proofs of
+simple things go through smoothly without the butterfly effect. A large chunk of this
+problem has been our separation logic. Chris, Bryan and I have been working on changing
+this and it's now working very nicely.
+
+<h2>The Current Separation Logic</h2>
+
+  The data structures are defined as:
+
+<verbatim>
+datatype HeapletType = WordHeapletType | ByteHeapletType | QuadwordHeapletType
+datatype ByteHeapletEntry     = ByteHeapletEntry(v:uint8, t:taint)
+datatype WordHeapletEntry     = WordHeapletEntry(v:uint32, t:taint)
+datatype Heaplet64Entry       = Heaplet64Entry(v:uint64, t:taint)
+datatype QuadwordHeapletEntry = QuadwordHeapletEntry(v:Quadword, t:taint)
+datatype Heaplet = ByteHeaplet(bytes:map<int, ByteHeapletEntry>)
+                 | WordHeaplet(words:map<int, WordHeapletEntry>) 
+                 | Heaplet64(mem64:map<int, Heaplet64Entry>) 
+                 | QuadwordHeaplet(quads:map<int, QuadwordHeapletEntry>)
+
+type heaplet_id = int
+type Heaplets = map<heaplet_id, Heaplet>
+</verbatim>
+
+   It's a very simple separation logic in which one assumes that each data structure is a
+contiguous block of memory. And that each heaplet describes a separate data structure and
+they may share addresses, but it's not the same memory.
+
+<verbatim>
+  predicates ValidSrcAddr(h:Heaplets, id:heaplet_id, addr:int, size:int, taint:taint)
+</verbatim>
+    and ValidDstAddr are used to specify the ability to read and write address ranges
+    in a heaplet, with the type of heaplet being determined from the size argument.
+
+ Some of the problems this causes are:
+
+ A) It's easy to generate the butterfly effect with over triggering of
+  quantifiers as most of the quantifiers in your specifications trigger
+  on inequalities. If anything takes more than about 6 s to validate,
+  you risk the butterfly effect popping up. Even if you add routines later
+  in a file, it can trigger the butterfly effect earlier on. Although
+  recent bug fixes seemed to have made this much better.
+
+ B) It's easy to have verification problems based on size or checking if your
+  address is in range.
+
+ C) It's also a bit odd that addresses are integers, but in Vale it is currently a
+  bit tricky to work with nat. Arithmetic on nats requires some extra work to ensure
+  they remain in nat. Particularly, the generated function method for your routine may
+  not type check using nats even though you have enough specification elsewhere to
+  know that your n - 1 does not go negative.
+
+ D) Proofs in AES, CBC and CTR ended up having to prove things about both raw address
+   arithmetic and the count of the number of items in a range. This 'proof impedence
+   mismatch' made proofs more difficult and triggered the butterfly effect readily.
+   
+ E) Dafny map modifications <verbatim>mem == old(mem)[id].words[7 := 11]</verbatim>
+   were used to specify modifications to memory and its heaplets. However, they
+   are difficult to use to specify a set of changes.
+
+   It was quite possible that our implementations could be modifying addresses in
+   our heaplets, writing garbage out of range, and we would not catch the error in proof.
+
+<h2>The New Separationc Logic</h2>
+
+  Chris's new approach uses the same data structures but controls triggering by wrapping all
+address calcuation in functions like:
+
+<verbatim>
+ function addr32(base:int, i:int):int { base + 4 * i }
+</verbatim>
+ 
+  and uses only count based indexing.
+
+  I've been adapting this and testing it on every type of unrolled loop we need for optimal
+cryptographic algorithms. This new logic makes it much easier to use a single clean style to
+specify how one maps from the input read to the output generated.
+
+ Address ranges are called Regions and are specified with predicates like:
+<verbatim>
+predicate ValidSrcReg32(mem : Heaplets, id : heaplet_id, base : nat, size : nat, taint : taint)
+{
+  addr32(base, size) < 0x1_0000_0000 &&
+  id in mem &&
+  mem[id].WordHeaplet? &&
+  forall i : nat :: 0 <= i < size ==>
+    addr32(base, i) in mem[id].words && 
+    mem[id].words[addr32(base, i)].t == taint
+}
+
+predicate OnlyHeapletChanged(old_mem : Heaplets, mem : Heaplets, id : heaplet_id) 
+{
+  id in mem &&
+  mem[id].WordHeaplet? &&
+  id in old_mem &&
+  old_mem[id].WordHeaplet? &&
+  mem == old_mem[id := mem[id]]
+}
+
+predicate WritesReg32(mem : Heaplets, id : heaplet_id, base : nat, size : nat, 
+                      wrote : nat, taint : taint, v : seq<uint32>)
+ requires |v| == size;
+{
+  wrote <= size &&
+  ValidDstReg32(mem, id, base, size) && 
+  forall i : nat :: 0 <= i < wrote ==>
+    addr32(base, i) in mem[id].words &&
+    mem[id].words[addr32(base, i)].t == taint &&
+    mem[id].words[addr32(base, i)].v == v[i]
+}
+</verbatim>
+
+  Using the predicate name to specify the size and explicitly test the heaplet type reduces
+proof bugs. The quantifiers trigger on addr32(base, i) prevent unnecessary triggering on
+inequalities.
+
+ One can specify that a procedure has only changed it's one heaplet as is often the case.
+
+ WritesReg32 specifies how much of your transformed input sequence has been written to
+memory. This says that I have a 32 bit region starting at base of the total size
+of your datastructure. And that I've so far written wrote elements into it. Attempting
+to limit sub procedures to smaller address ranges adds to the proof burden.
+
+  One of the problems proving our cryptographic loops has been that we need sequences of
+calculated values, read from input data structures. Given a higher level programming language
+than Dafny, we could specify this with a closure curried function and an index. But using
+this in Dafny has proven difficult. And if we did, our routines may lose the tight
+coupling of specification to sequence or function application at procedure boundaries.
+
+  So we've been building sequences and passing them around, making it harder for Z3 to have
+the right information speciyfing their meaning. In CTR we had to write multiple quantifiers
+specifying what a sequence's value at an index is and how much of the sequence has been read
+and written.
+
+ WritesReg32 allows this style but the addition of two simple algorithm specific functions
+allows you to specify the whole range of the input you are mapping to an output and gives
+Vale/Dafny/Z3 all of the information it needs to prove its properties.
+
+<h2>Specify All Of Your Input In Two Functions</h2>
+
+<verbatim>
+function Copy32(mem : Heaplets, id: heaplet_id, base : nat, size: int, i : nat) : uint32
+ requires 0 <= i < size;
+ requires ValidDstReg32(mem, id, base, size);
+{
+  mem[id].words[(addr32(base, i))].v
+}
+
+function Copy32Seq(mem : Heaplets, id: heaplet_id, base : nat, size : nat, count : nat) : seq<uint32>
+ requires ValidDstReg32(mem, id, base, size);
+ requires 0 <= count <= size;
+ ensures |Copy32Seq(mem, id, base, size, count)| == count;
+// Doing this here at the function definition is CRITICAL.
+ ensures forall i : nat :: 0 <= i < count ==>
+         Copy32Seq(mem, id, base, size, count)[i] == Copy32(mem, id, base, size, i);
+{
+  if (count == 0) then
+    []
+  else 
+    Copy32Seq(mem, id, base, size, count - 1) + [Copy32(mem, id, base, size, count - 1)]
+}
+</verbatim>
+
+ In this case a simple copy function is created and then a sequence generator for it.  This
+allows a simple proof of length and meaning for each cell in a single function.  Always
+using this to generate the entirety of the input you are going read, manipulate and store,
+greatly simplifies the task of proving you've done the job. You need not hassle teaching Z3
+about any subsequence or sequence appending produces the desired output. See the loop
+example below.
+
+<h2>Fast Loops</h2>
+
+ One of the common simple optimizations used in cryptographic algoriths are to loop on an
+input pointer, checking that it is less than an end of input pointer.  And to increment
+that input pointer directly to save register registers.
+
+ Getting address range proofs correct and inexpensive in this style was also somewhat
+tricky. The solution to this is to really specify that you have a base pointer to a range,
+saved in a ghost, and the size of the range, and that your register is now a pointer into
+the region at base + n * offset.
+
+<verbatim>
+// A pointer within a region, ptr is an actual ptr not an offset.
+predicate ValidSrcRegPtr32(mem : Heaplets, id : heaplet_id, base : nat, size : nat, taint : taint, ptr : nat, off : nat)
+{
+  ValidSrcReg32(mem, id, base, size, taint) &&
+  0 <= off < size &&
+  ptr == addr32(base, off)
+}
+<verbatim>
+
+ This loop uses just three registers: esi on input, ebx as a changing pointer into the input
+and edi as a changing pointer into the output. The whole of the input and output range are
+specified and I recommend that you do this when you loop or call other procedures to
+simplify the proofs. The whole of the input data is specified and just the amount written so
+that each change has the same total input (CopySeq...) to simplify proof.
+
+<verbatim>
+procedure Copy64LoopArbitraryAlignedSize
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads
+        esi; edi; edx;
+    modifies
+        mem; efl; eax; ebx; ecx;
+    requires/ensures
+        edx >= esi; 
+        (edx - esi) % 4 == 0;
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, esi, items, taint);
+        ValidDstReg32(mem, dst_id, edi, items);
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, edi, items);
+        WritesReg32(mem, dst_id, edi, items, items, taint, 
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    Mov(ebx, esi);
+    Mov(ecx, edi);
+    ghost var index : int := 0;
+    while (ebx < edx)
+        invariant
+            0 <= index <= items;
+            ebx == esi + 4 * index;
+            ecx == edi + 4 * index;
+            (ebx < edx) ==> ValidSrcRegPtr32(mem, src_id, esi, items, taint, ebx, index);
+            (ebx < edx) ==> ValidDstRegPtr32(mem, dst_id, edi, items, ecx, index);
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, edi, items);
+            WritesReg32(mem, dst_id, edi, items, index, taint,
+               Copy32Seq(old(mem), src_id, old(esi), items, items));
+        decreases (items - index);
+    {
+        LoadArrayPtr32 (eax, ebx, index, taint, src_id);
+        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
+        Add(ebx, 4);
+        Add(ecx, 4);
+        index := index + 1;
+    }
+}
+</verbatim>
+
+
+<h2>Loops Over Unrolled Loops</h2>
+
+ Extending this allows a clean specification of another type of optimized loop: a loop over
+a fixed unrolling. For example, AES-GCM's MAC calculation needs to loop over all of the
+message, unrolled 4 to 6 times for speed. This adds a specification that an unrolled loop uses
+a block pointer can also read or write multiple words in that block.
+
+<verbatim>
+predicate ValidSrcRegPtrs32(mem : Heaplets, id : heaplet_id, base : nat, size : nat, taint : taint, ptr : nat, baseoff : nat, ptroff : nat)
+{
+  ValidSrcReg32(mem, id, base, size, taint) &&
+  0 <= baseoff + ptroff < size &&
+  ptr == addr32(base, baseoff) &&
+  addr32(ptr,ptroff) == addr32(base, baseoff + ptroff) // for proof
+}
+</verbatim>
+
+ A loop can be unrolled as in Copy32Unrolled. The writes in the required and ensures neatly
+mesh to prove in under three seconds.
+
+ One odditiy is that it is simpler to get Vale to prove some things using a count that
+starts at zero, so step ranges from zero to three.
+
+<verbatim>
+// Input is esi, Output is edi, up to four unrollings.
+procedure {:recursive} {:timeLimitMultiplier 1} Copy32Unrolled
+         (ghost src_id:heaplet_id, ghost dst_id:heaplet_id, 
+          ghost srcbase : uint32, ghost dstbase : uint32, 
+          ghost reg_size : nat, 
+          ghost off : nat, inline step : nat, inline taint:taint)
+
+    reads esi; edi;
+    modifies mem; efl; eax; ebx; ecx; ebp; 
+
+    requires
+       1 <= reg_size;          // Must have at least on address to write.
+       off + step < reg_size; 
+       0 <= step < 4;
+       srcbase != dstbase;
+
+    requires/ensures 
+           src_id != dst_id; 
+           ValidSrcRegPtrs32(mem, src_id, srcbase, reg_size, taint, esi, off, step);
+           ValidDstRegPtrs32(mem, dst_id, dstbase, reg_size,        edi, off, step);
+           WritesReg32(mem, dst_id, dstbase, reg_size, off, taint,
+                 Copy32Seq(old(mem), src_id, srcbase, reg_size, reg_size));
+    ensures
+         OnlyHeapletChanged(old(mem), mem, dst_id);
+         OnlyWritesReg32(old(mem), mem, dst_id, dstbase, reg_size);
+         // This means I wrote off + step + 1 of the output in total.
+         WritesReg32(mem, dst_id, dstbase, reg_size, off + step + 1, taint,
+                   Copy32Seq(old(mem), src_id, srcbase, reg_size, reg_size));
+{
+  inline if (step == 3) {
+       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ebp);
+  } else if (step == 2) {
+       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ecx);
+  } else if (step == 1) {
+       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ebx);
+   } else if (step == 0) {                                    
+       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, eax);
+   }
+}
+</verbatim>
+ 
+ Chris and Bryan have even managed to get them to use a modulus to select registers in Poly.
+
+ This loop calls the above unrolled twice. The careful use of addr32 style functions and
+only count is not only fast but only a single lemma has been required so far. 
+
+ Calling unrolled loops currently requires some inline ifs due to constant folding issues.
+
+<verbatim>
+procedure CopyLoopOverUnrolled2
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
+    let items :=  (old(edx) - old(esi)) / 4;
+    reads edx;
+    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    requires
+        edx >= esi; 
+        (edx - esi) % 8 == 0;
+        old(esi) != old(edi);
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg32(mem, src_id, old(esi), items, taint);
+        ValidDstReg32(mem, dst_id, old(edi), items);
+
+    ensures
+        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
+        WritesReg32(mem, dst_id, old(edi), items, items, taint,
+         Copy32Seq(old(mem), src_id, old(esi), items, items));
+{
+    ghost var index   : int := 0;
+    ghost var srcbase : uint32 := old(esi);
+    ghost var dstbase : uint32 := old(edi);
+    lemma_regdiff_loop_ge(edx, esi, 8);
+    while (esi < edx)
+        invariant
+            ValidSrcReg32(mem, src_id, srcbase, items, taint);
+            ValidDstReg32(mem, dst_id, dstbase, items);
+
+            0 <= index <= items;
+            index == items - (edx - esi) / 4;
+            esi == srcbase + 4 * index;
+            edi == dstbase + 4 * index;
+            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (edx - esi) % 8 == 0;
+            (esi < edx) ==> (edx - esi) >= 8; // lemma above
+
+            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 1);
+            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 1);
+
+            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
+            WritesReg32(mem, dst_id, dstbase, items, index, taint,
+               Copy32Seq(old(mem), src_id, srcbase, items, items));
+          decreases (edx - esi);
+    {
+        Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 1, taint);
+        Add(esi, 8);
+        Add(edi, 8);
+        index := index + 2;
+    }
+  assert items == index; 
+  assert edx - esi == 0;
+}
+</verbatim>
+
+ The region.vad in examples provides just about every style of input/ouput loop that you
+might need for an optimized cryptographic algorithm. Using these carefully should save you
+an enormous amount of time and produce very clear specifications and code.
+
+<h2>Problems With The Approach</h2>
+
+ One problem with this approach is that it requires a wrapper around our current load and
+store instructions.
+
+For example:
+<verbatim>
+procedure{:refined}{:bridge} LoadArray32(out operand dst:uint32, operand src:uint32, inline i:int,
+    inline taint:taint, ghost id:heaplet_id)
+    reads
+        mem;
+    requires/ensures
+        mem?[id];
+        mem[id] is WordHeaplet;
+        mem[id].words?[addr32(old(src), i)];
+        mem[id].words[addr32(old(src), i)].t == taint;
+    ensures
+        dst == mem[id].words[addr32(old(src), i)].v;
+{
+    Load(dst, src, 4 * i, taint, id);
+}  
+</verbatim>
+
+  The largest thing missing from our change is an easier way to perform casting. True
+compliance on cryptographic algorithms requires zero padding byte datastructures, which we
+are doing in C. Performance requires working with up to 128 byte indexed sections.
+
+ There is some support for this as SHA256 needs it, but it required Bryan writing some
+heavyweight lemmas.
+
+<h2>To Dos</h2>
+
+ 1) Alignment has not been added to this.
+
+ 2) The examples have not been fully
+
+ 3) We could hide the complete graphs of inequalities of registers and
+   heaplet ids in predicates.
+
+ 4) There are constant folding issues in unrolled loop callers.
+
+ 5) We should try and get rid of the wrappers and/or move to this
+  addressing style for the instructions. It may greatly speed up
+  verification of procedures with lots of instructions.
+
+ 6) Sometimes decreases(items - index) works and sometimes to
+    decreases (endptr - iptr) is required.
+ 
+ 7) This style of NSeq functions has not been proven in loops
+  with functions that chain input, such as CBC.

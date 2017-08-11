@@ -1,0 +1,119 @@
+/*
+
+  This file provides wrappers for Load and Store instructions to allow us
+ to call Loads and Stores that are specified by regions instead of just ValidAddrs.
+
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/def.s.dfy"
+include{:verbatim} "../../arch/x64/vale.i.dfy"
+
+include{:verbatim} "regions64.dfy"    
+
+#verbatim
+module regions64wrappers {
+
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened x64_def_s
+import opened x64_vale_i
+
+import opened regions64
+#endverbatim
+
+procedure{:refined}{:bridge} LoadArray64(out operand dst:uint64, operand src:uint64, inline i:int,
+    inline taint:taint, ghost id:heaplet_id)
+    reads
+        mem;
+    requires{:refined false}
+        @dst is OReg;
+        @src is OReg;
+    requires/ensures
+        mem?[id];
+        mem[id] is Heaplet64;
+        mem[id].mem64?[addr64(old(src), i)];
+        mem[id].mem64[addr64(old(src), i)].t == taint;
+    ensures
+        dst == mem[id].mem64[addr64(old(src), i)].v;
+{
+    Load64(dst, src, 8 * i, taint, id);
+}
+ 
+procedure{:refined}{:bridge} StoreArray64(operand dst:uint64, operand src:uint64, inline i:int,
+    inline taint:taint, ghost id:heaplet_id)
+    modifies
+        mem;
+    requires{:refined false}
+        @dst is OReg;
+        @src is OReg;
+    requires
+        mem?[id];
+        mem[id] is Heaplet64;
+        mem[id].mem64?[addr64(dst, i)];
+    ensures
+        mem == old(mem)[id := old(mem)[id].(mem64 := old(mem)[id].mem64[addr64(dst, i) := Heaplet64Entry(src, taint)])];
+{
+    Store64(dst, src, 8 * i, taint, id);
+}
+ 
+procedure{:refined}{:bridge} LoadArrayPtr64(out operand dst:uint64, operand src:uint64, ghost i:int,
+    inline taint:taint, ghost id:heaplet_id)
+    reads
+        mem;
+    requires{:refined false}
+        @dst is OReg;
+        @src is OReg;
+    requires/ensures
+        mem?[id];
+        mem[id] is Heaplet64;
+        mem[id].mem64?[addr64(old(src) - 8 * i, i)];
+        mem[id].mem64[addr64(old(src) - 8 * i, i)].t == taint;
+    ensures
+        dst == mem[id].mem64[addr64(old(src) - 8 * i, i)].v;
+{
+    Load64(dst, src, 0, taint, id);
+}
+ 
+procedure{:refined}{:bridge} StoreArrayPtr64(operand dst:uint64, operand src:uint64, ghost i:int,
+    inline taint:taint, ghost id:heaplet_id)
+        
+    modifies
+        mem;
+    requires{:refined false}
+        @dst is OReg;
+        @src is OReg;
+    requires
+        mem?[id];
+        mem[id] is Heaplet64;
+        mem[id].mem64?[addr64(dst - 8 * i, i)];
+    ensures
+        mem == old(mem)[id := old(mem)[id].(mem64 := old(mem)[id].mem64[addr64(dst - 8 * i, i) := Heaplet64Entry(src, taint)])];
+{
+    Store64(dst, src, 0, taint, id);
+}
+ 
+// A wrapper for Add64 to allow inline operands to evaluate in non refined procedures.
+procedure{:refined}{:bridge} Add(inout operand dst:uint64, operand src:uint64)
+    requires
+        src + dst < 0x1_0000_0000_0000_0000;
+    modifies
+        efl;
+    ensures
+        dst == old(dst) + old(src);
+{
+    Add64(dst, src);
+}
+
+// The same.
+procedure{:refined}{:bridge} Mov(inout operand dst:uint64, operand src:uint64)
+    ensures
+        dst == old(src);
+{
+    Mov64(dst, src);
+}
+
+#verbatim
+} 
+#endverbatim
