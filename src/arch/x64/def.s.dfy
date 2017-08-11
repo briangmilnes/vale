@@ -34,6 +34,7 @@ datatype ins =
 | Sub64(dstSub64:operand, srcSub64:operand)
 | Mul32(srcMul:operand)
 | Mul64(srcMul64:operand)
+| Div64(srcDiv64:operand)
 | IMul64(dstIMul64:operand, srcIMul64:operand)
 | AddCarry(dstAddCarry:operand, srcAddCarry:operand)
 | AddCarry64(dstAddCarry64:operand, srcAddCarry64:operand)
@@ -566,6 +567,7 @@ predicate ValidInstruction(s:state, ins:ins)
         case Sub64(dstSub, srcSub) => Valid64BitDestinationOperand(s, dstSub) && Valid64BitSourceOperand(s, srcSub) && Valid64BitSourceOperand(s, dstSub)
         case Mul32(srcMul) => Valid32BitSourceOperand(s, srcMul) && Valid32BitSourceOperand(s, OReg(X86Eax)) && Valid32BitDestinationOperand(s, OReg(X86Eax)) && Valid32BitDestinationOperand(s, OReg(X86Edx))
         case Mul64(srcMul) => Valid64BitSourceOperand(s, srcMul) && Valid64BitSourceOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Edx))
+        case Div64(srcMul) => Valid64BitSourceOperand(s, srcMul) && Valid64BitSourceOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Edx))
         case IMul64(dst, src) => Valid64BitDestinationOperand(s, dst) && Valid64BitSourceOperand(s, src) && Valid64BitSourceOperand(s, dst)
         case AddCarry(dstAddCarry, srcAddCarry) => Valid32BitDestinationOperand(s, dstAddCarry) && Valid32BitSourceOperand(s, srcAddCarry) && Valid32BitSourceOperand(s, dstAddCarry)
         case AddCarry64(dstAddCarry, srcAddCarry) => Valid64BitDestinationOperand(s, dstAddCarry) && Valid64BitSourceOperand(s, srcAddCarry) && Valid64BitSourceOperand(s, dstAddCarry)
@@ -635,6 +637,7 @@ function insObs(s:state, ins:ins):seq<observation>
         case Sub64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
         case Mul32(src) => operandObs(s, 32, src) // TODO: eax, edx
         case Mul64(src) => operandObs(s, 64, src)
+        case Div64(src) => operandObs(s, 64, src)
         case IMul64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
         case AddCarry(dst, src) => operandObs(s, 32, dst) + operandObs(s, 32, src)
         case AddCarry64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
@@ -675,7 +678,6 @@ predicate evalIns(ins:ins, s:state, r:state)
             case Mov32(dst, src) => evalUpdateAndMaintainFlags(s, dst, eval_op32(s, src), r, obs) // mov doesn't change flags
             case Mov64(dst, src) => evalUpdateAndMaintainFlags64(s, dst, eval_op64(s, src), r, obs) // mov doesn't change flags
 
-// Bryan please check.
           case MOVQ64XMM(dst, src) =>
             var t := eval_op128(s,src);
               evalUpdateAndMaintainFlags64(s, dst, lowerUpper64(t.lo, t.mid_lo), r, obs) // mov doesn't change flags
@@ -712,6 +714,12 @@ predicate evalIns(ins:ins, s:state, r:state)
                                     var hi := (product / 0x1_0000_0000_0000_0000);
                                     var lo := (product % 0x1_0000_0000_0000_0000);
                                     r == s.(regs := s.regs[X86Edx := hi][X86Eax := lo], flags := r.flags)
+
+            // Div64 is three registers. Divides rdx:rax / src and puts the quotient in rax and the remainder in rdx.
+            case Div64(src)      => var div := (s.regs[X86Edx] * 0x1_0000_0000_0000_0000 + s.regs[X86Eax]) / eval_op64(s, src));
+                                   var mod := (s.regs[X86Edx] * 0x1_0000_0000_0000_0000 + s.regs[X86Eax]) % eval_op64(s, src));
+                                   r == s.(regs := s.regs[X86Edx := div][X86Eax := mod], flags := r.flags)
+
             case IMul64(dst, src) => evalUpdateAndHavocFlags64(s, dst, (eval_op64(s, dst) * eval_op64(s, src)) % 0x1_0000_0000_0000_0000, r, obs)
             // Add with carry (ADC) instruction
             case AddCarry(dst, src) => var old_carry := if Cf(s.flags) then 1 else 0;

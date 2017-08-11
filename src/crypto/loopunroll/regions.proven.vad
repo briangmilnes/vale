@@ -1,540 +1,468 @@
 /*
-  Do some testing on Chris's better memory model.
+
+  This is a file of examples using the regions64 mechanism.
 
 */
 
 include "../../arch/x64/decls.vad"
 include "../../arch/x64/decls64.vad"
-include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
-include{:verbatim} "../../arch/x86/def.s.dfy"
-include{:verbatim} "../../arch/x86/vale.i.dfy"
-include "../../arch/x86/decls.vad"
+include{:verbatim} "../../arch/x64/def.s.dfy"
+include{:verbatim} "../../arch/x64/vale.i.dfy"
 
-include{:verbatim} "regions.base.dfy"    
+include{:verbatim} "regions64.dfy"    
+include{:verbatim} "copy64.dfy"    
+include "regions64wrappers.vad"
 
 #verbatim
 module regionsproven {
 
-import opened dafny_wrappers_i
-import opened x86def_s_temp = x86_def_s
-import opened x86vale_temp = x86_vale_i
-import opened x86decls_temp = x86_decls_i
-import opened regionsbasedfy
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened x64_def_s
+import opened x64_vale_i
 
+import opened regions64
+import opened regions64wrappers
+import opened copy64
 
 #endverbatim
  
-procedure{:refined}{:bridge} LoadArray32(out operand dst:uint32, operand src:uint32, inline i:int,
-    inline taint:taint, ghost id:heaplet_id)
+// Chris's original version updated with quantified does not writes assertions.
+// This demonstrates how much work the raw specifications are compared to the Reg64 specifications.
+procedure{:refined}{:timeLimitMultiplier 2} Copy64RawSpec(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
     reads
-        mem;
-//    requires{:verbatim} 
-//       forall src : int {:trigger addr32(src,i)} :: addr32(src,i) == addr32(src + 4 * i, 0);
-
-    requires/ensures
-//        forall src : int :: addr32(src,i) == addr32(src + 4 * i, 0);
-        mem?[id];
-        mem[id] is WordHeaplet;
-        mem[id].words?[addr32(old(src), i)];
-        mem[id].words[addr32(old(src), i)].t == taint;
-    ensures
-        dst == mem[id].words[addr32(old(src), i)].v;
-{
-    Load(dst, src, 4 * i, taint, id);
-}
- 
-procedure{:refined}{:bridge} StoreArray32(operand dst:uint32, operand src:uint32, inline i:int,
-    inline taint:taint, ghost id:heaplet_id)
+        rsi; rdi;
     modifies
-        mem;
-    requires
-        mem?[id];
-        mem[id] is WordHeaplet;
-        mem[id].words?[addr32(dst, i)];
-    ensures
-        mem == old(mem)[id := old(mem)[id].(words := old(mem)[id].words[addr32(dst, i) := WordHeapletEntry(src, taint)])];
-{
-    Store(dst, src, 4 * i, taint, id);
-}
- 
-procedure{:refined}{:bridge} LoadArrayPtr32(out operand dst:uint32, operand src:uint32, ghost i:int,
-    inline taint:taint, ghost id:heaplet_id)
-    let
-        a := addr32(old(src) - 4 * i, i);
-    reads
-        mem;
-    requires/ensures
-        mem?[id];
-        mem[id] is WordHeaplet;
-        mem[id].words?[a];
-        mem[id].words[a].t == taint;
-    ensures
-        dst == mem[id].words[a].v;
-{
-    Load(dst, src, 0, taint, id);
-}
- 
-procedure{:refined}{:bridge} StoreArrayPtr32(operand dst:uint32, operand src:uint32, ghost i:int,
-    inline taint:taint, ghost id:heaplet_id)
-    let
-        a := addr32(dst - 4 * i, i);
-    modifies
-        mem;
-    requires
-        mem?[id];
-        mem[id] is WordHeaplet;
-        mem[id].words?[a];
-    ensures
-        mem == old(mem)[id := old(mem)[id].(words := old(mem)[id].words[a := WordHeapletEntry(src, taint)])];
-{
-    Store(dst, src, 0, taint, id);
-}
- 
-procedure{:refined}{:bridge} Mov(inout operand dst:uint32, operand src:uint32)
-    ensures
-        dst == old(src);
-{
-    Mov32(dst, src);
-}
- 
-procedure{:refined}{:bridge} Add(inout operand dst:uint32, operand src:uint32)
-    requires
-        src + dst < 0x1_0000_0000;
-    modifies
-        efl;
-    ensures
-        dst == old(dst) + old(src);
-{
-    Add32(dst, src);
-}
-
-procedure{:refined}{:timeLimitMultiplier 2} Copy64(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    reads
-        esi; edi;
-    modifies
-        eax; ebx; ecx; edx; ebp;
+        rax; rbx; rcx; rdx; rbp;
         mem;
     requires/ensures
         src_id != dst_id;
         mem?[src_id];
         mem?[dst_id];
-        mem[src_id] is WordHeaplet;
-        mem[dst_id] is WordHeaplet;
+        mem[src_id] is Heaplet64;
+        mem[dst_id] is Heaplet64;
         forall i :: 0 <= i < 16 ==>
-            mem[src_id].words?[addr32(esi, i)]
-         && mem[src_id].words[addr32(esi, i)].t == taint;
-        forall i :: 0 <= i < 16 ==> mem[dst_id].words?[addr32(edi, i)];
+            mem[src_id].mem64?[addr64(rsi, i)]
+         && mem[src_id].mem64[addr64(rsi, i)].t == taint;
+        forall i :: 0 <= i < 16 ==> mem[dst_id].mem64?[addr64(rdi, i)];
     ensures
         mem == old(mem)[dst_id := mem[dst_id]]; 
         forall i :: 0 <= i < 16 ==>
-            mem[dst_id].words?[addr32(edi, i)]
-         && mem[dst_id].words[addr32(edi, i)] == mem[src_id].words[addr32(esi, i)];
+            mem[dst_id].mem64?[addr64(rdi, i)]
+         && mem[dst_id].mem64[addr64(rdi, i)] == mem[src_id].mem64[addr64(rsi, i)];
        // I did not add any address space.
        forall i :: i < 0 || i >= 16 ==>
-            mem[dst_id].words?[addr32(edi, i)] ==> old(mem)[dst_id].words?[addr32(edi, i)];
+            mem[dst_id].mem64?[addr64(rdi, i)] ==> old(mem)[dst_id].mem64?[addr64(rdi, i)];
       // I did not modify anything else but my target.
        forall i :: i < 0 || i >= 16 ==>
-          mem[dst_id].words?[addr32(edi, i)] ==> 
-          mem[dst_id].words[addr32(edi, i)] == old(mem)[dst_id].words[addr32(edi, i)];
+          mem[dst_id].mem64?[addr64(rdi, i)] ==> 
+          mem[dst_id].mem64[addr64(rdi, i)] == old(mem)[dst_id].mem64[addr64(rdi, i)];
 {
-    LoadArray32(eax, esi, 0, taint, src_id);
-    LoadArray32(ebx, esi, 1, taint, src_id);
-    LoadArray32(ecx, esi, 2, taint, src_id);
-    LoadArray32(edx, esi, 3, taint, src_id);
-    LoadArray32(ebp, esi, 4, taint, src_id);
-    StoreArray32(edi, eax, 0, taint, dst_id);
-    StoreArray32(edi, ebx, 1, taint, dst_id);
-    StoreArray32(edi, ecx, 2, taint, dst_id);
-    StoreArray32(edi, edx, 3, taint, dst_id);
-    StoreArray32(edi, ebp, 4, taint, dst_id);
-    LoadArray32(eax, esi, 5, taint, src_id);
-    LoadArray32(ebx, esi, 6, taint, src_id);
-    LoadArray32(ecx, esi, 7, taint, src_id);
-    LoadArray32(edx, esi, 8, taint, src_id);
-    LoadArray32(ebp, esi, 9, taint, src_id);
-    StoreArray32(edi, eax, 5, taint, dst_id);
-    StoreArray32(edi, ebx, 6, taint, dst_id);
-    StoreArray32(edi, ecx, 7, taint, dst_id);
-    StoreArray32(edi, edx, 8, taint, dst_id);
-    StoreArray32(edi, ebp, 9, taint, dst_id);
-    LoadArray32(eax, esi, 10, taint, src_id);
-    LoadArray32(ebx, esi, 11, taint, src_id);
-    LoadArray32(ecx, esi, 12, taint, src_id);
-    LoadArray32(edx, esi, 13, taint, src_id);
-    LoadArray32(ebp, esi, 14, taint, src_id);
-    StoreArray32(edi, eax, 10, taint, dst_id);
-    StoreArray32(edi, ebx, 11, taint, dst_id);
-    StoreArray32(edi, ecx, 12, taint, dst_id);
-    StoreArray32(edi, edx, 13, taint, dst_id);
-    StoreArray32(edi, ebp, 14, taint, dst_id);
-    LoadArray32(eax, esi, 15, taint, src_id);
-    StoreArray32(edi, eax, 15, taint, dst_id);
+    LoadArray64(rax, rsi, 0, taint, src_id);
+    LoadArray64(rbx, rsi, 1, taint, src_id);
+    LoadArray64(rcx, rsi, 2, taint, src_id);
+    LoadArray64(rdx, rsi, 3, taint, src_id);
+    LoadArray64(rbp, rsi, 4, taint, src_id);
+    StoreArray64(rdi, rax, 0, taint, dst_id);
+    StoreArray64(rdi, rbx, 1, taint, dst_id);
+    StoreArray64(rdi, rcx, 2, taint, dst_id);
+    StoreArray64(rdi, rdx, 3, taint, dst_id);
+    StoreArray64(rdi, rbp, 4, taint, dst_id);
+    LoadArray64(rax, rsi, 5, taint, src_id);
+    LoadArray64(rbx, rsi, 6, taint, src_id);
+    LoadArray64(rcx, rsi, 7, taint, src_id);
+    LoadArray64(rdx, rsi, 8, taint, src_id);
+    LoadArray64(rbp, rsi, 9, taint, src_id);
+    StoreArray64(rdi, rax, 5, taint, dst_id);
+    StoreArray64(rdi, rbx, 6, taint, dst_id);
+    StoreArray64(rdi, rcx, 7, taint, dst_id);
+    StoreArray64(rdi, rdx, 8, taint, dst_id);
+    StoreArray64(rdi, rbp, 9, taint, dst_id);
+    LoadArray64(rax, rsi, 10, taint, src_id);
+    LoadArray64(rbx, rsi, 11, taint, src_id);
+    LoadArray64(rcx, rsi, 12, taint, src_id);
+    LoadArray64(rdx, rsi, 13, taint, src_id);
+    LoadArray64(rbp, rsi, 14, taint, src_id);
+    StoreArray64(rdi, rax, 10, taint, dst_id);
+    StoreArray64(rdi, rbx, 11, taint, dst_id);
+    StoreArray64(rdi, rcx, 12, taint, dst_id);
+    StoreArray64(rdi, rdx, 13, taint, dst_id);
+    StoreArray64(rdi, rbp, 14, taint, dst_id);
+    LoadArray64(rax, rsi, 15, taint, src_id);
+    StoreArray64(rdi, rax, 15, taint, dst_id);
 }
- 
+
+
+// And the loop form with raw specifciations.
 procedure Copy64Loop(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
     reads
-        esi; edi;
+        rsi; rdi;
     modifies
-        eax; ebx; ecx; edx;
+        rax; rbx; rcx; rdx;
         efl;
         mem;
     requires/ensures
         src_id != dst_id;
         mem?[src_id];
         mem?[dst_id];
-        mem[src_id] is WordHeaplet;
-        mem[dst_id] is WordHeaplet;
+        mem[src_id] is Heaplet64;
+        mem[dst_id] is Heaplet64;
         forall i :: 0 <= i < 16 ==>
-            mem[src_id].words?[addr32(esi, i)]
-         && mem[src_id].words[addr32(esi, i)].t == taint;
-        forall i :: 0 <= i < 16 ==> mem[dst_id].words?[addr32(edi, i)];
-        esi + 64 < 0x1_0000_0000;
-        edi + 64 < 0x1_0000_0000;
+           mem[src_id].mem64?[addr64(rsi, i)]
+         && mem[src_id].mem64[addr64(rsi, i)].t == taint;
+        forall i :: 0 <= i < 16 ==> mem[dst_id].mem64?[addr64(rdi, i)];
+        rsi + 128 < 0x1_0000_0000_0000_0000;
+        rdi + 128 < 0x1_0000_0000_0000_0000;
     ensures
         mem == old(mem)[dst_id := mem[dst_id]]; 
         forall i :: 0 <= i < 16 ==>
-            mem[dst_id].words?[addr32(edi, i)]
-         && mem[dst_id].words[addr32(edi, i)] == mem[src_id].words[addr32(esi, i)];
+            mem[dst_id].mem64?[addr64(rdi, i)]
+         && mem[dst_id].mem64[addr64(rdi, i)] == mem[src_id].mem64[addr64(rsi, i)];
        // I did not add any address space.
        forall i :: i < 0 || i >= 16 ==>
-            mem[dst_id].words?[addr32(edi, i)] ==> old(mem)[dst_id].words?[addr32(edi, i)];
+            mem[dst_id].mem64?[addr64(rdi, i)] ==> old(mem)[dst_id].mem64?[addr64(rdi, i)];
       // I did not modify anything else but my target.
        forall i :: i < 0 || i >= 16 ==>
-          mem[dst_id].words?[addr32(edi, i)] ==> 
-          mem[dst_id].words[addr32(edi, i)] == old(mem)[dst_id].words[addr32(edi, i)];
+          mem[dst_id].mem64?[addr64(rdi, i)] ==> 
+          mem[dst_id].mem64[addr64(rdi, i)] == old(mem)[dst_id].mem64[addr64(rdi, i)];
 
 {
-    Mov(ebx, esi);
-    Mov(ecx, edi);
-    Mov(edx, esi);
-    Add(edx, 64);
+    Mov(rbx, rsi);
+    Mov(rcx, rdi);
+    Mov(rdx, rsi);
+    Add(rdx, 128);
     ghost var index:int := 0;
-    while (ebx < edx)
+    while (rbx < rdx)
         invariant
             0 <= index <= 16;
-            ebx == esi + 4 * index;
-            ecx == edi + 4 * index;
-            edx == esi + 4 * 16;
+            rbx == rsi + 8 * index;
+            rcx == rdi + 8 * index;
+            rdx == rsi + 8 * 16;
             mem?[src_id];
             mem?[dst_id];
-            mem[src_id] is WordHeaplet;
-            mem[dst_id] is WordHeaplet;
+            mem[src_id] is Heaplet64;
+            mem[dst_id] is Heaplet64;
             forall i :: 0 <= i < 16 ==>
-                mem[src_id].words?[addr32(esi, i)]
-             && mem[src_id].words[addr32(esi, i)].t == taint;
+                mem[src_id].mem64?[addr64(rsi, i)]
+             && mem[src_id].mem64[addr64(rsi, i)].t == taint;
             mem == old(mem)[dst_id := mem[dst_id]];
-            forall i :: 0 <= i < 16 ==> mem[dst_id].words?[addr32(edi, i)];
+            forall i :: 0 <= i < 16 ==> mem[dst_id].mem64?[addr64(rdi, i)];
             forall i :: 0 <= i < index ==>
-                mem[dst_id].words[addr32(edi, i)] == mem[src_id].words[addr32(esi, i)];
+                mem[dst_id].mem64[addr64(rdi, i)] == mem[src_id].mem64[addr64(rsi, i)];
              // I did not add any address space.
               forall i :: i < 0 || i >= 16 ==>
-               mem[dst_id].words?[addr32(edi, i)] ==> old(mem)[dst_id].words?[addr32(edi, i)];
+               mem[dst_id].mem64?[addr64(rdi, i)] ==> old(mem)[dst_id].mem64?[addr64(rdi, i)];
              // I did not modify anything else but my target.
              forall i :: i < 0 || i >= 16 ==>
-                mem[dst_id].words?[addr32(edi, i)] ==> 
-               mem[dst_id].words[addr32(edi, i)] == old(mem)[dst_id].words[addr32(edi, i)];
+                mem[dst_id].mem64?[addr64(rdi, i)] ==> 
+               mem[dst_id].mem64[addr64(rdi, i)] == old(mem)[dst_id].mem64[addr64(rdi, i)];
         decreases (16 - index);
     {
-        LoadArrayPtr32(eax, ebx, index, taint, src_id);
-        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
-        Add(ebx, 4);
-        Add(ecx, 4);
+        LoadArrayPtr64(rax, rbx, index, taint, src_id);
+        StoreArrayPtr64(rcx, rax, index, taint, dst_id);
+        Add(rbx, 8);
+        Add(rcx, 8);
         index := index + 1;
     }
 }
 
-// Work on adding predicates instead of raw definitions.
+
+
+// Again using the Reg64 specifications.
 procedure{:refined}{:timeLimitMultiplier 2} Copy64Pred(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
     reads
-        esi; edi;
+        rsi; rdi;
     modifies
-       mem; eax; ebx; ecx; edx; ebp;
+       mem; rax; rbx; rcx; rdx; rbp;
 
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, esi, 16, taint);
-        ValidDstReg32(mem, dst_id, edi, 16);
+        ValidSrcReg64(mem, src_id, rsi, 16, taint);
+        ValidDstReg64(mem, dst_id, rdi, 16);
 
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, edi, 16);
-        WritesReg32(mem, dst_id, edi, 16, 16, taint,
-          Copy32Seq(old(mem), src_id, old(esi), 16, 16));
+        OnlyWritesReg64(old(mem), mem, dst_id, rdi, 16);
+        WritesReg64(mem, dst_id, rdi, 16, 16, taint,
+          Copy64Seq(old(mem), src_id, old(rsi), 16, 16));
 {
-    LoadArray32(eax, esi, 0, taint, src_id);
-    LoadArray32(ebx, esi, 1, taint, src_id);
-    LoadArray32(ecx, esi, 2, taint, src_id);
-    LoadArray32(edx, esi, 3, taint, src_id);
-    LoadArray32(ebp, esi, 4, taint, src_id);
-    StoreArray32(edi, eax, 0, taint, dst_id);
-    StoreArray32(edi, ebx, 1, taint, dst_id);
-    StoreArray32(edi, ecx, 2, taint, dst_id);
-    StoreArray32(edi, edx, 3, taint, dst_id);
-    StoreArray32(edi, ebp, 4, taint, dst_id);
-    LoadArray32(eax, esi, 5, taint, src_id);
-    LoadArray32(ebx, esi, 6, taint, src_id);
-    LoadArray32(ecx, esi, 7, taint, src_id);
-    LoadArray32(edx, esi, 8, taint, src_id);
-    LoadArray32(ebp, esi, 9, taint, src_id);
-    StoreArray32(edi, eax, 5, taint, dst_id);
-    StoreArray32(edi, ebx, 6, taint, dst_id);
-    StoreArray32(edi, ecx, 7, taint, dst_id);
-    StoreArray32(edi, edx, 8, taint, dst_id);
-    StoreArray32(edi, ebp, 9, taint, dst_id);
-    LoadArray32(eax, esi, 10, taint, src_id);
-    LoadArray32(ebx, esi, 11, taint, src_id);
-    LoadArray32(ecx, esi, 12, taint, src_id);
-    LoadArray32(edx, esi, 13, taint, src_id);
-    LoadArray32(ebp, esi, 14, taint, src_id);
-    StoreArray32(edi, eax, 10, taint, dst_id);
-    StoreArray32(edi, ebx, 11, taint, dst_id);
-    StoreArray32(edi, ecx, 12, taint, dst_id);
-    StoreArray32(edi, edx, 13, taint, dst_id);
-    StoreArray32(edi, ebp, 14, taint, dst_id);
-    LoadArray32(eax, esi, 15, taint, src_id);
-    StoreArray32(edi, eax, 15, taint, dst_id);
+    LoadArray64(rax, rsi, 0, taint, src_id);
+    LoadArray64(rbx, rsi, 1, taint, src_id);
+    LoadArray64(rcx, rsi, 2, taint, src_id);
+    LoadArray64(rdx, rsi, 3, taint, src_id);
+    LoadArray64(rbp, rsi, 4, taint, src_id);
+    StoreArray64(rdi, rax, 0, taint, dst_id);
+    StoreArray64(rdi, rbx, 1, taint, dst_id);
+    StoreArray64(rdi, rcx, 2, taint, dst_id);
+    StoreArray64(rdi, rdx, 3, taint, dst_id);
+    StoreArray64(rdi, rbp, 4, taint, dst_id);
+    LoadArray64(rax, rsi, 5, taint, src_id);
+    LoadArray64(rbx, rsi, 6, taint, src_id);
+    LoadArray64(rcx, rsi, 7, taint, src_id);
+    LoadArray64(rdx, rsi, 8, taint, src_id);
+    LoadArray64(rbp, rsi, 9, taint, src_id);
+    StoreArray64(rdi, rax, 5, taint, dst_id);
+    StoreArray64(rdi, rbx, 6, taint, dst_id);
+    StoreArray64(rdi, rcx, 7, taint, dst_id);
+    StoreArray64(rdi, rdx, 8, taint, dst_id);
+    StoreArray64(rdi, rbp, 9, taint, dst_id);
+    LoadArray64(rax, rsi, 10, taint, src_id);
+    LoadArray64(rbx, rsi, 11, taint, src_id);
+    LoadArray64(rcx, rsi, 12, taint, src_id);
+    LoadArray64(rdx, rsi, 13, taint, src_id);
+    LoadArray64(rbp, rsi, 14, taint, src_id);
+    StoreArray64(rdi, rax, 10, taint, dst_id);
+    StoreArray64(rdi, rbx, 11, taint, dst_id);
+    StoreArray64(rdi, rcx, 12, taint, dst_id);
+    StoreArray64(rdi, rdx, 13, taint, dst_id);
+    StoreArray64(rdi, rbp, 14, taint, dst_id);
+    LoadArray64(rax, rsi, 15, taint, src_id);
+    StoreArray64(rdi, rax, 15, taint, dst_id);
 }
+
+
 
 // This loop has a fixed size and uses too many registers.
 procedure Copy64LoopPred(inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
     reads
-        esi; edi;
+        rsi; rdi;
     modifies
-        mem; efl; eax; ebx; ecx; edx;
+        mem; efl; rax; rbx; rcx; rdx;
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, esi, 16, taint);
-        ValidDstReg32(mem, dst_id, edi, 16);
+        ValidSrcReg64(mem, src_id, rsi, 16, taint);
+        ValidDstReg64(mem, dst_id, rdi, 16);
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, edi, 16);
-        WritesReg32(mem, dst_id, edi, 16, 16, taint, 
-           Copy32Seq(old(mem), src_id, old(esi), 16, 16));
+        OnlyWritesReg64(old(mem), mem, dst_id, rdi, 16);
+        WritesReg64(mem, dst_id, rdi, 16, 16, taint, 
+           Copy64Seq(old(mem), src_id, old(rsi), 16, 16));
 {
-    Mov(ebx, esi);
-    Mov(ecx, edi);
-    Mov(edx, esi);
-    Add(edx, 64);
+    Mov(rbx, rsi);
+    Mov(rcx, rdi);
+    Mov(rdx, rsi);
+    Add(rdx, 128);
     ghost var index:int := 0;
-    while (ebx < edx)
+    while (rbx < rdx)
         invariant
             0 <= index <= 16;
-            ebx == esi + 4 * index;
-            ecx == edi + 4 * index;
-            edx == esi + 4 * 16;
-            (ebx < edx) ==> ValidSrcRegPtr32(mem, src_id, esi, 16, taint, ebx, index);
-            (ebx < edx) ==> ValidDstRegPtr32(mem, dst_id, edi, 16, ecx, index);
+            rbx == rsi + 8 * index;
+            rcx == rdi + 8 * index;
+            rdx == rsi + 8 * 16;
+            (rbx < rdx) ==> ValidSrcRegPtr64(mem, src_id, rsi, 16, taint, rbx, index);
+            (rbx < rdx) ==> ValidDstRegPtr64(mem, dst_id, rdi, 16, rcx, index);
             OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, edi, 16);
-            WritesReg32(mem, dst_id, edi, 16, index, taint,
-               Copy32Seq(old(mem), src_id, old(esi), 16, 16));
+            OnlyWritesReg64(old(mem), mem, dst_id, rdi, 16);
+            WritesReg64(mem, dst_id, rdi, 16, index, taint,
+               Copy64Seq(old(mem), src_id, old(rsi), 16, 16));
         decreases (16 - index);
     {
-        LoadArrayPtr32(eax, ebx, index, taint, src_id);
-        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
-        Add(ebx, 4);
-        Add(ecx, 4);
+        LoadArrayPtr64(rax, rbx, index, taint, src_id);
+        StoreArrayPtr64(rcx, rax, index, taint, dst_id);
+        Add(rbx, 8);
+        Add(rcx, 8);
         index := index + 1;
     }
 }
+
 
 
 // This loop uses too many registers.
-// Input is esi, copied into ebx.
-// Aribtrary aligned input end is in edx.
-// Output is edi.
+// Input is rsi, copied into rbx.
+// Aribtrary aligned input end is in rdx.
+// Output is rdi.
 procedure Copy64LoopArbitraryAlignedSize
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(edx) - old(esi)) / 4;
+    let items :=  (old(rdx) - old(rsi)) / 8;
     reads
-        esi; edi; edx;
+        rsi; rdi; rdx;
     modifies
-        mem; efl; eax; ebx; ecx;
+        mem; efl; rax; rbx; rcx;
     requires/ensures
-        edx >= esi; 
-        (edx - esi) % 4 == 0;
+        rdx >= rsi; 
+        (rdx - rsi) % 8 == 0;
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, esi, items, taint);
-        ValidDstReg32(mem, dst_id, edi, items);
+        ValidSrcReg64(mem, src_id, rsi, items, taint);
+        ValidDstReg64(mem, dst_id, rdi, items);
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, edi, items);
-        WritesReg32(mem, dst_id, edi, items, items, taint, 
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, rdi, items);
+        WritesReg64(mem, dst_id, rdi, items, items, taint, 
+         Copy64Seq(old(mem), src_id, old(rsi), items, items));
 {
-    Mov(ebx, esi);
-    Mov(ecx, edi);
+    Mov(rbx, rsi);
+    Mov(rcx, rdi);
     ghost var index : int := 0;
-    while (ebx < edx)
+    while (rbx < rdx)
         invariant
             0 <= index <= items;
-            ebx == esi + 4 * index;
-            ecx == edi + 4 * index;
-            (ebx < edx) ==> ValidSrcRegPtr32(mem, src_id, esi, items, taint, ebx, index);
-            (ebx < edx) ==> ValidDstRegPtr32(mem, dst_id, edi, items, ecx, index);
+            rbx == rsi + 8 * index;
+            rcx == rdi + 8 * index;
+            (rbx < rdx) ==> ValidSrcRegPtr64(mem, src_id, rsi, items, taint, rbx, index);
+            (rbx < rdx) ==> ValidDstRegPtr64(mem, dst_id, rdi, items, rcx, index);
             OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, edi, items);
-            WritesReg32(mem, dst_id, edi, items, index, taint,
-               Copy32Seq(old(mem), src_id, old(esi), items, items));
+            OnlyWritesReg64(old(mem), mem, dst_id, rdi, items);
+            WritesReg64(mem, dst_id, rdi, items, index, taint,
+               Copy64Seq(old(mem), src_id, old(rsi), items, items));
         decreases (items - index);
     {
-        LoadArrayPtr32 (eax, ebx, index, taint, src_id);
-        StoreArrayPtr32(ecx, eax, index, taint, dst_id);
-        Add(ebx, 4);
-        Add(ecx, 4);
+        LoadArrayPtr64 (rax, rbx, index, taint, src_id);
+        StoreArrayPtr64(rcx, rax, index, taint, dst_id);
+        Add(rbx, 8);
+        Add(rcx, 8);
         index := index + 1;
     }
 }
 
-// Input is esi, modified.
-// Aribtrary aligned input end is in edx.
-// Output is edi, modified.
+
+
+// Input is rsi, modified.
+// Aribtrary aligned input end is in rdx.
+// Output is rdi, modified.
 // Essentially, to keep register pressure down we will caller save and use our
 // input and output registers to move along our data.
 // This leaves more registers for loop unrolling.
 procedure Copy64LoopArbitraryAlignedSizeModifyInpOutPtr
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(edx) - old(esi)) / 4;
+    let items :=  (old(rdx) - old(rsi)) / 8;
     reads
-        edx;
+        rdx;
     modifies
-        mem; esi; edi; efl; eax;
+        mem; rsi; rdi; efl; rax;
     requires
-        edx >= esi; 
-        (edx - esi) % 4 == 0;
+        rdx >= rsi; 
+        (rdx - rsi) % 8 == 0;
 
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, old(esi), items, taint);
-        ValidDstReg32(mem, dst_id, old(edi), items);
+        ValidSrcReg64(mem, src_id, old(rsi), items, taint);
+        ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-        WritesReg32(mem, dst_id, old(edi), items, items, taint,
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+        WritesReg64(mem, dst_id, old(rdi), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(rsi), items, items));
 {
     ghost var index : int := 0;
-    while (esi < edx)
+    while (rsi < rdx)
         invariant
             0 <= index <= items;
-            esi == old(esi) + 4 * index;
-            edi == old(edi) + 4 * index;
-            (esi < edx) ==> ValidSrcRegPtr32(mem, src_id, old(esi), items, taint, esi, index);
-            (esi < edx) ==> ValidDstRegPtr32(mem, dst_id, old(edi), items, edi, index);
+            rsi == old(rsi) + 8 * index;
+            rdi == old(rdi) + 8 * index;
+            (rsi < rdx) ==> ValidSrcRegPtr64(mem, src_id, old(rsi), items, taint, rsi, index);
+            (rsi < rdx) ==> ValidDstRegPtr64(mem, dst_id, old(rdi), items, rdi, index);
             OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-            WritesReg32(mem, dst_id, old(edi), items, index, taint,
-               Copy32Seq(old(mem), src_id, old(esi), items, items));
+            OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+            WritesReg64(mem, dst_id, old(rdi), items, index, taint,
+               Copy64Seq(old(mem), src_id, old(rsi), items, items));
         decreases ((items) - index);
     {
-        LoadArrayPtr32 (eax, esi, index, taint, src_id);
-        StoreArrayPtr32(edi, eax, index, taint, dst_id);
-        Add(esi, 4);
-        Add(edi, 4);
+        LoadArrayPtr64 (rax, rsi, index, taint, src_id);
+        StoreArrayPtr64(rdi, rax, index, taint, dst_id);
+        Add(rsi, 8);
+        Add(rdi, 8);
         index := index + 1;
     }
 }
 
 
 // Use the RegPtr offset style.
-procedure {:bridge} {:timeLimitMultiplier 3} Copy32 
+procedure {:bridge} {:timeLimitMultiplier 3} Copy64 
          (ghost src_id    : heaplet_id, 
           ghost dst_id    : heaplet_id,
-          ghost   src     : uint32,
-          ghost   dst     : uint32,
+          ghost   src     : uint64,
+          ghost   dst     : uint64,
           ghost  reg_size : nat,
           inline taint    : taint,
-          operand srcptr  : uint32,
-          operand dstptr  : uint32,
+          operand srcptr  : uint64,
+          operand dstptr  : uint64,
           ghost   off     : nat,
           inline   add    : nat,
-          inout operand tmp : uint32)
+          inout operand tmp : uint64)
 
     modifies mem; efl;
-    requires IsOReg(@srcptr) && IsOReg(@dstptr) && IsOReg(@tmp);
-             @srcptr != @dstptr  && @srcptr != @tmp  && @dstptr != @tmp;
+    requires DistinctORegs3(@srcptr, @dstptr, @tmp);
 
     requires/ensures 
         off + add < reg_size;
-        ValidSrcRegPtrs32(mem, src_id, src, reg_size, taint, srcptr, off, add);
-        ValidDstRegPtrs32(mem, dst_id, dst, reg_size,        dstptr, off, add);
-        WritesReg32(mem, dst_id, dst, reg_size, off + add, taint,
-                   Copy32Seq(old(mem), src_id, src, reg_size, reg_size));
+        ValidSrcRegPtrs64(mem, src_id, src, reg_size, taint, srcptr, off, add);
+        ValidDstRegPtrs64(mem, dst_id, dst, reg_size,        dstptr, off, add);
+        WritesReg64(mem, dst_id, dst, reg_size, off + add, taint,
+                   Copy64Seq(old(mem), src_id, src, reg_size, reg_size));
 
     ensures 
          OnlyHeapletChanged(old(mem), mem, dst_id);
-         OnlyWritesReg32(old(mem), mem, dst_id, dst, reg_size);
-         WritesReg32(mem, dst_id, dst, reg_size, off + add + 1, taint,
-                   Copy32Seq(old(mem), src_id, src, reg_size, reg_size));
+         OnlyWritesReg64(old(mem), mem, dst_id, dst, reg_size);
+         WritesReg64(mem, dst_id, dst, reg_size, off + add + 1, taint,
+                   Copy64Seq(old(mem), src_id, src, reg_size, reg_size));
 {
-   // Can't get rid of Chris's LoadArray32 style.
-   LoadArray32 (tmp,    srcptr, add, taint, src_id);
-   StoreArray32(dstptr,    tmp, add, taint, dst_id);
+   // Can't get rid of Chris's LoadArray64 style, yet.
+   LoadArray64 (tmp,    srcptr, add, taint, src_id);
+   StoreArray64(dstptr,    tmp, add, taint, dst_id);
 }     
 
 
-// Input is esi, modified.
-// Aribtrary aligned input end is in edx.
-// Output is edi, modified.
-// Tmp is eax;
-
+// Input is rsi, modified.
+// Aribtrary aligned input end is in rdx.
+// Output is rdi, modified.
+// Tmp is rax;
 procedure CopyLoopArbitraryAlignedSizeModifyInpOutPtrCall
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(edx) - old(esi)) / 4;
+    let items :=  (old(rdx) - old(rsi)) / 8;
     reads
-        edx;
+        rdx;
     modifies
-        efl; mem; esi; edi; eax;
+        efl; mem; rsi; rdi; rax;
     requires
-        edx >= esi; 
-        (edx - esi) % 4 == 0;
+        rdx >= rsi; 
+        (rdx - rsi) % 8 == 0;
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, old(esi), items, taint);
-        ValidDstReg32(mem, dst_id, old(edi), items);
+        ValidSrcReg64(mem, src_id, old(rsi), items, taint);
+        ValidDstReg64(mem, dst_id, old(rdi), items);
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-        WritesReg32(mem, dst_id, old(edi), items, items, taint,
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+        WritesReg64(mem, dst_id, old(rdi), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(rsi), items, items));
 {
-    ghost var items' : nat := (old(edx) - old(esi)) / 4;
+    ghost var items' : nat := (old(rdx) - old(rsi)) / 8;
     ghost var index : int := 0;
-    while (esi < edx)
+    while (rsi < rdx)
         invariant
-            ValidSrcReg32(mem, src_id, old(esi), items, taint);
-            ValidDstReg32(mem, dst_id, old(edi), items);
+            ValidSrcReg64(mem, src_id, old(rsi), items, taint);
+            ValidDstReg64(mem, dst_id, old(rdi), items);
 
             0 <= index <= items;
-            esi == old(esi) + 4 * index;
-            edi == old(edi) + 4 * index;
+            rsi == old(rsi) + 8 * index;
+            rdi == old(rdi) + 8 * index;
   
-            (esi < edx) ==> ValidSrcRegPtr32(mem, src_id, old(esi), items, taint, esi, index);
-            (esi < edx) ==> ValidDstRegPtr32(mem, dst_id, old(edi), items, edi, index);
+            (rsi < rdx) ==> ValidSrcRegPtr64(mem, src_id, old(rsi), items, taint, rsi, index);
+            (rsi < rdx) ==> ValidDstRegPtr64(mem, dst_id, old(rdi), items, rdi, index);
 
             OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-            WritesReg32(mem, dst_id, old(edi), items, index, taint,
-               Copy32Seq(old(mem), src_id, old(esi), items, items));
+            OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+            WritesReg64(mem, dst_id, old(rdi), items, index, taint,
+               Copy64Seq(old(mem), src_id, old(rsi), items, items));
         decreases (items - index);
     {
-        Copy32(src_id, dst_id, old(esi), old(edi), items', taint, esi, edi, index, 0, eax);
-        Add(esi, 4);
-        Add(edi, 4);
+        Copy64(src_id, dst_id, old(rsi), old(rdi), items', taint, rsi, rdi, index, 0, rax);
+        Add(rsi, 8);
+        Add(rdi, 8);
         index := index + 1;
     }
 }
 
-// Input is esi, Output is edi, up to four unrollings.
-procedure {:recursive} {:timeLimitMultiplier 1} Copy32Unrolled
+// Input is rsi, Output is rdi, up to four unrollings.
+procedure {:recursive} {:timeLimitMultiplier 1} Copy64Unrolled
          (ghost src_id:heaplet_id, ghost dst_id:heaplet_id, 
-          ghost srcbase : uint32, ghost dstbase : uint32, 
+          ghost srcbase : uint64, ghost dstbase : uint64, 
           ghost reg_size : nat, 
           ghost off : nat, inline step : nat, inline taint:taint)
 
-    reads esi; edi;
-    modifies mem; efl; eax; ebx; ecx; ebp; 
+    reads rsi; rdi;
+    modifies mem; efl; rax; rbx; rcx; rbp; 
 
     requires
        1 <= reg_size;          // Must have at least on address to write.
@@ -544,301 +472,303 @@ procedure {:recursive} {:timeLimitMultiplier 1} Copy32Unrolled
 
     requires/ensures 
            src_id != dst_id; 
-           ValidSrcRegPtrs32(mem, src_id, srcbase, reg_size, taint, esi, off, step);
-           ValidDstRegPtrs32(mem, dst_id, dstbase, reg_size,        edi, off, step);
-           WritesReg32(mem, dst_id, dstbase, reg_size, off, taint,
-                 Copy32Seq(old(mem), src_id, srcbase, reg_size, reg_size));
+           ValidSrcRegPtrs64(mem, src_id, srcbase, reg_size, taint, rsi, off, step);
+           ValidDstRegPtrs64(mem, dst_id, dstbase, reg_size,        rdi, off, step);
+           WritesReg64(mem, dst_id, dstbase, reg_size, off, taint,
+                 Copy64Seq(old(mem), src_id, srcbase, reg_size, reg_size));
     ensures
          OnlyHeapletChanged(old(mem), mem, dst_id);
-         OnlyWritesReg32(old(mem), mem, dst_id, dstbase, reg_size);
+         OnlyWritesReg64(old(mem), mem, dst_id, dstbase, reg_size);
          // This means I wrote off + step + 1 of the output in total.
-         WritesReg32(mem, dst_id, dstbase, reg_size, off + step + 1, taint,
-                   Copy32Seq(old(mem), src_id, srcbase, reg_size, reg_size));
+         WritesReg64(mem, dst_id, dstbase, reg_size, off + step + 1, taint,
+                   Copy64Seq(old(mem), src_id, srcbase, reg_size, reg_size));
 {
   inline if (step == 3) {
-       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
-       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ebp);
+       Copy64Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy64(src_id, dst_id, srcbase, dstbase, reg_size, taint, rsi, rdi, off, step, rbp);
   } else if (step == 2) {
-       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
-       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ecx);
+       Copy64Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy64(src_id, dst_id, srcbase, dstbase, reg_size, taint, rsi, rdi, off, step, rcx);
   } else if (step == 1) {
-       Copy32Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
-       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, ebx);
+       Copy64Unrolled(src_id, dst_id, srcbase,  dstbase, reg_size, off, step - 1, taint);
+       Copy64(src_id, dst_id, srcbase, dstbase, reg_size, taint, rsi, rdi, off, step, rbx);
    } else if (step == 0) {                                    
-       Copy32(src_id, dst_id, srcbase, dstbase, reg_size, taint, esi, edi, off, step, eax);
+       Copy64(src_id, dst_id, srcbase, dstbase, reg_size, taint, rsi, rdi, off, step, rax);
    }
 }
 
-// Input is esi, modified.
-// Aribtrary aligned input end is in edx.
-// Output is edi, modified.
+
+// Input is rsi, modified.
+// Aribtrary aligned input end is in rdx.
+// Output is rdi, modified.
 // Try calling the unrolled loop with a single step.
 procedure CopyLoopOverUnrolled1
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(edx) - old(esi)) / 4;
-    reads edx;
-    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    let items :=  (old(rdx) - old(rsi)) / 8;
+    reads rdx;
+    modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
-        edx >= esi; 
-        (edx - esi) % 4 == 0;
-        old(esi) != old(edi); // Necessary?
+        rdx >= rsi; 
+        (rdx - rsi) % 8 == 0;
+        old(rsi) != old(rdi); // Necessary?
 
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, old(esi), items, taint);
-        ValidDstReg32(mem, dst_id, old(edi), items);
+        ValidSrcReg64(mem, src_id, old(rsi), items, taint);
+        ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-        WritesReg32(mem, dst_id, old(edi), items, items, taint,
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+        WritesReg64(mem, dst_id, old(rdi), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(rsi), items, items));
 {
     ghost var index   : int := 0;
-    ghost var srcbase : uint32 := old(esi);
-    ghost var dstbase : uint32 := old(edi);
-    lemma_regdiff_loop_ge(edx, esi, 4);
-    while (esi < edx)
+    ghost var srcbase : uint64 := old(rsi);
+    ghost var dstbase : uint64 := old(rdi);
+    lemma_regdiff_loop_ge_uint64(rdx, rsi, 1);
+    while (rsi < rdx)
         invariant
-            ValidSrcReg32(mem, src_id, srcbase, items, taint);
-            ValidDstReg32(mem, dst_id, dstbase, items);
+            ValidSrcReg64(mem, src_id, srcbase, items, taint);
+            ValidDstReg64(mem, dst_id, dstbase, items);
 
             0 <= index <= items;
-            index == items - (edx - esi) / 4;
-            esi == srcbase + 4 * index;
-            edi == dstbase + 4 * index;
-            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
-            (edx - esi) % 4 == 0;
-            (esi < edx) ==> (edx - esi) >= 4; 
+            index == items - (rdx - rsi) / 8;
+            rsi == srcbase + 8 * index;
+            rdi == dstbase + 8 * index;
+            (rsi < rdx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (rdx - rsi) % 8 == 0;
+            (rsi < rdx) ==> (rdx - rsi) >= 4; 
 
-            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 0);
-            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 0);
+            (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, 0);
+            (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, 0);
 
             OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
-            WritesReg32(mem, dst_id, dstbase, items, index, taint, 
-               Copy32Seq(old(mem), src_id, srcbase, items, items));
-          decreases (edx - esi);
+            OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
+            WritesReg64(mem, dst_id, dstbase, items, index, taint, 
+               Copy64Seq(old(mem), src_id, srcbase, items, items));
+          decreases (rdx - rsi);
     {
-        Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 0, taint);
-        Add(esi, 4);
-        Add(edi, 4);
+        Copy64Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 0, taint);
+        Add(rsi, 8);
+        Add(rdi, 8);
         index := index + 1;
     }
   assert items == index; 
-  assert edx - esi == 0;
+  assert rdx - rsi == 0;
 }
 
 
 
 procedure CopyLoopOverUnrolled2
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(edx) - old(esi)) / 4;
-    reads edx;
-    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    let items :=  (old(rdx) - old(rsi)) / 8;
+    reads rdx;
+    modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
-        edx >= esi; 
-        (edx - esi) % 8 == 0;
-        old(esi) != old(edi);
+        rdx >= rsi; 
+        (rdx - rsi) % 16 == 0;
+        old(rsi) != old(rdi);
 
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, old(esi), items, taint);
-        ValidDstReg32(mem, dst_id, old(edi), items);
+        ValidSrcReg64(mem, src_id, old(rsi), items, taint);
+        ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-        WritesReg32(mem, dst_id, old(edi), items, items, taint,
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+        WritesReg64(mem, dst_id, old(rdi), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(rsi), items, items));
 {
     ghost var index   : int := 0;
-    ghost var srcbase : uint32 := old(esi);
-    ghost var dstbase : uint32 := old(edi);
-    lemma_regdiff_loop_ge(edx, esi, 8);
-    while (esi < edx)
+    ghost var srcbase : uint64 := old(rsi);
+    ghost var dstbase : uint64 := old(rdi);
+    lemma_regdiff_loop_ge_uint64(rdx, rsi, 2);
+    while (rsi < rdx)
         invariant
-            ValidSrcReg32(mem, src_id, srcbase, items, taint);
-            ValidDstReg32(mem, dst_id, dstbase, items);
+            ValidSrcReg64(mem, src_id, srcbase, items, taint);
+            ValidDstReg64(mem, dst_id, dstbase, items);
 
             0 <= index <= items;
-            index == items - (edx - esi) / 4;
-            esi == srcbase + 4 * index;
-            edi == dstbase + 4 * index;
-            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
-            (edx - esi) % 8 == 0;
-            (esi < edx) ==> (edx - esi) >= 8; // lemma above
+            index == items - (rdx - rsi) / 8;
+            rsi == srcbase + 8 * index;
+            rdi == dstbase + 8 * index;
+            (rsi < rdx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (rdx - rsi) % 16 == 0;
+            (rsi < rdx) ==> (rdx - rsi) >= 16; // lemma above
 
-            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 1);
-            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 1);
+            (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, 1);
+            (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, 1);
 
             OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
-            WritesReg32(mem, dst_id, dstbase, items, index, taint,
-               Copy32Seq(old(mem), src_id, srcbase, items, items));
-          decreases (edx - esi);
+            OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
+            WritesReg64(mem, dst_id, dstbase, items, index, taint,
+               Copy64Seq(old(mem), src_id, srcbase, items, items));
+          decreases (rdx - rsi);
     {
-        Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 1, taint);
-        Add(esi, 8);
-        Add(edi, 8);
+        Copy64Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 1, taint);
+        Add(rsi, 16);
+        Add(rdi, 16);
         index := index + 2;
     }
   assert items == index; 
-  assert edx - esi == 0;
+  assert rdx - rsi == 0;
 }
+
+
 
 // TODO it would be nice if this was parameterized on regisers.
 procedure {:timeLimitMultiplier 1} CopyLoopOverUnrolledN
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, inline n : uint8)
-    let items :=  (old(edx) - old(esi)) / 4;
-    reads edx;
-    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    let items :=  (old(rdx) - old(rsi)) / 8;
+    reads rdx;
+    modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
         0 < n <= 4;
-        edx >= esi; 
-        (edx - esi) % (n * 4) == 0;
-        old(esi) != old(edi);
+        rdx >= rsi; 
+        (rdx - rsi) % (n * 8) == 0;
+        old(rsi) != old(rdi);
 
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, old(esi), items, taint);
-        ValidDstReg32(mem, dst_id, old(edi), items);
+        ValidSrcReg64(mem, src_id, old(rsi), items, taint);
+        ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-        WritesReg32(mem, dst_id, old(edi), items, items, taint,
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+        WritesReg64(mem, dst_id, old(rdi), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(rsi), items, items));
 {
     ghost var index   : int := 0;
-    ghost var srcbase : uint32 := old(esi);
-    ghost var dstbase : uint32 := old(edi);
-    lemma_regdiff_loop_ge_uint32(edx, esi, n);
-    while (esi < edx)
+    ghost var srcbase : uint64 := old(rsi);
+    ghost var dstbase : uint64 := old(rdi);
+    lemma_regdiff_loop_ge_uint64(rdx, rsi, n);
+    while (rsi < rdx)
         invariant
-            ValidSrcReg32(mem, src_id, srcbase, items, taint);
-            ValidDstReg32(mem, dst_id, dstbase, items);
+            ValidSrcReg64(mem, src_id, srcbase, items, taint);
+            ValidDstReg64(mem, dst_id, dstbase, items);
 
             0 <= index <= items;
-            index == items - (edx - esi) / 4;
-            esi == srcbase + 4 * index;
-            edi == dstbase + 4 * index;
-            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
-            (edx - esi) % (n * 4) == 0;
-            (esi < edx) ==> (edx - esi) >= (n * 4); // lemma above
+            index == items - (rdx - rsi) / 8;
+            rsi == srcbase + 8 * index;
+            rdi == dstbase + 8 * index;
+            (rsi < rdx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (rdx - rsi) % (n * 8) == 0;
+            (rsi < rdx) ==> (rdx - rsi) >= (n * 8); // lemma above
 
-            (esi < edx) ==> 0 <= index + n - 1 < items;
-            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, n - 1);
-            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, n - 1);
+            (rsi < rdx) ==> 0 <= index + n - 1 < items;
+            (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, n - 1);
+            (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, n - 1);
 
             OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
-            WritesReg32(mem, dst_id, dstbase, items, index, taint,
-               Copy32Seq(old(mem), src_id, srcbase, items, items));
-          decreases (edx - esi);
+            OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
+            WritesReg64(mem, dst_id, dstbase, items, index, taint,
+               Copy64Seq(old(mem), src_id, srcbase, items, items));
+          decreases (rdx - rsi);
     {
      // Bryan, constant folding issues.
         inline if (n == 1) {
-          Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 0, taint);
+          Copy64Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 0, taint);
          } else if (n == 2) {
-          Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 1, taint);
+          Copy64Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 1, taint);
          } else if (n == 3) {
-          Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 2, taint);
+          Copy64Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 2, taint);
          } else {
-          Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 3, taint);
+          Copy64Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 3, taint);
          }         
-        ghost var esi' := esi;
-        Add(esi, const(n * 4));
-        Add(edi, const(n * 4));
+        ghost var rsi' := rsi;
+        Add(rsi, const(n * 8));
+        Add(rdi, const(n * 8));
         index := index + n;
     }
   assert items == index; 
-  assert edx - esi == 0;
+  assert rdx - rsi == 0;
 }
 
-//
+
 // Just checking that calls to the above prove.
 procedure {:timeLimitMultiplier 1} CallCopyLoopOverUnrolledN
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, inline n : uint8)
-    let items :=  (old(edx) - old(esi)) / 4;
-    reads edx;
-    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    let items :=  (old(rdx) - old(rsi)) / 8;
+    reads rdx;
+    modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
         0 < n <= 4;
-        edx >= esi; 
-        (edx - esi) % (n * 4) == 0;
-        old(esi) != old(edi);
+        rdx >= rsi; 
+        (rdx - rsi) % (n * 8) == 0;
+        old(rsi) != old(rdi);
 
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, old(esi), items, taint);
-        ValidDstReg32(mem, dst_id, old(edi), items);
+        ValidSrcReg64(mem, src_id, old(rsi), items, taint);
+        ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-        WritesReg32(mem, dst_id, old(edi), items, items, taint,
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+        WritesReg64(mem, dst_id, old(rdi), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(rsi), items, items));
 {
   CopyLoopOverUnrolledN(taint, src_id, dst_id, n);
 }
 
 procedure CopyLoopOverUnrolled4
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(edx) - old(esi)) / 4;
-    reads edx;
-    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    let items :=  (old(rdx) - old(rsi)) / 8;
+    reads rdx;
+    modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
-        edx >= esi; 
-        (edx - esi) % 16 == 0;
-        old(esi) != old(edi);
+        rdx >= rsi; 
+        (rdx - rsi) % 32 == 0;
+        old(rsi) != old(rdi);
 
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, old(esi), items, taint);
-        ValidDstReg32(mem, dst_id, old(edi), items);
+        ValidSrcReg64(mem, src_id, old(rsi), items, taint);
+        ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-        WritesReg32(mem, dst_id, old(edi), items, items, taint,
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
+        WritesReg64(mem, dst_id, old(rdi), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(rsi), items, items));
 {
     ghost var index   : int := 0;
-    ghost var srcbase : uint32 := old(esi);
-    ghost var dstbase : uint32 := old(edi);
-    lemma_regdiff_loop_ge(edx, esi, 16);
-    while (esi < edx)
+    ghost var srcbase : uint64 := old(rsi);
+    ghost var dstbase : uint64 := old(rdi);
+    lemma_regdiff_loop_ge_uint64(rdx, rsi, 4);
+    while (rsi < rdx)
         invariant
-            ValidSrcReg32(mem, src_id, srcbase, items, taint);
-            ValidDstReg32(mem, dst_id, dstbase, items);
+            ValidSrcReg64(mem, src_id, srcbase, items, taint);
+            ValidDstReg64(mem, dst_id, dstbase, items);
 
             0 <= index <= items;
-            index == items - (edx - esi) / 4;
-            esi == srcbase + 4 * index;
-            edi == dstbase + 4 * index;
-            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
-            (edx - esi) % 16 == 0;
-            (esi < edx) ==> (edx - esi) >= 16; // lemma above
+            index == items - (rdx - rsi) / 8;
+            rsi == srcbase + 8 * index;
+            rdi == dstbase + 8 * index;
+            (rsi < rdx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (rdx - rsi) % 32 == 0;
+            (rsi < rdx) ==> (rdx - rsi) >= 16; // lemma above
 
-            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 1);
-            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 1);
+            (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, 1);
+            (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, 1);
 
             OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
-            WritesReg32(mem, dst_id, dstbase, items, index, taint,
-               Copy32Seq(old(mem), src_id, srcbase, items, items));
-          decreases (edx - esi);
+            OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
+            WritesReg64(mem, dst_id, dstbase, items, index, taint,
+               Copy64Seq(old(mem), src_id, srcbase, items, items));
+          decreases (rdx - rsi);
     {
-        Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 3, taint);
-        Add(esi, 16);
-        Add(edi, 16);
+        Copy64Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 3, taint);
+        Add(rsi, 32);
+        Add(rdi, 32);
         index := index + 4;
     }
   assert items == index; 
-  assert edx - esi == 0;
+  assert rdx - rsi == 0;
 }
-
 #verbatim
 }
 #endverbatim

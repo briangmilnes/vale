@@ -193,6 +193,7 @@ method printIns(ins:ins)
         case Sub64(dst, src) => print ("  sub "); printOprnd64(dst); print(", "); printOprnd64(src); print("\n");
         case AddCarry64(dst, src) =>  print ("  adc "); printOprnd64(dst); print(", "); printOprnd64(src); print("\n");
         case Mul64(src)      => print("  mul "); printOprnd64(src); print("\n");
+        case Div64(src)      => print("  div "); printOprnd64(src); print("\n");
         case IMul64(dst, src) => print ("  imul "); printOprnd64(dst); print(", "); printOprnd64(src); print("\n");
         case And64(dst, src) => print ("  and "); printOprnd64(dst); print(", "); printOprnd64(src); print("\n");
         case Shl64(dst, src) => print ("  shl "); printOprnd64(dst); print(", "); printShiftOprnd(src, 64); print("\n");

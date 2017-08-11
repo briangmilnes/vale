@@ -13,11 +13,16 @@
 #include <inttypes.h>
 #include <unistd.h>
 
-
-void test_regions() {
-  printf("Nothing coded yet.\n");
+uint64_t divit(uint64_t this, uint64_t that) {
+  return this / that;
 }
 
-int __cdecl main(void) {
-  test_regions();
+void test_regions(uint64_t this, uint64_t that) {
+  printf("And the division is %" PRIu64 "\n",  divit(this,that));
+}
+
+
+
+uint64_t __cdecl main(void) {
+  test_regions(128,2);
 }

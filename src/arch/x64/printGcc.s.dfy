@@ -215,6 +215,7 @@ method printIns(ins:ins)
         case Sub64(dst, src)    => printName64("  sub", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
         case AddCarry64(dst, src) => printName64("  adc", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
         case Mul64(src)         => printName64_1("  mul", src); printOprnd64(src); print("\n");
+        case Div64(src)         => printName64_1("  div", src); printOprnd64(src); print("\n");
         case IMul64(dst, src)   => printName64("  imul", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
         case And64(dst, src)    => printName64("  and", dst, src); printOprnd64(src); print(", "); printOprnd64(dst); print("\n");
         case Shl64(dst, src)    => printName64("  shl", dst, src); printShiftOprnd(src, 64); print(", "); printOprnd64(dst); print("\n");

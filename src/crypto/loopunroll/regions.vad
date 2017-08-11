@@ -1,14 +1,13 @@
 /*
 
-    Build a real regions logic.
+    This file includes regions.proven.vad 
 
 */
 
 include "../../arch/x64/decls.vad"
 include "../../arch/x64/decls64.vad"
-include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
-include{:verbatim} "../../arch/x86/def.s.dfy"
-include{:verbatim} "../../arch/x86/vale.i.dfy"
+include{:verbatim} "../../arch/x64/def.s.dfy"
+include{:verbatim} "../../arch/x64/vale.i.dfy"
 
 include "regions.proven.vad"
 include{:verbatim} "regions.dfy"
@@ -16,77 +15,86 @@ include{:verbatim} "regions.dfy"
 #verbatim
 module regions {
 
+import opened x64_def_s
+import opened x64_vale_i
 import opened dafny_wrappers_i
-import opened x86def_s_temp = x86_def_s
-import opened x86vale_temp = x86_vale_i
-import opened x86decls_temp = x86_decls_i
-import opened regionsproven
-import opened regionsdfy
-
-import opened declsX86vale = x86_vale_i
-import opened x86_decls_i_parser_help_i = dafny_wrappers_i
-import opened words_and_bytes_i_temp = words_and_bytes_i
-import opened operations_i_temp = operations_i
+import opened x64_decls_i
+import opened x64_decls64_i
 
 
-#endverbatim
+/*
+procedure CutTail(inline n : uint8)
+    let bytes  := (old(ebp) - old(esi));
+    let items  := (old(ebp) - old(esi)) / (n * 8);
+    let tail   := (old(ebp) - old(esi)) % (n * 8);
+    let itemswotail :=  items - tail;
 
-procedure CopyLoopOverUnrolled4WithTail
-          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(edx) - old(esi)) / 4;
-    reads edx;
-    modifies mem; efl; eax; ebx; ecx; edx; ebp; esi; edi;
+    reads ebp; esi;
+
+    modifies efl; edx; eax;
+
     requires
-        edx >= esi; 
-        (edx - esi) % 16 == 0;
-        old(esi) != old(edi);
+      0 < n <= 4;
+      ebp >= esi;
+      items < 0x1_0000;
+
+    ensures
+       edx == esi + items;
+{
+  Mov64(eax,ebp);         // eax := end of input
+  Sub64(eax,esi);         // bytes
+  assert eax == bytes;
+  Div64(eax, n);          
+  assert eax == items * 8;
+  Add64(eax,esi);         
+  assert esi == eax + items * 8;
+  Mov64(edx, eax);        //edx == esi + items
+} 
+*/
+
+
+/*
+// Input is esi, modified.
+// Data end is in ebp passed up in edx.
+// Output is edi, modified.
+// Tmp is eax;
+
+procedure CopyLoopOverUnrolledNTail
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, inline n : uint8)
+    let items  := (old(ebp) - old(esi)) / (n * 4);
+    let tail   := (old(ebp) - old(esi)) % (n * 4);
+    let itemswotail :=  items - tail;
+
+    reads
+        ebp;
+
+    modifies
+        efl; mem; esi; edi; eax; edx; ebp; ecx; ebp; ebx;
+
+    requires
+        ebp >= esi; 
 
     requires/ensures
         src_id != dst_id;
-        ValidSrcReg32(mem, src_id, old(esi), items, taint);
-        ValidDstReg32(mem, dst_id, old(edi), items);
+        ValidSrcReg64(mem, src_id, old(esi), items, taint);
+        ValidDstReg64(mem, dst_id, old(edi), items);
 
     ensures
         OnlyHeapletChanged(old(mem), mem, dst_id);
-        OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
-        WritesReg32(mem, dst_id, old(edi), items, items, taint,
-         Copy32Seq(old(mem), src_id, old(esi), items, items));
+        OnlyWritesReg64(old(mem), mem, dst_id, old(ebp), items);
+        WritesReg64(mem, dst_id, old(edi), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(esi), items, items));
 {
-    ghost var index   : int := 0;
-    ghost var srcbase : uint32 := old(esi);
-    ghost var dstbase : uint32 := old(edi);
-    lemma_regdiff_loop_ge(edx, esi, 16);
-    while (esi < edx)
-        invariant
-            ValidSrcReg32(mem, src_id, srcbase, items, taint);
-            ValidDstReg32(mem, dst_id, dstbase, items);
-
-            0 <= index <= items;
-            index == items - (edx - esi) / 4;
-            esi == srcbase + 4 * index;
-            edi == dstbase + 4 * index;
-            (esi < edx) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
-            (edx - esi) % 16 == 0;
-            (esi < edx) ==> (edx - esi) >= 16; // lemma above
-
-            (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 1);
-            (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 1);
-
-            OnlyHeapletChanged(old(mem), mem, dst_id);
-            OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
-            WritesReg32(mem, dst_id, dstbase, items, index, taint,
-               Copy32Seq(old(mem), src_id, srcbase, items, items));
-          decreases (edx - esi);
-    {
-        Copy32Unrolled(src_id, dst_id, srcbase, dstbase, items, index, 3, taint);
-        Add(esi, 16);
-        Add(edi, 16);
-        index := index + 4;
-    }
-  assert items == index; 
-  assert edx - esi == 0;
-}
-
+  CutTail(n);
+  CopyLoopOverUnrolledN(taint, src_id, dst_id, n);
+  assert OnlyHeapletChanged(old(mem), mem, dst_id);
+  assert OnlyWritesReg64(old(mem), mem, dst_id, old(ebp), itemswotail);
+  assert WritesReg64(mem, dst_id, old(edi), itemswotail, itemswotail, taint,
+          Copy64Seq(old(mem), src_id, old(esi), itemswotail, itemswotail));
+  Mov64(edx, ebp);
+  CopyLoopOverUnrolledN(taint, src_id, dst_id, 1);
+} 
+*/
 
 #verbatim
 }

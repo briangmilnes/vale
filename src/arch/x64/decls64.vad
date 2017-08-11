@@ -36,7 +36,6 @@ procedure{:refined}{:bridge}{:instruction Ins(Add64(dst, src))} Add64Wrap(inout 
     }
 }
 
-// Bryan please check -bgm 
 procedure{:refined}{:bridge} {:instruction Ins(Add64(dst, OConst(1)))} incr64(inout operand dst:uint64)
     modifies
         efl;
@@ -246,6 +245,24 @@ procedure{:refined}{:instruction Ins(Mul64(src))} Mul64Wrap(operand src:uint64)
     reveal x86_ValidState;
     reveal BitwiseMul64;
     reveal BitwiseMul64hi;
+    this := MaybeUpdateOk(old(this), this);
+    this := this.(heaplets := old(this).heaplets);
+}
+
+//BUG: WRONG its deviding RDX:RAX by src.
+procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)
+    modifies
+        efl;
+        rax;
+        rdx;
+    ensures
+        rax == old(BitwiseDiv64(rdx, rax, src));
+        rdx == old(BitwiseMod64(rdx, rax, src));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal BitwiseDiv128by64;
+    reveal BitwiseMod128by64;
     this := MaybeUpdateOk(old(this), this);
     this := this.(heaplets := old(this).heaplets);
 }
