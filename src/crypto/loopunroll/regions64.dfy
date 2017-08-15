@@ -23,6 +23,25 @@ predicate DistinctORegs3(r1 : operand, r2 : operand, r3: operand) {
   && r1 != r2 && r1 != r3 && r2 != r3
 }
 
+predicate DistinctORegs6(r1 : operand, r2 : operand, r3: operand, r4 : operand, r5 : operand, r6 : operand) {
+  r1.OReg? && r2.OReg? && r3.OReg? && r4.OReg? && r5.OReg? && r6.OReg? &&
+  r1 != r2 && r1 != r3 && r1 != r4 && r1 != r5 && r1 != r6 &&
+  r2 != r3 && r2 != r4 && r2 != r5 && r2 != r6 &&
+  r3 != r4 && r3 != r5 && r3 != r6 &&
+  r4 != r5 && r4 != r6 &&
+  r5 != r6
+}
+
+predicate DistinctORegs7(r1 : operand, r2 : operand, r3: operand, r4 : operand, r5 : operand, r6 : operand, r7 : operand) {
+  r1.OReg? && r2.OReg? && r3.OReg? && r4.OReg? && r5.OReg? && r6.OReg? && r7.OReg? &&
+  r1 != r2 && r1 != r3 && r1 != r4 && r1 != r5 && r1 != r6 && r1 != r7 &&
+  r2 != r3 && r2 != r4 && r2 != r5 && r2 != r6 && r2 != r7 &&
+  r3 != r4 && r3 != r5 && r3 != r6 && r3 != r7 &&
+  r4 != r5 && r4 != r6 && r4 != r7 &&
+  r5 != r6 && r5 != r7 &&
+  r6 != r7
+}
+
 function addr64(base:int, i:int):int { base + 8 * i }
 
 // This lemma has been useful while proving things but Vale seems to just prove this as needed now.
@@ -154,7 +173,7 @@ predicate OnlyWritesReg64(old_mem : Heaplets, mem : Heaplets, id : heaplet_id, b
 }
 
 
-predicate OnlyHeapletChanged(old_mem : Heaplets, mem : Heaplets, id : heaplet_id) 
+predicate OnlyHeaplet64Changed(old_mem : Heaplets, mem : Heaplets, id : heaplet_id) 
 {
   id in mem &&
   mem[id].Heaplet64? &&

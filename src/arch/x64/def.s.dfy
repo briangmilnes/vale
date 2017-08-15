@@ -414,6 +414,18 @@ predicate evalUpdateAndHavocFlags64(s:state, o:operand, v:uint64, r:state, obs:s
         case OHeap(addr, taint)  => r == s.(ok := false) // not yet supported
 }
 
+// Bryan, is this right?
+// This has to be specific to div as its registers are fixed.
+predicate evalUpdateAndHavocFlagsDiv(s:state, src: operand, div:uint64, mod: uint64, r:state, obs:seq<observation>)
+    requires Valid64BitSourceOperand(s, src);
+{
+    match src
+        case OReg(reg)    => r == s.(regs := s.regs[X86Eax := div][X86Edx:= mod], flags := r.flags, trace := s.trace + obs)
+        case OStack(slot)       => r == s.(ok := false) // not yet supported
+        case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
+        case OConst(n)          => r == s.(ok := false) // not yet supported
+}
+
 predicate evalUpdateXmmsAndHavocFlags(s:state, o:operand, v:Quadword, r:state, obs:seq<observation>)
     requires ValidXmmOperand(s, o);
 {
@@ -547,6 +559,8 @@ function shr32(x:uint32, amount:uint32) : uint32
 
 // Is the carry flag (CF) set?
 predicate{:axiom} Cf(flags:uint32)
+// Is the Error Division (ED) flat set.
+predicate{:axiom} Ed(flags:uint32)
 
 predicate ValidInstruction(s:state, ins:ins)
 {
@@ -554,7 +568,6 @@ predicate ValidInstruction(s:state, ins:ins)
         case Rand(xRand) => Valid32BitDestinationOperand(s, xRand)
         case Mov32(dstMov, srcMov) => Valid32BitDestinationOperand(s, dstMov) && Valid32BitSourceOperand(s, srcMov)
         case Mov64(dstMov, srcMov) => Valid64BitDestinationOperand(s, dstMov) && Valid64BitSourceOperand(s, srcMov)
-        // Bryan pls check.
         case MOVQ64XMM(dst, src) => Valid64BitDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src)
         case MOVQXMM64(dst, src) => ValidXmmDestinationOperand(s, dst) && Valid64BitSourceOperand(s, src)
         case MOVHLPS(dst, src) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src)
@@ -567,7 +580,8 @@ predicate ValidInstruction(s:state, ins:ins)
         case Sub64(dstSub, srcSub) => Valid64BitDestinationOperand(s, dstSub) && Valid64BitSourceOperand(s, srcSub) && Valid64BitSourceOperand(s, dstSub)
         case Mul32(srcMul) => Valid32BitSourceOperand(s, srcMul) && Valid32BitSourceOperand(s, OReg(X86Eax)) && Valid32BitDestinationOperand(s, OReg(X86Eax)) && Valid32BitDestinationOperand(s, OReg(X86Edx))
         case Mul64(srcMul) => Valid64BitSourceOperand(s, srcMul) && Valid64BitSourceOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Edx))
-        case Div64(srcMul) => Valid64BitSourceOperand(s, srcMul) && Valid64BitSourceOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Edx))
+        case Div64(srcMul) =>  Valid64BitSourceOperand(s, srcMul) && Valid64BitDestinationOperand(s, OReg(X86Edx)) && Valid64BitDestinationOperand(s, OReg(X86Eax)) &&
+                              Valid64BitSourceOperand(s, OReg(X86Edx)) && Valid64BitSourceOperand(s, OReg(X86Eax))
         case IMul64(dst, src) => Valid64BitDestinationOperand(s, dst) && Valid64BitSourceOperand(s, src) && Valid64BitSourceOperand(s, dst)
         case AddCarry(dstAddCarry, srcAddCarry) => Valid32BitDestinationOperand(s, dstAddCarry) && Valid32BitSourceOperand(s, srcAddCarry) && Valid32BitSourceOperand(s, dstAddCarry)
         case AddCarry64(dstAddCarry, srcAddCarry) => Valid64BitDestinationOperand(s, dstAddCarry) && Valid64BitSourceOperand(s, srcAddCarry) && Valid64BitSourceOperand(s, dstAddCarry)
@@ -637,7 +651,7 @@ function insObs(s:state, ins:ins):seq<observation>
         case Sub64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
         case Mul32(src) => operandObs(s, 32, src) // TODO: eax, edx
         case Mul64(src) => operandObs(s, 64, src)
-        case Div64(src) => operandObs(s, 64, src)
+        case Div64(src) => operandObs(s, 64, src)  +  operandObs(s, 64, OReg(X86Eax))  + operandObs(s, 64, OReg(X86Edx)) // Bryan.
         case IMul64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
         case AddCarry(dst, src) => operandObs(s, 32, dst) + operandObs(s, 32, src)
         case AddCarry64(dst, src) => operandObs(s, 64, dst) + operandObs(s, 64, src)
@@ -716,9 +730,15 @@ predicate evalIns(ins:ins, s:state, r:state)
                                     r == s.(regs := s.regs[X86Edx := hi][X86Eax := lo], flags := r.flags)
 
             // Div64 is three registers. Divides rdx:rax / src and puts the quotient in rax and the remainder in rdx.
-            case Div64(src)      => var div := (s.regs[X86Edx] * 0x1_0000_0000_0000_0000 + s.regs[X86Eax]) / eval_op64(s, src));
-                                   var mod := (s.regs[X86Edx] * 0x1_0000_0000_0000_0000 + s.regs[X86Eax]) % eval_op64(s, src));
-                                   r == s.(regs := s.regs[X86Edx := div][X86Eax := mod], flags := r.flags)
+            // Intel 3-286 Vol. 2A, says DE gets turned on in EFL. Register state is unspecified.
+            // Bryan:
+            // Do I need a division lemma here? 
+            // Am I handling division by zero right?
+            case Div64(src) => var div := BitwiseDiv128by64(s.regs[X86Edx], s.regs[X86Eax], eval_op64(s, src)); // Will return 0 on 0 src.
+                              var mod := BitwiseMod128by64(s.regs[X86Edx], s.regs[X86Eax], eval_op64(s, src)); // Will return 0 on 0 src.
+                              r == s.(regs := s.regs[X86Edx := mod][X86Eax := div], flags := r.flags)
+//                              evalUpdateAndHavocFlagsDiv(s, src, div, mod, r, obs) &&
+//                              Ed(r.flags) == (eval_op64(s, src) != 0)
 
             case IMul64(dst, src) => evalUpdateAndHavocFlags64(s, dst, (eval_op64(s, dst) * eval_op64(s, src)) % 0x1_0000_0000_0000_0000, r, obs)
             // Add with carry (ADC) instruction

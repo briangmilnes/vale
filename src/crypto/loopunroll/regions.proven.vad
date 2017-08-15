@@ -181,7 +181,7 @@ procedure{:refined}{:timeLimitMultiplier 2} Copy64Pred(inline taint:taint, ghost
         ValidDstReg64(mem, dst_id, rdi, 16);
 
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, rdi, 16);
         WritesReg64(mem, dst_id, rdi, 16, 16, taint,
           Copy64Seq(old(mem), src_id, old(rsi), 16, 16));
@@ -233,7 +233,7 @@ procedure Copy64LoopPred(inline taint:taint, ghost src_id:heaplet_id, ghost dst_
         ValidSrcReg64(mem, src_id, rsi, 16, taint);
         ValidDstReg64(mem, dst_id, rdi, 16);
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, rdi, 16);
         WritesReg64(mem, dst_id, rdi, 16, 16, taint, 
            Copy64Seq(old(mem), src_id, old(rsi), 16, 16));
@@ -251,7 +251,7 @@ procedure Copy64LoopPred(inline taint:taint, ghost src_id:heaplet_id, ghost dst_
             rdx == rsi + 8 * 16;
             (rbx < rdx) ==> ValidSrcRegPtr64(mem, src_id, rsi, 16, taint, rbx, index);
             (rbx < rdx) ==> ValidDstRegPtr64(mem, dst_id, rdi, 16, rcx, index);
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
             OnlyWritesReg64(old(mem), mem, dst_id, rdi, 16);
             WritesReg64(mem, dst_id, rdi, 16, index, taint,
                Copy64Seq(old(mem), src_id, old(rsi), 16, 16));
@@ -285,7 +285,7 @@ procedure Copy64LoopArbitraryAlignedSize
         ValidSrcReg64(mem, src_id, rsi, items, taint);
         ValidDstReg64(mem, dst_id, rdi, items);
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, rdi, items);
         WritesReg64(mem, dst_id, rdi, items, items, taint, 
          Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -300,7 +300,7 @@ procedure Copy64LoopArbitraryAlignedSize
             rcx == rdi + 8 * index;
             (rbx < rdx) ==> ValidSrcRegPtr64(mem, src_id, rsi, items, taint, rbx, index);
             (rbx < rdx) ==> ValidDstRegPtr64(mem, dst_id, rdi, items, rcx, index);
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
             OnlyWritesReg64(old(mem), mem, dst_id, rdi, items);
             WritesReg64(mem, dst_id, rdi, items, index, taint,
                Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -339,7 +339,7 @@ procedure Copy64LoopArbitraryAlignedSizeModifyInpOutPtr
         ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
         WritesReg64(mem, dst_id, old(rdi), items, items, taint,
          Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -352,7 +352,7 @@ procedure Copy64LoopArbitraryAlignedSizeModifyInpOutPtr
             rdi == old(rdi) + 8 * index;
             (rsi < rdx) ==> ValidSrcRegPtr64(mem, src_id, old(rsi), items, taint, rsi, index);
             (rsi < rdx) ==> ValidDstRegPtr64(mem, dst_id, old(rdi), items, rdi, index);
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
             OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
             WritesReg64(mem, dst_id, old(rdi), items, index, taint,
                Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -392,7 +392,7 @@ procedure {:bridge} {:timeLimitMultiplier 3} Copy64
                    Copy64Seq(old(mem), src_id, src, reg_size, reg_size));
 
     ensures 
-         OnlyHeapletChanged(old(mem), mem, dst_id);
+         OnlyHeaplet64Changed(old(mem), mem, dst_id);
          OnlyWritesReg64(old(mem), mem, dst_id, dst, reg_size);
          WritesReg64(mem, dst_id, dst, reg_size, off + add + 1, taint,
                    Copy64Seq(old(mem), src_id, src, reg_size, reg_size));
@@ -422,7 +422,7 @@ procedure CopyLoopArbitraryAlignedSizeModifyInpOutPtrCall
         ValidSrcReg64(mem, src_id, old(rsi), items, taint);
         ValidDstReg64(mem, dst_id, old(rdi), items);
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
         WritesReg64(mem, dst_id, old(rdi), items, items, taint,
          Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -441,7 +441,7 @@ procedure CopyLoopArbitraryAlignedSizeModifyInpOutPtrCall
             (rsi < rdx) ==> ValidSrcRegPtr64(mem, src_id, old(rsi), items, taint, rsi, index);
             (rsi < rdx) ==> ValidDstRegPtr64(mem, dst_id, old(rdi), items, rdi, index);
 
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
             OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
             WritesReg64(mem, dst_id, old(rdi), items, index, taint,
                Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -477,7 +477,7 @@ procedure {:recursive} {:timeLimitMultiplier 1} Copy64Unrolled
            WritesReg64(mem, dst_id, dstbase, reg_size, off, taint,
                  Copy64Seq(old(mem), src_id, srcbase, reg_size, reg_size));
     ensures
-         OnlyHeapletChanged(old(mem), mem, dst_id);
+         OnlyHeaplet64Changed(old(mem), mem, dst_id);
          OnlyWritesReg64(old(mem), mem, dst_id, dstbase, reg_size);
          // This means I wrote off + step + 1 of the output in total.
          WritesReg64(mem, dst_id, dstbase, reg_size, off + step + 1, taint,
@@ -518,7 +518,7 @@ procedure CopyLoopOverUnrolled1
         ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
         WritesReg64(mem, dst_id, old(rdi), items, items, taint,
          Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -543,7 +543,7 @@ procedure CopyLoopOverUnrolled1
             (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, 0);
             (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, 0);
 
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
             OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
             WritesReg64(mem, dst_id, dstbase, items, index, taint, 
                Copy64Seq(old(mem), src_id, srcbase, items, items));
@@ -576,7 +576,7 @@ procedure CopyLoopOverUnrolled2
         ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
         WritesReg64(mem, dst_id, old(rdi), items, items, taint,
          Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -601,7 +601,7 @@ procedure CopyLoopOverUnrolled2
             (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, 1);
             (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, 1);
 
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
             OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
             WritesReg64(mem, dst_id, dstbase, items, index, taint,
                Copy64Seq(old(mem), src_id, srcbase, items, items));
@@ -616,9 +616,7 @@ procedure CopyLoopOverUnrolled2
   assert rdx - rsi == 0;
 }
 
-
-
-// TODO it would be nice if this was parameterized on regisers.
+// TODO it would be nice if this was parameterized on registers.
 procedure {:timeLimitMultiplier 1} CopyLoopOverUnrolledN
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, inline n : uint8)
     let items :=  (old(rdx) - old(rsi)) / 8;
@@ -636,7 +634,7 @@ procedure {:timeLimitMultiplier 1} CopyLoopOverUnrolledN
         ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
         WritesReg64(mem, dst_id, old(rdi), items, items, taint,
          Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -662,7 +660,7 @@ procedure {:timeLimitMultiplier 1} CopyLoopOverUnrolledN
             (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, n - 1);
             (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, n - 1);
 
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
             OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
             WritesReg64(mem, dst_id, dstbase, items, index, taint,
                Copy64Seq(old(mem), src_id, srcbase, items, items));
@@ -706,7 +704,7 @@ procedure {:timeLimitMultiplier 1} CallCopyLoopOverUnrolledN
         ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
         WritesReg64(mem, dst_id, old(rdi), items, items, taint,
          Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -730,7 +728,7 @@ procedure CopyLoopOverUnrolled4
         ValidDstReg64(mem, dst_id, old(rdi), items);
 
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
         OnlyWritesReg64(old(mem), mem, dst_id, old(rdi), items);
         WritesReg64(mem, dst_id, old(rdi), items, items, taint,
          Copy64Seq(old(mem), src_id, old(rsi), items, items));
@@ -755,7 +753,7 @@ procedure CopyLoopOverUnrolled4
             (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, rsi, index, 1);
             (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        rdi, index, 1);
 
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
             OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
             WritesReg64(mem, dst_id, dstbase, items, index, taint,
                Copy64Seq(old(mem), src_id, srcbase, items, items));
@@ -769,6 +767,127 @@ procedure CopyLoopOverUnrolled4
   assert items == index; 
   assert rdx - rsi == 0;
 }
+
+// This primed version works but the final loop takes 22s to prove due to the complete
+// graph of inequalities of registers.
+procedure {:recursive} {:timeLimitMultiplier 1} Copy64Unrolled'
+         (ghost src_id:heaplet_id, ghost dst_id:heaplet_id, 
+          ghost srcbase : uint64, ghost dstbase : uint64, 
+          ghost reg_size : nat, 
+          operand iptr : uint64, operand optr : uint64, 
+          inout operand tmp1 : uint64, inout operand tmp2 : uint64, inout operand tmp3 : uint64, inout operand tmp4 : uint64, 
+          ghost off : nat, inline step : nat, inline taint:taint)
+                               
+    modifies mem; efl; 
+
+    requires
+       1 <= reg_size;
+       // Must have at least on address to write.
+       off + step < reg_size; 
+       0 <= step < 4;
+       srcbase != dstbase;
+       DistinctORegs6(@iptr, @optr, @tmp1, @tmp2, @tmp3, @tmp4);
+
+    requires/ensures 
+           src_id != dst_id; 
+           ValidSrcRegPtrs64(mem, src_id, srcbase, reg_size, taint, iptr, off, step);
+           ValidDstRegPtrs64(mem, dst_id, dstbase, reg_size,        optr, off, step);
+           WritesReg64(mem, dst_id, dstbase, reg_size, off, taint,
+                 Copy64Seq(old(mem), src_id, srcbase, reg_size, reg_size));
+
+    ensures
+         OnlyHeaplet64Changed(old(mem), mem, dst_id);
+         OnlyWritesReg64(old(mem), mem, dst_id, dstbase, reg_size);
+         // This means I wrote off + step + 1 of the output in total.
+         WritesReg64(mem, dst_id, dstbase, reg_size, off + step + 1, taint,
+                   Copy64Seq(old(mem), src_id, srcbase, reg_size, reg_size));
+{
+  inline if (step == 3) {
+       Copy64Unrolled'(src_id, dst_id, srcbase,  dstbase, reg_size, iptr, optr, tmp1, tmp2, tmp3, tmp4, off, step - 1, taint);
+       Copy64(src_id, dst_id, srcbase, dstbase, reg_size, taint, iptr, optr, off, step, tmp1);
+  } else if (step == 2) {
+       Copy64Unrolled'(src_id, dst_id, srcbase,  dstbase, reg_size, iptr, optr, tmp1, tmp2, tmp3, tmp4, off, step - 1, taint);
+       Copy64(src_id, dst_id, srcbase, dstbase, reg_size, taint, iptr, optr, off, step, tmp2);
+  } else if (step == 1) {
+       Copy64Unrolled'(src_id, dst_id, srcbase,  dstbase, reg_size, iptr, optr, tmp1, tmp2, tmp3, tmp4, off, step - 1, taint);
+       Copy64(src_id, dst_id, srcbase, dstbase, reg_size, taint, iptr, optr, off, step, tmp3);
+   } else if (step == 0) {                                    
+       Copy64(src_id, dst_id, srcbase, dstbase, reg_size, taint, iptr, optr, off, step, tmp4);
+   }
+}
+
+procedure {:timeLimitMultiplier 2} CopyLoopOverUnrolledN'
+          (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, 
+           inout operand iptr : uint64, operand iendptr : uint64, inout operand optr : uint64, 
+           inout operand tmp1 : uint64, inout operand tmp2 : uint64, inout operand tmp3 : uint64, inout operand tmp4 : uint64,
+           inline n : uint8)
+    let items :=  (old(iendptr) - old(iptr)) / 8;
+
+    modifies mem; efl; 
+    requires
+        0 < n <= 4;
+        iendptr >= iptr; 
+        (iendptr - iptr) % (n * 8) == 0;
+        old(iptr) != old(optr);
+        DistinctORegs7(@iptr, @iendptr, @optr, @tmp1, @tmp2, @tmp3, @tmp4);
+
+    requires/ensures
+        src_id != dst_id;
+        ValidSrcReg64(mem, src_id, old(iptr), items, taint);
+        ValidDstReg64(mem, dst_id, old(optr), items);
+
+    ensures
+        OnlyHeaplet64Changed(old(mem), mem, dst_id);
+        OnlyWritesReg64(old(mem), mem, dst_id, old(optr), items);
+        WritesReg64(mem, dst_id, old(optr), items, items, taint,
+         Copy64Seq(old(mem), src_id, old(iptr), items, items));
+{
+    ghost var index   : int := 0;
+    ghost var srcbase : uint64 := old(iptr);
+    ghost var dstbase : uint64 := old(optr);
+    lemma_regdiff_loop_ge_uint64(iendptr, iptr, n);
+    while (iptr < iendptr)
+        invariant
+            ValidSrcReg64(mem, src_id, srcbase, items, taint);
+            ValidDstReg64(mem, dst_id, dstbase, items);
+
+            0 <= index <= items;
+            index == items - (iendptr - iptr) / 8;
+            iptr == srcbase + 8 * index;
+            optr == dstbase + 8 * index;
+            (iptr < iendptr) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
+            (iendptr - iptr) % (n * 8) == 0;
+            (iptr < iendptr) ==> (iendptr - iptr) >= (n * 8); // lemma above
+
+            (iptr < iendptr) ==> 0 <= index + n - 1 < items;
+            (index < items) ==> ValidSrcRegPtrs64(mem, src_id, srcbase, items, taint, iptr, index, n - 1);
+            (index < items) ==> ValidDstRegPtrs64(mem, dst_id, dstbase, items,        optr, index, n - 1);
+
+            OnlyHeaplet64Changed(old(mem), mem, dst_id);
+            OnlyWritesReg64(old(mem), mem, dst_id, dstbase, items);
+            WritesReg64(mem, dst_id, dstbase, items, index, taint,
+               Copy64Seq(old(mem), src_id, srcbase, items, items));
+          decreases (iendptr - iptr);
+    {
+     // Bryan, constant folding issues.
+        inline if (n == 1) {
+          Copy64Unrolled'(src_id, dst_id, srcbase, dstbase, items, iptr, optr, tmp1, tmp2, tmp3, tmp4, index, 0, taint);
+         } else if (n == 2) {
+          Copy64Unrolled'(src_id, dst_id, srcbase, dstbase, items, iptr, optr, tmp1, tmp2, tmp3, tmp4, index, 1, taint);
+         } else if (n == 3) {
+          Copy64Unrolled'(src_id, dst_id, srcbase, dstbase, items, iptr, optr, tmp1, tmp2, tmp3, tmp4, index, 2, taint);
+         } else {
+          Copy64Unrolled'(src_id, dst_id, srcbase, dstbase, items, iptr, optr, tmp1, tmp2, tmp3, tmp4, index, 3, taint);
+         }         
+        ghost var iptr' := iptr;
+        Add(iptr, const(n * 8));
+        Add(optr, const(n * 8));
+        index := index + n;
+    }
+  assert items == index; 
+  assert iendptr - iptr == 0;
+}
+
 #verbatim
 }
 #endverbatim

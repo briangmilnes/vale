@@ -216,8 +216,19 @@ lemma {:axiom} lemma_BitShiftsSum(x: bv32, a: nat, b: nat)
 function {:opaque} BitwiseMul64(x:uint64, y:uint64):uint64 { (x * y) % 0x1_0000_0000_0000_0000 }
 function {:opaque} BitwiseMul64hi(x:uint64, y:uint64):uint64 { ((x * y) / 0x1_0000_0000_0000_0000) % 0x1_0000_0000_0000_0000 }
 
-function {:opaque} BitwiseDiv128by64(x:uint64, y:uint64, z:uint64):uint64 { ((x * 0x1_0000_0000_0000_0000 + y) / z) % 0x1_0000_0000_0000_0000 }  
-function {:opaque} BitwiseMod128by64(x:uint64, y:uint64, z:uint64):uint64 { ((x * 0x1_0000_0000_0000_0000 + y) % z) % 0x1_0000_0000_0000_0000 }  
+// Bryan 
+function {:opaque} BitwiseDiv128by64(x:uint64, y:uint64, z:uint64) : uint64 
+{ if (z != 0)
+  then 
+   ((x * 0x1_0000_0000_0000_0000 + y) / z) % 0x1_0000_0000_0000_0000
+  else 0x0 // Return patently false divisor, this is protected by Ed axiom in the instruction, I hope.
+}
+
+function {:opaque} BitwiseMod128by64(x:uint64, y:uint64, z:uint64):uint64 
+{ if (z != 0)
+  then ((x * 0x1_0000_0000_0000_0000 + y) % z) % 0x1_0000_0000_0000_0000
+  else 0x0 // Return patently false divisor, this is protected by Ed axiom in the instruction, I hope.
+}
 
 function{:opaque} BitAnd64(x:bv64, y:bv64):bv64 { x & y }
 function{:opaque} BitwiseAnd64_opaque(x:uint64, y:uint64):uint64 { BitsToWord64(BitAnd64(WordToBits64(x), WordToBits64(y))) }

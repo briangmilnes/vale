@@ -6,8 +6,10 @@ Brian Milnes, 9 Aug 2017
 
    I've been having quite a difficult time learning Vale and really making the proofs of
 simple things go through smoothly without the butterfly effect. A large chunk of this
-problem has been our separation logic. Chris, Bryan and I have been working on changing
-this and it's now working very nicely.
+problem has been our separation logic and its use of a mixed address and count style
+for within heaplet specifications.
+
+ Chris, Bryan and I have been working on changing this and it's now working very nicely.
 
 <h2>The Current Separation Logic</h2>
 
@@ -29,10 +31,12 @@ type Heaplets = map<heaplet_id, Heaplet>
 </verbatim>
 
    It's a very simple separation logic in which one assumes that each data structure is a
-contiguous block of memory. And that each heaplet describes a separate data structure and
-they may share addresses, but it's not the same memory.
-WRONG HeapletsExclusive HeapletsConsistent
-
+contiguous block of memory. And that each heaplet describes a separate data structure with
+separate addressing. This is enforced at each state change by two predicates:
+HeapletsExclusive and HeapletsConsistent. HeapletsExclusive ensures that each address is in
+only one of the above heaplet types at a time. Heaplets consistent ensures that byte addresses
+are present for a byte heaplet and that all required byte addresses are present in larger
+word grouping. Alignment is not specified at this level.
 
 <verbatim>
   predicates ValidSrcAddr(h:Heaplets, id:heaplet_id, addr:int, size:int, taint:taint)
@@ -72,7 +76,7 @@ WRONG HeapletsExclusive HeapletsConsistent
 <h2>The New Addressing</h2>
 
   Chris's new approach uses the same data structures but controls triggering by wrapping all
-address calcuation in functions like:
+address calculations in functions like:
 
 <verbatim>
  function addr32(base:int, i:int):int { base + 4 * i }
@@ -96,7 +100,7 @@ predicate ValidSrcReg32(mem : Heaplets, id : heaplet_id, base : nat, size : nat,
     mem[id].words[addr32(base, i)].t == taint
 }
 
-predicate OnlyHeapletChanged(old_mem : Heaplets, mem : Heaplets, id : heaplet_id) 
+predicate OnlyWordHeapletChanged(old_mem : Heaplets, mem : Heaplets, id : heaplet_id) 
 {
   id in mem &&
   mem[id].WordHeaplet? &&
@@ -218,7 +222,7 @@ procedure Copy64LoopArbitraryAlignedSize
         ValidSrcReg32(mem, src_id, esi, items, taint);
         ValidDstReg32(mem, dst_id, edi, items);
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWordHeapletChanged(old(mem), mem, dst_id);
         OnlyWritesReg32(old(mem), mem, dst_id, edi, items);
         WritesReg32(mem, dst_id, edi, items, items, taint, 
          Copy32Seq(old(mem), src_id, old(esi), items, items));
@@ -233,7 +237,7 @@ procedure Copy64LoopArbitraryAlignedSize
             ecx == edi + 4 * index;
             (ebx < edx) ==> ValidSrcRegPtr32(mem, src_id, esi, items, taint, ebx, index);
             (ebx < edx) ==> ValidDstRegPtr32(mem, dst_id, edi, items, ecx, index);
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyWordHeapletChanged(old(mem), mem, dst_id);
             OnlyWritesReg32(old(mem), mem, dst_id, edi, items);
             WritesReg32(mem, dst_id, edi, items, index, taint,
                Copy32Seq(old(mem), src_id, old(esi), items, items));
@@ -296,7 +300,7 @@ procedure {:recursive} {:timeLimitMultiplier 1} Copy32Unrolled
            WritesReg32(mem, dst_id, dstbase, reg_size, off, taint,
                  Copy32Seq(old(mem), src_id, srcbase, reg_size, reg_size));
     ensures
-         OnlyHeapletChanged(old(mem), mem, dst_id);
+         OnlyWordHeapletChanged(old(mem), mem, dst_id);
          OnlyWritesReg32(old(mem), mem, dst_id, dstbase, reg_size);
          // This means I wrote off + step + 1 of the output in total.
          WritesReg32(mem, dst_id, dstbase, reg_size, off + step + 1, taint,
@@ -341,7 +345,7 @@ procedure CopyLoopOverUnrolled2
         ValidDstReg32(mem, dst_id, old(edi), items);
 
     ensures
-        OnlyHeapletChanged(old(mem), mem, dst_id);
+        OnlyWordHeapletChanged(old(mem), mem, dst_id);
         OnlyWritesReg32(old(mem), mem, dst_id, old(edi), items);
         WritesReg32(mem, dst_id, old(edi), items, items, taint,
          Copy32Seq(old(mem), src_id, old(esi), items, items));
@@ -366,7 +370,7 @@ procedure CopyLoopOverUnrolled2
             (index < items) ==> ValidSrcRegPtrs32(mem, src_id, srcbase, items, taint, esi, index, 1);
             (index < items) ==> ValidDstRegPtrs32(mem, dst_id, dstbase, items,        edi, index, 1);
 
-            OnlyHeapletChanged(old(mem), mem, dst_id);
+            OnlyHeaplet32Changed(old(mem), mem, dst_id);
             OnlyWritesReg32(old(mem), mem, dst_id, dstbase, items);
             WritesReg32(mem, dst_id, dstbase, items, index, taint,
                Copy32Seq(old(mem), src_id, srcbase, items, items));
@@ -413,26 +417,27 @@ procedure{:refined}{:bridge} LoadArray32(out operand dst:uint32, operand src:uin
 compliance on cryptographic algorithms requires zero padding byte datastructures, which we
 are doing in C. Performance requires working with up to 128 byte indexed sections.
 
- There is some support for this as SHA256 needs it, but it required Bryan writing some
-heavyweight lemmas.
+ There is support for this in Heaplets63, as SHA256 needs it, but it required Bryan writing some
+heavyweight lemmas that have not yet been applied elsewhere or generalized from beyond byte
+to word casting.
 
-<h2>To Dos</h2>
+<h2>To Dos and Questions</h2>
 
  1) Alignment has not been added to this.
 
- 2) The examples have not been fully
+ 2) There are constant folding issues in unrolled loop callers.
 
- 3) We could hide the complete graphs of inequalities of registers and
-   heaplet ids in predicates.
+ 3) At this point just load and store wrappers are required so instructions will
+  not be moved to this style at the moment. The style does allow non-load and store
+  instructions to be applied and to prove quickly
 
- 4) There are constant folding issues in unrolled loop callers.
-
- 5) We should try and get rid of the wrappers and/or move to this
-  addressing style for the instructions. It may greatly speed up
-  verification of procedures with lots of instructions.
-
- 6) Sometimes decreases(items - index) works and sometimes to
+ 4) Sometimes decreases(items - index) works and sometimes to
     decreases (endptr - iptr) is required.
  
- 7) This style of NSeq functions has not been proven in loops
-  with functions that chain input, such as CBC.
+ 5) This style of NSeq functions has not been proven in loops with functions that chain
+  input, such as CBC.
+
+ 6) Division is required to allow unrolled loops to have a tail, e.g., if one unrolls to
+  four then one needs to understand that there may be up to three more units of work to
+  process. This final tail loop is in progress.
+

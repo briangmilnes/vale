@@ -1,10 +1,10 @@
-include "../../../../obj/crypto/aes/aes-x64/ctr.gen.dfy"
+include "../../../../obj/crypto/aes/aes-x64/gcm.gen.dfy"
 include "../../../arch/x64/print.s.dfy"
 include "../../../lib/util/Io.s.dfy"
 
-module CTRMain {
+module GCMMain {
 
-import opened CTR
+import opened GCM
 import opened x64_print_s
 import opened Io_s
 
@@ -52,11 +52,11 @@ method {:main} Main(ghost env:HostEnvironment)
 
     // Make available the StdCall version for test from c of two routines plus AES.
 
-    printProcPlatform("CTR128EncryptStdcall",
-    va_code_CTR128EncryptStdcall(),
+    printProcPlatform("GCMCTRONLY",
+        va_code_GCMCTRONLY(),
         0, 0, asm_choice, platform_choice);
 
-   printProcPlatform("aes_main_i_KeyExpansionStdcall",
+      printProcPlatform("aes_main_i_KeyExpansionStdcall",
          va_code_KeyExpansionStdcall(Secret, win),
          0, 8,
         asm_choice, platform_choice);

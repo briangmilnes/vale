@@ -139,7 +139,7 @@ predicate OnlyWritesReg32(old_mem : Heaplets, mem : Heaplets, id : heaplet_id, b
 }
 
 
-predicate OnlyHeapletChanged(old_mem : Heaplets, mem : Heaplets, id : heaplet_id) 
+predicate OnlyWordHeapletChanged(old_mem : Heaplets, mem : Heaplets, id : heaplet_id) 
 {
   id in mem &&
   mem[id].WordHeaplet? &&

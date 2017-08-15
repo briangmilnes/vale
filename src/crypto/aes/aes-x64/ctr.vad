@@ -161,7 +161,6 @@ include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
 include "aes.vad"
 include{:verbatim} "ctr_helpers.i.dfy"
 include{:verbatim} "../ctr.s.dfy" 
-include{:verbatim} "proof.dfy" 
 
 #verbatim
 module CTR {
@@ -175,7 +174,6 @@ import opened x64_decls64_i
 import opened aes_vale
 import opened CTRModule
 import opened CTRHelpers
-import opened proof
 
 #endverbatim
 

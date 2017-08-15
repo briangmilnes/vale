@@ -1,13 +1,16 @@
 include "aes.s.dfy"
 include "../../arch/x64/def.s.dfy"
+include "../loopunroll/regions128.dfy" // TODO where should this really go?
 
 // Derived from NIST Special Publication 800-38D
 // http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
 
-module GCM {
+module GCMModule {
 
 import opened x64_def_s
 import opened AESModule
+import opened x64_vale_i
+import opened regions128
 
 // 6.2 
 // This is specified big endian, thank gosh.
@@ -20,13 +23,13 @@ function inc32(iv96ctr32 : Quadword) : Quadword
 // 6.3 block multiply 
 function QuadwordShr(w : Quadword, n : nat) : Quadword
 {
-  w
+  w // TODO
 }
 
 function LEBit(w : Quadword, i : nat) : bool 
   requires i < 128;
 {
-  true
+  true // TODO
 }
 
 // The specification uses a while loop but we'd like a functional specification
@@ -90,6 +93,8 @@ function AES_GCTR(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>)
     requires  0 <= n + |X| < 0x1_0000_0000 - 1;
     requires KeyReq(key);
     ensures  |AES_GCTR(n, key, ICB, X)| == |X|;
+    ensures forall i : nat :: i < |X| ==> 
+      AES_GCTR(n, key, ICB, X)[i] == QuadwordXor(X[i], AES_Encrypt(key, CB(n + i, ICB), AES_128));
 {
   if |X| == 0 then
     []
@@ -98,30 +103,47 @@ function AES_GCTR(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>)
     AES_GCTR(n + 1, key, ICB, all_but_first(X))
 }
 
-lemma lemma_AES_GCTR_empty_X_is(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>) 
-    requires  |X| == 0;
-    requires  0 <= n + |X| < 0x1_0000_0000 - 1;
-    requires KeyReq(key);
-    ensures |AES_GCTR(n, key, ICB, X)| == |X|;
-    ensures AES_GCTR(n, key, ICB, X) == [];
+// Use a ghost var of G, for ghosts, to cut the size of the code.
+datatype G = G(ghost key : seq<uint32>,
+               ghost key_heap : heaplet_id,
+               ghost exp_key : seq<uint32>,
+               ghost exp_key_heap : heaplet_id,
+               ghost iheap : heaplet_id,
+               ghost iaddr : uint64,
+               ghost isize : nat, 
+               ghost oheap : heaplet_id,
+               ghost oaddr : uint64,
+               ghost osize : nat,
+               ghost ICB   : Quadword // The input counter block.
+               )
+
+// AESGCTR is in the style of CopyNSeq proofs, see regions64.vad writeup.
+// It's mapping its input memory directly into the desired output Quadword sequence.
+
+function AESGCTR(mem : Heaplets, g : G, i : nat) : Quadword
+ requires ValidDstReg128(mem, g.iheap, g.iaddr, g.isize);
+ requires 0 <= i < g.isize;
+ requires |g.key| == Nk(AES_128);
 {
+  QuadwordXor(mem[g.iheap].quads[(addr128(g.iaddr, i))].v, AES_Encrypt(g.key, CB(i, g.ICB), AES_128))
 }
 
-lemma {:timeLimitMultiplier 6} lemma_AES_GCTR_n_is(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>)
-    requires  0 <= n + |X| < 0x1_0000_0000 - 1;
-    requires KeyReq(key);
-    ensures |AES_GCTR(n, key, ICB, X)| == |X|;
-    ensures forall i : nat :: i < |X| ==> 
-      AES_GCTR(n, key, ICB, X)[i] == QuadwordXor(X[i], AES_Encrypt(key, CB(n + i, ICB), AES_128));
-    decreases |X|;
+// Generate the whole sequence with this function that knows what the values are to
+// obviate any subsequence proof problems.
+
+function AESGCTRSeq(mem : Heaplets, g : G, count : nat) : seq<Quadword> 
+ requires ValidDstReg128(mem, g.iheap, g.iaddr, g.isize);
+ requires 0 <= count < g.isize;
+ requires |g.key| == Nk(AES_128);
+ ensures  |AESGCTRSeq(mem, g, count)| == count;
+ // Doing this here at the function definition is CRITICAL as it proves and then is available
+ // when you need it in specifications.
+ ensures forall i : nat :: 0 <= i < count ==> AESGCTRSeq(mem, g, count)[i] == AESGCTR(mem, g, i);
 {
-  if (|X| == 0) {
-    lemma_AES_GCTR_empty_X_is(n, key, ICB, X);
-  } else if |X| == 1 {
-     assert AES_GCTR(n, key, ICB, X)[0] == QuadwordXor(X[0], AES_Encrypt(key, CB(n + 0, ICB), AES_128));
-  } else {
-    lemma_AES_GCTR_n_is(n + 1, key, ICB, all_but_first(X));
-  }
+  if (count == 0) then
+    []
+  else 
+   AESGCTRSeq(mem, g, count - 1) + [AESGCTR(mem, g, count - 1)]
 }
 
 // Algorithm 4 

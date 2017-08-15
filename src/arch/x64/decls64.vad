@@ -249,15 +249,16 @@ procedure{:refined}{:instruction Ins(Mul64(src))} Mul64Wrap(operand src:uint64)
     this := this.(heaplets := old(this).heaplets);
 }
 
-//BUG: WRONG its deviding RDX:RAX by src.
+// Bryan, won't prove with the Ed(efl) in there.
 procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)
     modifies
         efl;
         rax;
         rdx;
     ensures
-        rax == old(BitwiseDiv64(rdx, rax, src));
-        rdx == old(BitwiseMod64(rdx, rax, src));
+        rax == old(BitwiseDiv128by64(rdx, rax, src)); // Will return 0 on 0 src.
+        rdx == old(BitwiseMod128by64(rdx, rax, src)); // Will return 0 on 0 src.
+//        Ed(efl) == old(src != 0);
 {
     reveal evalCodeOpaque;
     reveal x86_ValidState;

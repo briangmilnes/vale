@@ -34,11 +34,12 @@ verify_options = {
   'obj/crypto/aes/cbc.gen.dfy': BuildOptions(dafny_default_args_larith + ' /timeLimit:120'),
   'obj/crypto/aes/aes-x64/cbc.gen.dfy': BuildOptions(dafny_default_args_larith + ' /timeLimit:120'),
   'obj/crypto/aes/aes-x64/ctr.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /errorLimit:1'), # + ' /noVerify',
+  'obj/crypto/aes/aes-x64/gcm.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /errorLimit:1'), # + ' /noVerify',
+  'obj/crypto/loopunroll/regions.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3' + ' /noNLarith'),
   'obj/crypto/loopunroll/loopunroll.gen.dfy': BuildOptions(dafny_default_args_nlarith),
   'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'),
   'obj/crypto/loopunroll/memcpy.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'+ ' /noNLarith' + ' /errorLimit:3'), # + ' /traceverify' + ' /z3opt:TRACE=true' ' /trace' + ' /traceTimes' + ' /tracePOs'),
   'obj/crypto/loopunroll/chrismem.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3'),
-  'obj/crypto/loopunroll/regions.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3' + ' /noNLarith'),
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_larith),
 
@@ -79,6 +80,20 @@ if env['TARGET_ARCH']=='amd64':
   env.BuildTest(['src/crypto/aes/testctr.c', ctr_asm[0]], '', 'testctr')
 else:
   print('Not building AES-CTR for this target architecture')  
+
+
+#
+# build gcm-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  gcm_asm = env.ExtractValeCode(
+    ['src/crypto/aes/$AES_ARCH_DIR/aes.vad', 'src/crypto/aes/$AES_ARCH_DIR/gcm.vad'], # Vale source
+     'src/crypto/aes/$AES_ARCH_DIR/gcm_main.i.dfy',              # Dafny main
+     'gcm'                                                       # Base name for the ASM files and EXE
+    )
+  env.BuildTest(['src/crypto/aes/testgcm.c', gcm_asm[0]], '', 'testgcm')
+else:
+  print('Not building AES-GCM for this target architecture')
 
 #
 # build loopunroll-exe
