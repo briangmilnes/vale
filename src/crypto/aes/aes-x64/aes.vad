@@ -3,6 +3,8 @@ include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
 include{:verbatim} "../../../arch/x64/vale.i.dfy"
 include "../../../arch/x64/decls.vad"
 
+include "aes.operand.vad"
+
 #verbatim
 module aes_vale {
 
@@ -10,8 +12,11 @@ import opened x64_vale_i
 import opened dafny_wrappers_i
 import opened x64_decls_i
 import opened AESLemmasModule
+import opened aseoperands
 
 #endverbatim
+
+
 
 ///////////////////////////
 // KEY EXPANSION
@@ -501,6 +506,7 @@ procedure {:refined} AES128EncryptOneBlock(
     // Clear secrets out of registers
     Pxor(xmm2, xmm2);
 }
+
 
 procedure {:refined} AES128EncryptOneBlockStdcall(
     inline win:bool,
