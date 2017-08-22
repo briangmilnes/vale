@@ -1,0 +1,61 @@
+include "../../../arch/x64/decls.vad"
+include "../../../arch/x64/decls64.vad"
+include{:verbatim} "../../../arch/x64/print.s.dfy"
+include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
+include{:verbatim} "../../loopunroll/regions128.dfy"
+include "../../loopunroll/regions128wrappers.vad"
+include{:verbatim}   "../../loopunroll/copy128.dfy"
+include{:verbatim} "gcm_helpers.i.dfy"
+include{:verbatim} "../gcm3.s.dfy" 
+include{:verbatim} "proof.dfy" 
+// for the instructions
+include{:verbatim} "../../../lib/util/words_and_bytes.i.dfy"
+include{:verbatim} "../../../lib/util/operations.i.dfy"
+
+#verbatim
+module GCMproven {
+
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened regions128wrappers
+import opened copy128
+import opened GCMModule
+import opened GCMHelpers
+import opened proof
+import opened words_and_bytes_i
+import opened operations_i
+
+#endverbatim
+
+// This lets us pass in constant small increments for the unrolling.
+procedure {:refined} {:bridge} AddN32(inout operand dst : uint32, inline src : uint32)
+    modifies efl;
+    requires{:refined false} op32(this, @dst); // Is this going to be callable?
+    requires 0 <= src < 0x1_0000_0000;
+    requires 0 <= dst < 0x1_0000_0000;
+    requires dst + src < 0x1_0000_0000;
+    ensures  dst == BitwiseAdd32(old(dst), src);
+    ensures  dst == old(dst) + src;
+{
+   lemma_BitwiseAdd32();
+   Add32(dst, src);
+} 
+
+// Because Mov128 is refined.
+procedure {:refined} {:bridge} Mov128'(inout operand dst:Quadword, operand src:Quadword)
+  modifies
+    efl;
+  ensures
+    dst == old(src);
+{
+  Mov128(dst,src);
+}
+
+#verbatim
+}
+#endverbatim
+
