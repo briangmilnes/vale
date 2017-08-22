@@ -52,6 +52,16 @@ var{:state Quadword(2)} xmm2:Quadword;
 var{:state Quadword(3)} xmm3:Quadword;
 var{:state Quadword(4)} xmm4:Quadword;
 var{:state Quadword(5)} xmm5:Quadword;
+var{:state Quadword(6)} xmm6:Quadword;
+var{:state Quadword(7)} xmm7:Quadword;
+var{:state Quadword(8)} xmm8:Quadword;
+var{:state Quadword(9)} xmm9:Quadword;
+var{:state Quadword(10)} xmm10:Quadword;
+var{:state Quadword(11)} xmm11:Quadword;
+var{:state Quadword(12)} xmm12:Quadword;
+var{:state Quadword(13)} xmm13:Quadword;
+var{:state Quadword(14)} xmm14:Quadword;
+var{:state Quadword(15)} xmm15:Quadword;
 
 var{:state flags()} efl:uint32;
 var{:state mem()}   mem:Heaplets;
@@ -532,9 +542,7 @@ procedure{:instruction Ins(GetCf(dst))} GetCf(out operand dst:int)
 }
 */
 
-// Trying bridge to allow Pxor and AESNI instructions to work with operands. -bgm 
-
-procedure {:refined} {:bridge}   {:instruction Ins(AESNI_enc(dst, src))} AESNI_enc(inout operand dst:Quadword, operand src:Quadword)
+procedure {:refined} {:bridge} {:instruction Ins(AESNI_enc(dst, src))} AESNI_enc(inout operand dst:Quadword, operand src:Quadword)
   modifies efl;
   ensures
     dst == old(QuadwordXor(MixColumns(SubBytes(ShiftRows(dst))), src));
@@ -545,7 +553,7 @@ procedure {:refined} {:bridge}   {:instruction Ins(AESNI_enc(dst, src))} AESNI_e
     this := this.(heaplets := old(this).heaplets);
 }
 
-procedure {:refined} {:bridge}   {:instruction Ins(AESNI_enc_last(dst, src))} AESNI_enc_last(inout operand dst:Quadword, operand src:Quadword)
+procedure {:refined} {:bridge} {:instruction Ins(AESNI_enc_last(dst, src))} AESNI_enc_last(inout operand dst:Quadword, operand src:Quadword)
   modifies efl;
   ensures
     dst == old(QuadwordXor(SubBytes(ShiftRows(dst)), src));
@@ -556,7 +564,7 @@ procedure {:refined} {:bridge}   {:instruction Ins(AESNI_enc_last(dst, src))} AE
     this := this.(heaplets := old(this).heaplets);
 }
 
-procedure {:refined} {:bridge}   {:instruction Ins(AESNI_dec(dst, src))} AESNI_dec(inout operand dst:Quadword, operand src:Quadword)
+procedure {:refined} {:bridge} {:instruction Ins(AESNI_dec(dst, src))} AESNI_dec(inout operand dst:Quadword, operand src:Quadword)
   modifies efl;
   ensures
     dst == old(QuadwordXor(InvMixColumns(InvSubBytes(InvShiftRows(dst))), src));
@@ -567,7 +575,7 @@ procedure {:refined} {:bridge}   {:instruction Ins(AESNI_dec(dst, src))} AESNI_d
     this := this.(heaplets := old(this).heaplets);
 }
 
-procedure {:refined} {:bridge}   {:instruction Ins(AESNI_dec_last(dst, src))} 
+procedure {:refined} {:bridge} {:instruction Ins(AESNI_dec_last(dst, src))} 
           AESNI_dec_last(inout operand dst:Quadword, operand src:Quadword)
   modifies efl;
   ensures
@@ -579,7 +587,7 @@ procedure {:refined} {:bridge}   {:instruction Ins(AESNI_dec_last(dst, src))}
     this := this.(heaplets := old(this).heaplets);
 }
 
-procedure {:refined} {:bridge}   {:instruction Ins(AESNI_imc(dst, src))} AESNI_imc(inout operand dst:Quadword, operand src:Quadword)
+procedure {:refined} {:bridge} {:instruction Ins(AESNI_imc(dst, src))} AESNI_imc(inout operand dst:Quadword, operand src:Quadword)
   modifies efl;
   ensures
     dst == old(InvMixColumns(src));
@@ -590,7 +598,7 @@ procedure {:refined} {:bridge}   {:instruction Ins(AESNI_imc(dst, src))} AESNI_i
     this := this.(heaplets := old(this).heaplets);
 }
 
-procedure {:refined} {:bridge}   {:instruction Ins(AESNI_keygen_assist(dst, src, imm8))} 
+procedure {:refined} {:bridge} {:instruction Ins(AESNI_keygen_assist(dst, src, imm8))} 
           AESNI_keygen_assist(inout operand dst:Quadword, operand src:Quadword, operand imm8:imm8)
   modifies efl;
   ensures
@@ -617,7 +625,7 @@ procedure {:refined} {:bridge} {:instruction Ins(Pxor(dst, src))} Pxor(inout ope
     this := this.(heaplets := old(this).heaplets);
 }
 
-procedure {:refined} {:instruction Ins(Pshufd(dst, src, permutation))} 
+procedure {:refined} {:bridge} {:instruction Ins(Pshufd(dst, src, permutation))} 
           Pshufd(inout operand dst:Quadword, operand src:Quadword, operand permutation:imm8)
   modifies efl;
   ensures
@@ -632,7 +640,7 @@ procedure {:refined} {:instruction Ins(Pshufd(dst, src, permutation))}
     this := this.(heaplets := old(this).heaplets);
 }
 
-procedure {:refined} {:instruction Ins(VPSLLDQ(dst, src, OConst(4)))} VPSLLDQ4(inout operand dst:Quadword, operand src:Quadword)
+procedure {:refined} {:bridge} {:instruction Ins(VPSLLDQ(dst, src, OConst(4)))} VPSLLDQ4(inout operand dst:Quadword, operand src:Quadword)
   modifies efl;
   ensures
     dst == old(Quadword(0, src.lo, src.mid_lo, src.mid_hi));

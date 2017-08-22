@@ -62,6 +62,7 @@ datatype ins =
 | Pshufd(dstPshufd:operand, srcPshufd:operand, permutationPshufd:operand)
 | VPSLLDQ(dstVPSLLDQ:operand, srcVPSLLDQ:operand, countVPSLLDQ:operand)
 | MOVDQU(dstMovdqu:operand, srcMovdqu:operand)
+| MOVDxmmrmm32(dstMOVDxmmmrmm32:operand, srcMOVDxmmrmm32:operand)
 
 datatype codes = CNil | va_CCons(hd:code, tl:codes)
 
@@ -524,7 +525,7 @@ function clear_low_byte(n:uint32) : uint32
 }
 
 function bswap32(x:uint32) : uint32 { 
-    var bytes := WordToBytes(x);
+   var bytes := WordToBytes(x);
     BytesToWord(bytes[3], bytes[2], bytes[1], bytes[0])
 }
 
@@ -609,6 +610,7 @@ predicate ValidInstruction(s:state, ins:ins)
         case Pshufd(dst, src, permutation) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src) && ValidImm8(s, permutation)
         case VPSLLDQ(dst, src, count) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src) && ValidImm8(s, count) && eval_op32(s, count) == 4
         case MOVDQU(dst, src) => Valid128BitDestinationOperand(s, dst) && Valid128BitSourceOperand(s, src) && !src.OConst? && (IsXmmOperand(dst) || IsXmmOperand(src))
+        case MOVDxmmrmm32(dst, src) => Valid128BitDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src) && !src.OConst? && IsXmmOperand(dst)
 }
 
 lemma {:axiom} lemma_division_in_bounds(a:uint32, b:uint32)
@@ -679,6 +681,7 @@ function insObs(s:state, ins:ins):seq<observation>
         case Pshufd(dst, src, permutation) => operandObs(s, 128, dst) +  operandObs(s, 128, src)
         case VPSLLDQ(dst, src, count) => operandObs(s, 128, dst) + operandObs(s, 128, src)
         case MOVDQU(dst, src) => operandObs(s, 128, dst) + operandObs(s, 128, src)
+        case MOVDxmmrmm32(dst, src) => operandObs(s, 128, dst) + operandObs(s, 32, src)
 }
 
 predicate evalIns(ins:ins, s:state, r:state)
@@ -800,7 +803,8 @@ predicate evalIns(ins:ins, s:state, r:state)
                                                                              select_word(s.xmms[src.r.xmm], byte_to_bits(eval_op32(s,permutation)).hi)
                                                                              ), r, obs)
             case VPSLLDQ(dst, src, count) => evalUpdateXmmsAndHavocFlags(s, dst, Quadword(0, s.xmms[src.r.xmm].lo, s.xmms[src.r.xmm].mid_lo, s.xmms[src.r.xmm].mid_hi), r, obs)
-            case MOVDQU(dst, src) => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src), r, obs)
+            case MOVDQU(dst, src)       => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src), r, obs)
+            case MOVDxmmrmm32(dst, src) => evalUpdate128AndHavocFlags(s, dst, Quadword(eval_op32(s, src), 0,0,0), r, obs)
 }
 
 predicate evalBlock(block:codes, s:state, r:state)

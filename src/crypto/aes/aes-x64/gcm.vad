@@ -5,10 +5,13 @@ include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
 include{:verbatim} "../../loopunroll/regions128.dfy"
 include "../../loopunroll/regions128wrappers.vad"
 include{:verbatim}   "../../loopunroll/copy128.dfy"
-include "aes.vad"
+include "aes.vad" 
 include{:verbatim} "gcm_helpers.i.dfy"
 include{:verbatim} "../gcm3.s.dfy" 
-include{:verbatim} "proof.dfy" 
+include "gcm.proven.vad"
+// for the instructions
+include{:verbatim} "../../../lib/util/words_and_bytes.i.dfy"
+include{:verbatim} "../../../lib/util/operations.i.dfy"
 
 #verbatim
 module GCM {
@@ -19,50 +22,113 @@ import opened x64_print_s
 import opened dafny_wrappers_i
 import opened x64_decls_i
 import opened x64_decls64_i
-import opened aes_vale
+//import opened aes_vale
 import opened regions128wrappers
 import opened copy128
 import opened GCMModule
 import opened GCMHelpers
 import opened proof
+import opened words_and_bytes_i
+import opened operations_i
+import opened aes_vale
 
 #endverbatim
 
+/*
+procedure {:refined} {:bridge}
+{:instruction Ins(Pxor(dst, src))} Pxor'(inout operand dst:Quadword, operand src:Quadword)
+  modifies efl;
+  ensures
+    dst == old(QuadwordXor(dst, src));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := MaybeUpdateOk(old(this), this);
+    this := this.(heaplets := old(this).heaplets);
+}
+*/
+
+/*
+procedure {:refined} {:bridge}   {:instruction Ins(MOVDQU(dst, MakeHeapOp(src, offset, taint))) } 
+          Load128'(out operand dst:Quadword, operand src:uint64, inline offset:int, 
+                  inline taint:taint, ghost id:heaplet_id)
+    requires/ensures
+        ValidSrcAddr(mem, id, src + offset, 128, taint);
+    reads mem;
+    modifies efl;
+    ensures
+        dst == mem[id].quads[src + offset].v;
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+procedure BUG(operand ipter  : uint64,
+          ghost    iheap  : heaplet_id,
+          ghost    iaddr  : uint64, 
+          ghost    isize  : uint64,
+          ghost    off    : nat,
+          inline   add    : nat, 
+          inout operand tmpctr : Quadword, 
+          inout operand tmp : Quadword)
+  requires{:refined false}
+      @ipter  is OReg;
+
+  requires
+        ValidSrcRegPtrs128(mem, iheap, iaddr, isize, Secret, ipter, off, add);
+
+  modifies xmm0; efl; mem;
+{
+     Load128'(tmp,    ipter, add, Secret, iheap);         // Load the plaintext.
+     LoadArray128 (tmp,    ipter, add, Secret, iheap);         // Load the plaintext.
+     Pxor(tmp,tmp);
+}    
+*/
+
 // Test to move to a ghost G.
+// Key for AES is in r8, 16 byte aligned.
 procedure {:bridge} {:timeLimitMultiplier 3} AESGCTR128
          (ghost g: G,
           operand ipter  : uint64,
           operand optr  : uint64,
           ghost    off    : nat,
           inline   add    : nat, 
-          inout operand tmpctr : Quadword, 
-          inout operand tmp : Quadword)
-
-    modifies mem; efl;
+          operand       icb : Quadword,    // The ICB in the left high 92 bits.
+          operand       ctr : uint32,      // The counter that we read from and add a fixed offset.
+          inout operand addtmp : uint32,   // Where we add the ctr.
+          inout operand tmpctr : Quadword, // Where we build the ICB||CTR.
+          inout operand tmp    : Quadword  // A tmp for AES plus where we put the plain text.
+)
+    reads r8;
+    modifies mem; efl; xmm0; rsi;
     requires DistinctORegs3(@ipter, @optr, @tmp);
 
     requires/ensures 
         off + add < g.isize;
         ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, g.isize, Public, ipter, off, add);
         ValidDstRegPtrs128(mem, g.oheap, g.oaddr, g.isize,        optr, off, add);
-        WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add, Public,
-                   Copy128Seq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
+//        WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add, Public,
+//                   Copy128Seq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
 
     ensures 
          OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
          OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-         WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add + 1, Public,
-                   Copy128Seq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
+//         WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add + 1, Public,
+//                   Copy128Seq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
 {
-//   Load128(xmm0, rsi, 0, Public, ctr_heap_id);                 // Load the counter into xmm0.
-//   Mov64(r8, rdi);                                             // key in r8, 16 byte aligned.   
-// ARGH, AES does not actually use xmm0 as an operand! It's given xmm0 as a ghost.
-//   AES128EncryptOneBlock(g.key, xmm0, g.expanded_key, Secret, g.expaned_key_heap);   // Encrypt the counter back into xmm0.
-   LoadArray128 (tmp1,    ipter, add, Secret, g.iheap);         // Load the plaintext.
-//   Pxor(xmm0, tmp);                                           // Xor the encrypted counter with the plaintext.
-   StoreArray128(optr,    xmm0, add, Public, g.oheap);
-}     
 
+   Mov(addtmp, ctr);                                 // Get the ctr.
+   AddN32(addtmp, add);                              // Add our offset to it: 0, 1, ...; const folding elim here?
+   Mov32ToLow128(tmp, addtmp);                       // Put low 32 bits into an xmm tmp.
+   Mov128'(tmpctr, icb);                              // Get the IV+32 bit counter.
+   Pxor(tmpctr, tmp);                                // ICB (96 bits) || ctr for this offset.
+   AES128EncryptOneBlockOp(g.key, tmpctr, g.exp_key, Secret, tmpctr, tmp, g.key_heap); // Encrypt the counter back into tmpctr.
+   LoadArray128(tmp, ipter, add, Secret, g.iheap);   // Load the plaintext into tmp.
+   Pxor(tmp, tmpctr);                                // Xor the encrypted counter with the plaintext.
+   StoreArray128(optr,   tmp, add, Public, g.oheap); // Write it back to the output.
+}     
 
 /*
 
@@ -112,6 +178,8 @@ procedure {:recursive} {:timeLimitMultiplier 1} AESGCTRUnrolled
    }
 }
 */
+
+/*
 
 procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
           (ghost g : G,
@@ -188,7 +256,7 @@ procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
   assert g.isize == index; 
   assert iendptr - iptr == 0;
 }
-
+*/
 
 #verbatim
 } // end module CGM

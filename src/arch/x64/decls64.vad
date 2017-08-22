@@ -13,6 +13,23 @@ import opened x64_decls_i
 import opened operations_i
 #endverbatim
 
+// Intel assemblers will just look at the register types and do the right thing.
+// But Vale wants to know the argument types so needs a special instruction which writes as a MOVD.
+procedure{:refined}  {:bridge} {:instruction Ins(MOVDxmmrmm32(dst, src))} MOVDxmmrmm32(inout operand dst: Quadword, operand src:uint32)
+  requires{:refined false}
+           @dst is OReg;
+           @src is OReg;
+  modifies
+    efl;
+  ensures
+    dst == Quadword(old(src), 0, 0, 0);
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
 procedure{:operand} Mem_in(operand base:int, inline offset:int, inline taint:taint, ghost id:heaplet_id) returns(mem_operand o:int)
     reads
         mem;

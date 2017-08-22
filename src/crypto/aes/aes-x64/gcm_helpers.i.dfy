@@ -20,7 +20,12 @@ import opened AESModule
 import opened AESHelpersModule
 import opened GCMModule
 
-
-
+lemma lemma_BitwiseAdd32()
+    ensures  forall x:uint32, y:uint32 :: x + y < 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y
+    ensures  forall x:uint32, y:uint32 :: x + y >= 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y - 0x1_0000_0000;
+    ensures  forall x:uint32 :: BitwiseAdd32(x, 0) == x;
+{
+    reveal_BitwiseAdd32();
+}
 
 }

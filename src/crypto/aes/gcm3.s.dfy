@@ -115,7 +115,7 @@ datatype G = G(ghost key : seq<uint32>,
                ghost oaddr : uint64,
                ghost osize : nat,
                ghost ICB   : Quadword // The input counter block.
-               )
+               ) 
 
 // AESGCTR is in the style of CopyNSeq proofs, see regions64.vad writeup.
 // It's mapping its input memory directly into the desired output Quadword sequence.

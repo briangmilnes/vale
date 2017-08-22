@@ -246,6 +246,7 @@ method printIns(ins:ins)
         case Pshufd(dst, src, permutation) => print ("  pshufd "); printOprnd(dst); print(", "); printOprnd(src); print(", "); printOprnd(permutation); print("\n");
         case VPSLLDQ(dst, src, count) => print ("  vpslldq "); printOprnd(dst); print(", "); printOprnd(src); print(", "); printOprnd(count); print("\n");
         case MOVDQU(dst, src) => print ("  movdqu "); printXmmOprnd(dst); print(", "); printXmmOprnd(src); print("\n");
+        case MOVDxmmr32(dst, src) => print ("  movd "); printXmmOprnd(dst); print(", "); printOprnd(src); print("\n");
 }
 
 method printBlock(b:codes, n:int) returns(n':int)
