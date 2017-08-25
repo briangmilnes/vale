@@ -82,7 +82,9 @@ function va_update_memory(sM:va_state, sK:va_state):va_state { sK.(heap := sM.he
 function va_update_flags(sM:va_state, sK:va_state):va_state { sK.(flags := sM.flags) }
 function va_update_stack(sM:va_state, sK:va_state):va_state { sK.(stack := sM.stack) }
 
+// Is this a naming bug?
 predicate va_is_src_operand_imm8(o:opr, s:va_state) { o.OConst? && 0 <= o.n < 256 }
+predicate va_is_src_operand_uint8(o:opr, s:va_state) { o.OConst? && 0 <= o.n < 256 }
 
 predicate va_is_src_operand_uint32(o:opr, s:va_state) { (o.OConst? && IsUInt32(o.n)) || (o.OReg? && !o.r.X86Xmm?) }
 predicate va_is_dst_operand_uint32(o:opr, s:va_state) { o.OReg? && !o.r.X86Xmm? }
@@ -95,6 +97,12 @@ predicate va_is_dst_operand_Quadword(o:opr, s:va_state) { o.OReg? && o.r.X86Xmm?
 
 function va_eval_operand_imm8(s:va_state, o:opr):uint32
     requires va_is_src_operand_imm8(o, s);
+{
+    o.n
+}
+
+function va_eval_operand_uint8(s:va_state, o:opr): uint8
+    requires va_is_src_operand_uint8(o, s);
 {
     o.n
 }

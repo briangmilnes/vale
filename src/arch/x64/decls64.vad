@@ -13,12 +13,219 @@ import opened x64_decls_i
 import opened operations_i
 #endverbatim
 
+// Bryan, won't prove with the Ed(efl) in there.
+procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)
+    modifies
+        efl;
+        rax;
+        rdx;
+    ensures
+        Ed(efl) == old(src != 0);
+        old(src != 0) ==> rax == old(BitwiseDiv128by64(rdx, rax, src)); // Will return 0 on 0 src.
+        old(src != 0) ==> rdx == old(BitwiseMod128by64(rdx, rax, src)); // Will return 0 on 0 src.
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal BitwiseDiv128by64;
+    reveal BitwiseMod128by64;
+    this := MaybeUpdateOk(old(this), this);
+    this := this.(heaplets := old(this).heaplets);
+    assert Ed(efl) == old(src != 0);
+    assert old(src != 0) ==> rax == old(BitwiseDiv128by64(rdx, rax, src)); 
+    assert old(src != 0) ==> rdx == old(BitwiseMod128by64(rdx, rax, src));
+}   
+
+/*
+procedure{:refined}  {:bridge} {:instruction Ins(POR(dst, src))} POR(inout operand dst: Quadword, operand src:Quadword)
+  modifies efl;
+  ensures
+    dst == old(QuadwordOr(dst, src));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+
+procedure{:refined}  {:bridge} {:instruction Ins(MOVDQA(dst, src))} MOVDQA_xmm_xmm(inout operand dst: Quadword, operand src:Quadword)
+  requires{:refined false}
+      @dst is OReg;
+      @src is OReg;
+   ensures
+    dst == old(src);
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+procedure{:refined}  {:bridge} {:instruction Ins(VMOVDQA(dst, MakeHeapOp(src, offset, taint)))} 
+       VMOVDQA_xmm_m128(inout operand dst: Quadword, operand src: uint64, inline offset : int, inline taint:taint, ghost id:heaplet_id)
+    reads
+        mem;
+    requires{:refined false}
+        @dst is OReg;
+        @src is OReg;
+    requires
+        ValidSrcAddr(mem, id, src + offset, 128, taint);
+    ensures
+        ValidSrcAddr(mem, id, old(src) + offset, 128, taint);
+        dst == mem[id].quads[old(src) + offset].v;
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+// PSHUFD and VPSHUFD are different only in DEST[VLMAX-1:128] (Unmodified) vs <- 0 which means that
+// if we extend this to a ymm register, VPSHUFD zeros the upper bits but PSHUFD does not.
+// So this is identical to PSHUFD at the moment. 
+procedure{:refined} {:bridge} {:instruction Ins(VPSHUFD(dst, src, imm8))} 
+                     VPSHUFD(inout operand dst: Quadword, operand src:Quadword, operand imm8 : uint8)
+  modifies efl;
+  ensures
+    dst == old(Quadword(select_word(src, byte_to_bits(imm8).lo),
+                        select_word(src, byte_to_bits(imm8).mid_lo),
+                        select_word(src, byte_to_bits(imm8).mid_hi),
+                        select_word(src, byte_to_bits(imm8).hi)));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+procedure{:refined}  {:bridge} {:instruction Ins(VPXOR(dst, src1, src2))} VPXOR(inout operand dst: Quadword, operand src1:Quadword, operand src2:Quadword)
+  ensures
+    dst == old(QuadwordXor(src1, src2));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+procedure{:refined} {:bridge} {:instruction Ins(PSLLD(dst, OConst(imm8)))} 
+                    PSLLD(inout operand dst: uint64, inline imm8 : uint8)
+    modifies
+        efl;
+    requires
+        0 <= imm8 <= 64;
+    ensures
+        dst == old(BitwiseShl64(dst, imm8));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+procedure{:refined}  {:bridge} {:instruction Ins(PSLLDQ(dst, OConst(imm8)))} PSLLDQ(inout operand dst: Quadword, inline imm8 : uint8)
+    modifies
+        efl;
+    requires
+        0 <= imm8 <= 16; // Intel does not really require this, just sets it to 16 if it's too big.
+    ensures
+        dst == old(Uint128ToQuadword(BitwiseShl128(QuadwordToUint128(dst), 8 * imm8)));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+procedure{:refined} {:bridge} {:instruction Ins(PSRLD(dst, OConst(imm8)))} 
+                    PSRLD(inout operand dst: uint64, inline imm8 : uint8)
+    modifies
+        efl;
+    requires
+        0 <= imm8 <= 64;
+    ensures
+        dst == old(BitwiseShr64(dst, imm8));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+procedure{:refined}  {:bridge} {:instruction Ins(PSRLDQ(dst, OConst(imm8)))} PSRLDQ(inout operand dst: Quadword, inline imm8 : uint8)
+    modifies
+        efl;
+    requires
+        0 <= imm8 <= 16; // Intel does not really require this, just sets it to 16 if it's too big.
+    ensures
+        dst == old(Uint128ToQuadword(BitwiseShr128(QuadwordToUint128(dst), 8 * imm8)));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+*/
+
+/*
+#verbatim
+// It's not clear to me what is the best way to allow proof.
+// 0b00010000 
+predicate uint8_bit4(b : uint8) {
+ (b / 16) % 2 == 1
+}
+
+predicate uint8_bit0(b : uint8) {
+ b % 2 == 1
+}         
+#endverbatim
+
+procedure{:refined}  {:bridge} {:instruction Ins(PCLMULQDQ(dst, src, OConst(imm8)))} PCLMULQDQ(inout operand dst: Quadword, operand src:Quadword, inline imm8: uint8)
+  requires{:refined false}
+           @dst is OReg;
+           @src is OReg;
+// pg 893
+// 0 0 CL_MUL( dst[63:0], src[63:0])
+// 0 1 CL_MUL( dst[63:0], src[127:64] )
+// 1 0 CL_MUL( dst[127:64], src[63:0] )
+// 1 1 CL_MUL( dst[127:64], src[127:64] )
+  let src_low := lowerUpper64(old(src).lo, old(src).mid_lo);
+  let src_hi  := lowerUpper64(old(src).mid_hi, old(src).hi);
+  let dst_low := lowerUpper64(old(dst).lo, old(dst).mid_lo);
+  let dst_hi  := lowerUpper64(old(dst).mid_hi, old(dst).hi);
+  ensures 
+   (!uint8_bit4(imm8) && !uint8_bit0(imm8)) ==> dst == Uint128ToQuadword(CL_MUL(dst_low, src_low))
+   (!uint8_bit4(imm8) &&  uint8_bit0(imm8)) ==> dst == Uint128ToQuadword(CL_MUL(dst_low, src_hi))
+   ( uint8_bit4(imm8) && !uint8_bit0(imm8)) ==> dst == Uint128ToQuadword(CL_MUL(dst_hi, src_low))
+   ( uint8_bit4(imm8) && uint8_bit0(imm8))  ==> dst == Uint128ToQuadword(CL_MUL(dst_hi, src_hi))
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal lowerUpper64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
+procedure{:refined}  {:bridge} {:instruction Ins(VPCLMULQDQ(dst, src1, src2, OConst(imm8)))} PCLMULQDQ(inout operand dst: Quadword, operand src1 : Quadword, operand src2 : Quadword, inline imm8: uint8)
+  requires{:refined false}
+           @dst is OReg;
+           @src is OReg;
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal lowerUpper64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
+
 // Intel assemblers will just look at the register types and do the right thing.
 // But Vale wants to know the argument types so needs a special instruction which writes as a MOVD.
 procedure{:refined}  {:bridge} {:instruction Ins(MOVDxmmrmm32(dst, src))} MOVDxmmrmm32(inout operand dst: Quadword, operand src:uint32)
   requires{:refined false}
            @dst is OReg;
            @src is OReg;
+           Valid32BitSourceOperand(to_state(this), @src);
+           ValidOperand(to_state(this), 32, @src);
   modifies
     efl;
   ensures
@@ -29,6 +236,7 @@ procedure{:refined}  {:bridge} {:instruction Ins(MOVDxmmrmm32(dst, src))} MOVDxm
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
 }
+
 
 procedure{:operand} Mem_in(operand base:int, inline offset:int, inline taint:taint, ghost id:heaplet_id) returns(mem_operand o:int)
     reads
@@ -266,25 +474,6 @@ procedure{:refined}{:instruction Ins(Mul64(src))} Mul64Wrap(operand src:uint64)
     this := this.(heaplets := old(this).heaplets);
 }
 
-// Bryan, won't prove with the Ed(efl) in there.
-procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)
-    modifies
-        efl;
-        rax;
-        rdx;
-    ensures
-        rax == old(BitwiseDiv128by64(rdx, rax, src)); // Will return 0 on 0 src.
-        rdx == old(BitwiseMod128by64(rdx, rax, src)); // Will return 0 on 0 src.
-//        Ed(efl) == old(src != 0);
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    reveal BitwiseDiv128by64;
-    reveal BitwiseMod128by64;
-    this := MaybeUpdateOk(old(this), this);
-    this := this.(heaplets := old(this).heaplets);
-}
-
 procedure{:refined}{:bridge}{:instruction Ins(And64(dst, src))} And64(inout operand dst:uint64, operand src:uint64)
     modifies
         efl;
@@ -328,6 +517,7 @@ procedure{:refined}{:bridge}{:instruction Ins(Shr64(dst, src))} Shr64(inout oper
     this := MaybeUpdateOk(old(this), this);
     this := this.(heaplets := old(this).heaplets);
 }
+*/
 
 #verbatim
 } // end module

@@ -178,6 +178,16 @@ function QuadwordXor(a:Quadword, b:Quadword) : Quadword
              BitwiseXor(a.hi, b.hi))
 }
 
+
+function QuadwordOr(a:Quadword, b:Quadword) : Quadword
+{
+    Quadword(BitwiseOr(a.lo, b.lo),
+             BitwiseOr(a.mid_lo, b.mid_lo),
+             BitwiseOr(a.mid_hi, b.mid_hi),
+             BitwiseOr(a.hi, b.hi))
+}
+
+
 lemma {:axiom} lemma_BitMulEquiv(x:uint32, y:uint32)
     requires 0 <= x * y < 0x1_0000_0000;
     ensures  BitsToWord(BitMul(WordToBits(x), WordToBits(y))) == x * y;
@@ -235,33 +245,72 @@ function{:opaque} BitwiseAnd64_opaque(x:uint64, y:uint64):uint64 { BitsToWord64(
 function BitwiseAnd64(x:uint64, y:uint64):uint64 { BitwiseAnd64_opaque(x, y) }
 
 lemma{:axiom} lemma_bitwise_shifts64(x:uint64)
-    requires x < 64
-    ensures  WordToBits64(x) < 64
+    requires x <= 64
+    ensures  WordToBits64(x) <= 64
 
-function{:opaque} BitShl64(x:bv64, y:bv64):bv64 requires y < 64 { x << y }
+function{:opaque} BitShl64(x:bv64, y:bv64):bv64 requires y <= 64 { x << y }
 function{:opaque} BitwiseShl64_opaque(x:uint64, y:uint64):uint64
-    requires y < 64
+    requires y <= 64
 {
     lemma_bitwise_shifts64(y);
     BitsToWord64(BitShl64(WordToBits64(x), WordToBits64(y)))
 }
 function BitwiseShl64(x:uint64, y:uint64):uint64
-    requires y < 64
+    requires y <= 64
 {
     BitwiseShl64_opaque(x, y)
 }
 
-function{:opaque} BitShr64(x:bv64, y:bv64):bv64 requires y < 64 { x >> y }
+function{:opaque} BitShr64(x:bv64, y:bv64):bv64 requires y <= 64 { x >> y }
 function{:opaque} BitwiseShr64_opaque(x:uint64, y:uint64):uint64
-    requires y < 64
+    requires y <= 64
 {
     lemma_bitwise_shifts64(y);
     BitsToWord64(BitShr64(WordToBits64(x), WordToBits64(y)))
 }
 function BitwiseShr64(x:uint64, y:uint64):uint64
-    requires y < 64
+    requires y <= 64
 {
     BitwiseShr64_opaque(x, y)
 }
+
+// Shifting of 128 bit quantities. Intel allows arbitrarily large shifts but we limit them
+// to shifting ALL the bits off.
+lemma{:axiom} lemma_bitwise_shifts128(x:uint128)
+    requires x <= 128
+    ensures  WordToBits128(x) <= 128
+
+function{:opaque} BitShl128(x:bv128, y:bv128):bv128 requires y <= 128 { x << y }
+function{:opaque} BitwiseShl128_opaque(x:uint128, y:uint128):uint128
+    requires y <= 128
+{
+    lemma_bitwise_shifts128(y);
+    BitsToWord128(BitShl128(WordToBits128(x), WordToBits128(y)))
+}
+
+function BitwiseShl128(x:uint128, y:uint128):uint128
+    requires y <= 128 
+{
+    BitwiseShl128_opaque(x, y)
+}
+
+function{:opaque} BitShr128(x:bv128, y:bv128):bv128 requires y <= 128 { x >> y }
+function{:opaque} BitwiseShr128_opaque(x:uint128, y:uint128):uint128
+    requires y <= 128
+{
+    lemma_bitwise_shifts128(y);
+    BitsToWord128(BitShr128(WordToBits128(x), WordToBits128(y)))
+}
+function BitwiseShr128(x:uint128, y:uint128):uint128
+    requires y <= 128
+{
+    BitwiseShr128_opaque(x, y)
+}
+
+// For intel's PCLMULQDQ.
+function CL_MUL(x : uint64, y : uint64) : uint128
+{
+  (x * y) % 0x1_00000000_00000000_00000000_00000000
+} 
 
 } // end module operations_s

@@ -66,4 +66,32 @@ lemma {:axiom} lemma_BitsToWordToBits64(b:bv64)
 lemma {:axiom} lemma_WordToBitsToWord64(w:uint64)
     ensures BitsToWord64(WordToBits64(w)) == w;
 
+// Now for 128 bit integers.
+function method {:opaque} BitsToWord128(b:bv128) : uint128 { b as uint128 }
+function method {:opaque} WordToBits128(w:uint128) : bv128 { w as bv128 }
+
+lemma {:axiom} lemma_BitsToWordToBits128(b:bv128)
+    ensures WordToBits128(BitsToWord128(b)) == b;
+
+lemma {:axiom} lemma_WordToBitsToWord128(w:uint128)
+    ensures BitsToWord128(WordToBits128(w)) == w;
+
+function Uint128ToQuadword(x : uint128) : Quadword
+{
+  Quadword(x % 0x1_00000000, 
+           (x / 0x1_00000000) % 0x1_00000000, 
+           (x / 0x1_00000000_00000000) % 0x1_00000000, 
+           (x / 0x1_00000000_00000000_00000000) % 0x1_00000000)
+}
+
+
+function QuadwordToUint128(x : Quadword) : uint128
+{
+  (x.hi    * 0x1_00000000_00000000_00000000 + 
+  x.mid_hi * 0x1_00000000_00000000 + 
+  x.mid_lo * 0x1_00000000 +
+  x.lo) % 0x1_00000000_00000000_00000000_00000000
+}
+
+
 } // end module types_s

@@ -287,7 +287,18 @@ method printIns(ins:ins)
         case Pshufd(dst, src, permutation) => print ("  pshufd ");  printOprnd(permutation); print(", "); printOprnd(src); print(", "); printOprnd(dst); print("\n"); 
         case VPSLLDQ(dst, src, count)      => print ("  vpslldq "); printOprnd(count); print(", "); printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case MOVDQU(dst, src)              => print ("  movdqu ");  printOprnd(src); print(", "); printOprnd(dst); print("\n");
-        case MOVDxmmr32(dst, src)         => print ("  movd ");    printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case MOVDxmmr32(dst, src)          => print ("  movd ");    printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case PCLMULQDQ(dst, src, imm8)     => print ("  pclmulqdq "); printOprnd(imm8); print(", "); printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case VPCLMULQDQ(dst, src1, src2, imm8)  => print ("  vpclmulqdq "); printOprnd(imm8); print(", "); printOprnd(src1); print(", "); printOprnd(src2); print(", "); printOprnd(dst); print("\n");
+        case VMOVDAQ(dst, src)             => print ("  vmovdaq "); printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case VPSHUFD(dst, src, imm8) => print ("  vpshufd "); print(","); printOprnd(imm8); print(", "); printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case VPXOR(dst, src1, src2) => print ("  vpxor "); printOprnd(src1); print(", "); printOprnd(src2); print(", "); printOprnd(dst); print("\n");
+        case MOVDQA(dst, src)              => print ("  movdqa ");  printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case POR(dst, src)                 => print ("  por ");    printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case PSLLDQ(dst, imm8)             => print ("  pslldq "); printOprnd(imm8); print(", "); printOprnd(dst); print("\n");
+        case PSLLD (dst, imm8)             => print ("  pslld  "); printOprnd(imm8); print(", "); printOprnd(dst); print("\n");
+        case PSRLDQ(dst, imm8)             => print ("  psrldq "); printOprnd(imm8); print(", "); printOprnd(dst); print("\n");
+        case PSRLD (dst, imm8)             => print ("  psrld  "); printOprnd(imm8); print(", "); printOprnd(dst); print("\n");
 }
 
 method printBlock(b:codes, n:int) returns(n':int)
