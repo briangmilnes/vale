@@ -23,8 +23,7 @@ datatype taint = Public | Secret
 
 // These are actually all of the registers in an X64 except for the mm and the ymm.
 datatype reg8   = AL | CL | DL | BL | AH | CH | DH | BH | BPL | SPL | DIL | SIL | R8L | R9L | R10L | R11L | R12L | R13L | R14L | R15L
-// These R names for 16 bit registers have _16 appended as Intel uses the same names twice.
-datatype reg16  = X | CX | DX | BX | SP | BP | SI | DI | R8_16 | R9_16 | R10_16 | R11_16 | R12_16 | R13_16 | R14_16 | R15_16
+datatype reg16  = X | CX | DX | BX | SP | BP | SI | DI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
 datatype reg32  = EAX | ECX | EDX | EBX | ESP | EBP | ESI | EDI | R8D | R9D | R10D | R11D | R12D | R13D | R14D | R15D
 datatype reg64  = RAX | RBX | RCX | RDX | RDI | RSI | RBP | RSP | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
 datatype reg128 = xmm0 | xmm1 | xmm2 | xmm3 | xmm4 | xmm5 | xmm6 | xmm7 | xmm8 | xmm9 | xmm10 | xmm11 | xmm12 | xmm13 | xmm14 | xmm15

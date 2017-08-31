@@ -40,6 +40,7 @@ verify_options = {
   'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'),
   'obj/crypto/loopunroll/memcpy.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'+ ' /noNLarith' + ' /errorLimit:3'), # + ' /traceverify' + ' /z3opt:TRACE=true' ' /trace' + ' /traceTimes' + ' /tracePOs'),
   'obj/crypto/loopunroll/chrismem.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3'),
+  'obj/crypto/loopunroll/calleesave.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3' + ' /noNLarith'),
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_larith),
 
@@ -147,6 +148,19 @@ if env['TARGET_ARCH']=='amd64':
   env.BuildTest(['src/crypto/loopunroll/testseq.c', seq_asm[0]], '', 'testseq')
 else:
   print('Not building Seq for this target architecture')  
+
+#
+# build calleesave-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  calleesave_asm = env.ExtractValeCode(
+    ['src/crypto/loopunroll/calleesave.vad'], # Vale source
+     'src/crypto/loopunroll/calleesave_main.i.dfy',
+     'calleesave'
+    )
+  env.BuildTest(['src/crypto/loopunroll/testcalleesave.c', calleesave_asm[0]], '', 'testcalleesave')
+else:
+  print('Not building Callee Save for this target architecture')  
 
 #
 # build memcpy-exe

@@ -63,7 +63,7 @@ datatype ins =
 | VPSLLDQ(dstVPSLLDQ:operand, srcVPSLLDQ:operand, countVPSLLDQ:operand)
 // New instructions for aes-gcm.
 | MOVDQU(dstMovdqu:operand, srcMovdqu:operand)
-| MOVDxmmrmm32(dstMOVDxmmmrmm32:operand, srcMOVDxmmrmm32:operand)
+| MOVD_xmm_rmm32(dstMOVDxmmmrmm32:operand, srcMOVDxmmrmm32:operand)
 | PCLMULQDQ(dstPCLMULQDQ : operand, srcPCLMULQDQ : operand, imm8: operand)
 | VPCLMULQDQ(dstVPCLMULQDQ : operand, src1VPCLMULQDQ : operand, src2VPCLMULQDQ : operand, imm8: operand)
 | VMOVDQA(dstVMOVDQA : operand, srcVMODAQ : operand)
@@ -75,6 +75,9 @@ datatype ins =
 | PSLLDQ (dstPSLLDQ:operand, imm8: operand)
 | PSRLD  (dstPSRLD:operand, imm8: operand)
 | PSRLDQ (dstPSRLDQ:operand, imm8: operand)
+| PUSH   (srcPUSH: operand)  // r64
+| POP    (dstPOP: operand)   // r64
+| MOV_m64_imm32(dstLoc: operand, imm32 : operand)
 
 datatype codes = CNil | va_CCons(hd:code, tl:codes)
 
@@ -430,6 +433,8 @@ predicate evalUpdateAndHavocFlags64(s:state, o:operand, v:uint64, r:state, obs:s
 // Bryan, is this right?
 // This has to be specific to div as its registers are fixed.
 predicate evalUpdateAndHavocFlagsDiv(s:state, src: operand, div:uint64, mod: uint64, r:state, obs:seq<observation>)
+    requires src.OReg?;
+    requires ValidRegister(s.regs, src.r);
     requires Valid64BitSourceOperand(s, src);
 {
     match src
@@ -449,6 +454,50 @@ predicate evalUpdateXmmsAndMaintainFlags(s:state, o:operand, v:Quadword, r:state
     requires ValidXmmOperand(s, o);
 {
     r == s.(xmms := s.xmms[o.r.xmm := v], trace := s.trace + obs)
+}
+
+// Very ugly to have to do this typing but Dafny seems to treat the
+// uint32s in the map display expression as ints.
+function makeFrame2(v : uint64) : Frame
+{
+  var low  : uint32  := lower64(v);
+  var high : uint32  := upper64(v);
+  var m    : map<int,uint32> := map[];
+  m[0 := low][1 := high]
+}
+
+// TODO flags? 
+predicate evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
+    requires src.OReg?;
+    requires ValidRegister(s.regs, src.r);
+    requires Valid64BitSourceOperand(s, src);
+{
+    match src
+      case OReg(reg)    => r == s.(regs := s.regs, flags := r.flags, trace := s.trace + obs,
+                                  stack := s.stack + [makeFrame2(v)])
+      case OStack(slot)       => r == s.(ok := false) // not yet supported
+      case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
+      case OConst(n)          => r == s.(ok := false) // not yet supported
+}
+
+predicate evalPop(s : state, src : operand, r:state, obs:seq<observation>)
+    requires src.OReg?;
+    requires ValidRegister(s.regs, src.r);
+    requires Valid64BitDestinationOperand(s, src);
+{
+  // I am not valid if I pop the last frame of the stack.
+    if !(|s.stack| > 1 && 0 in s.stack[|s.stack| - 1] && 1 in s.stack[|s.stack| - 1]) then 
+      r == s.(ok := false) &&  // not yet supported
+      SS(r.flags) == true
+     else 
+      var f : Frame := s.stack[|s.stack|-1];
+      match src
+        case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64(f[0],f[1])],
+          stack := s.stack[..|s.stack|-1],
+          flags := r.flags, trace := s.trace + obs)
+        case OStack(slot)       => r == s.(ok := false) // not yet supported
+        case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
+        case OConst(n)          => r == s.(ok := false) // not yet supported
 }
 
 predicate Valid128BitOperand(s:state, o:operand)
@@ -575,6 +624,9 @@ predicate{:axiom} Cf(flags:uint32)
 // Is the Error Division (ED) flat set.
 predicate{:axiom} Ed(flags:uint32)
 
+// Is the stack not valid to pop.
+predicate{:axiom} SS(flags:uint32)
+
 predicate ValidInstruction(s:state, ins:ins)
 {
     match ins
@@ -624,7 +676,7 @@ predicate ValidInstruction(s:state, ins:ins)
         case Pshufd(dst, src, permutation) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src) && ValidImm8(s, permutation)
         case VPSLLDQ(dst, src, count) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src) && ValidImm8(s, count) && eval_op32(s, count) == 4
         case MOVDQU(dst, src) => Valid128BitDestinationOperand(s, dst) && Valid128BitSourceOperand(s, src) && !src.OConst? && (IsXmmOperand(dst) || IsXmmOperand(src))
-        case MOVDxmmrmm32(dst, src) => Valid128BitDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src) && !src.OConst? && IsXmmOperand(dst)
+        case MOVD_xmm_rmm32(dst, src) => Valid128BitDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src) && !src.OConst? && IsXmmOperand(dst)
         case PCLMULQDQ(dst, src, imm8) => Valid128BitDestinationOperand(s, dst) && Valid128BitSourceOperand(s, src) && !src.OConst? && (IsXmmOperand(dst) || IsXmmOperand(src)) && ValidImm8(s, imm8)
         case VPCLMULQDQ(dst, src1, src2, imm8) => Valid128BitDestinationOperand(s, dst) && Valid128BitSourceOperand(s, src1) && Valid128BitSourceOperand(s, src2) && 
           IsXmmOperand(dst) && IsXmmOperand(src1) && ValidImm8(s, imm8)
@@ -639,6 +691,9 @@ predicate ValidInstruction(s:state, ins:ins)
 
         case PSRLD(dst, imm8)  => Valid64BitDestinationOperand(s, dst) && ValidImm8(s, imm8) && eval_op32(s,imm8) <= 64
         case PSRLDQ(dst, imm8) => ValidXmmDestinationOperand(s, dst) && ValidImm8(s, imm8) && eval_op32(s,imm8) <= 16
+        case PUSH(src)         => Valid64BitSourceOperand(s, src) && src.OReg?
+        case POP(dst)          => Valid64BitDestinationOperand(s, dst) && dst.OReg?
+        case MOV_m64_imm32(dst, src) => Valid64BitDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src)
 }
 
 lemma {:axiom} lemma_division_in_bounds(a:uint32, b:uint32)
@@ -709,7 +764,7 @@ function insObs(s:state, ins:ins):seq<observation>
         case Pshufd(dst, src, permutation) => operandObs(s, 128, dst) +  operandObs(s, 128, src)
         case VPSLLDQ(dst, src, count) => operandObs(s, 128, dst) + operandObs(s, 128, src)
         case MOVDQU(dst, src) => operandObs(s, 128, dst) + operandObs(s, 128, src)
-        case MOVDxmmrmm32(dst, src) => operandObs(s, 128, dst) + operandObs(s, 32, src)
+        case MOVD_xmm_rmm32(dst, src) => operandObs(s, 128, dst) + operandObs(s, 32, src)
         case PCLMULQDQ(dst, src, imm8) => operandObs(s, 128, dst) + operandObs(s, 128, src)
         case VPCLMULQDQ(dst, src1, src2, imm8) => operandObs(s, 128, dst) + operandObs(s, 128, src1) + operandObs(s, 128, src2)
         case VMOVDQA(dst, src) => operandObs(s, 128, dst) + operandObs(s, 128, src)
@@ -721,6 +776,9 @@ function insObs(s:state, ins:ins):seq<observation>
         case PSLLDQ(dst, imm8) => operandObs(s, 128, dst)
         case PSRLD (dst, imm8) => operandObs(s, 64, dst)
         case PSRLDQ(dst, imm8) => operandObs(s, 128, dst)
+        case PUSH(src)         => operandObs(s, 64, src)
+        case POP (dst)         => operandObs(s, 64, dst)
+        case MOV_m64_imm32(dst, src) => operandObs(s, 64, dst) + operandObs(s, 32, dst)
 }
 
 predicate evalIns(ins:ins, s:state, r:state)
@@ -845,7 +903,7 @@ predicate evalIns(ins:ins, s:state, r:state)
             case VPSLLDQ(dst, src, count)  => evalUpdateXmmsAndHavocFlags(s, dst, Quadword(0, s.xmms[src.r.xmm].lo, s.xmms[src.r.xmm].mid_lo, s.xmms[src.r.xmm].mid_hi), r, obs)
             case MOVDQU(dst, src)          => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src), r, obs)
 // AES-GCM instructions
-            case MOVDxmmrmm32(dst, src)    => evalUpdate128AndHavocFlags(s, dst, Quadword(eval_op32(s, src), 0,0,0), r, obs)
+            case MOVD_xmm_rmm32(dst, src)    => evalUpdate128AndHavocFlags(s, dst, Quadword(eval_op32(s, src), 0,0,0), r, obs)
             case POR(dst, src)                     => evalUpdateXmmsAndHavocFlags(s, dst, QuadwordOr(s.xmms[dst.r.xmm], s.xmms[src.r.xmm]), r, obs)
             case MOVDQA(dst, src)                  => evalUpdateXmmsAndMaintainFlags(s, dst, Eval128BitOperand(s, src), r, obs)
             case VMOVDQA(dst, src)                 => evalUpdateXmmsAndMaintainFlags(s, dst, Eval128BitOperand(s, src), r, obs)
@@ -856,7 +914,6 @@ predicate evalIns(ins:ins, s:state, r:state)
                                                                              select_word(s.xmms[src.r.xmm], byte_to_bits(eval_op32(s,permutation)).hi)
                                                                              ), r, obs)
             case VPXOR(dst, src1, src2)            => evalUpdateXmmsAndMaintainFlags(s, dst, QuadwordXor(Eval128BitOperand(s, src1), Eval128BitOperand(s, src2)), r, obs)
-// TODO
             case PSLLD(dst, count)                 => evalUpdateAndMaintainFlags64(s, dst, BitwiseShl64(eval_op64(s, dst), eval_op32(s,count)), r, obs)
             case PSLLDQ(dst, count)                => evalUpdateXmmsAndMaintainFlags(s, dst, 
                                                         Uint128ToQuadword(BitwiseShl128(QuadwordToUint128(Eval128BitOperand(s,dst)), 8 * eval_op32(s,count))), r, obs)
@@ -869,7 +926,9 @@ predicate evalIns(ins:ins, s:state, r:state)
 // WRONG TODO
             case PCLMULQDQ(dst, src, imm8)         => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src), r, obs)
             case VPCLMULQDQ(dst, src1, src2, imm8) => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src1), r, obs)
-
+            case PUSH(src) => evalPush(s, src, eval_op64(s, src), r, obs)
+            case POP(dst)  => evalPop(s, dst, r, obs)
+            case MOV_m64_imm32(dst, src) => evalUpdateAndMaintainFlags64(s, dst, eval_op32(s, src), r, obs)
 }
 
 predicate evalBlock(block:codes, s:state, r:state)

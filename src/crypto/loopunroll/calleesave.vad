@@ -1,0 +1,42 @@
+/*
+
+  This demonstrates x64 callee save using push and pop of r64 registers.
+  Brian Milnes 31 Aug 2017
+
+*/
+
+/* 
+  Vale seems to be using the following calling conventions:
+
+  https://en.wikipedia.org/wiki/X86_calling_conventions#List_of_x86_calling_conventions
+
+  Arch  OS       Convention                            Arguments                                 Caller saved
+  x86
+     Linux      cdecl                                 arguments on the stack                  EAX, ECX, and EDX
+     Windows    cdecl?stdcall                         arguments on the stack                        ?
+  x64 
+     Linux      System V AMD64 ABI                    RDI, RSI, RDX, RCX, R8, R9, XMM0–7            ?
+     Windows    Microsoft x64 calling convention      RCX/XMM0, RDX/XMM1, R8/XMM2, R9/XMM3          ?
+ 
+*/
+
+procedure CalleeSaveRestore()
+   modifies rdi; rsi; rdx; rcx; r8; r9; xmm0; xmm1; // Doubtful gcc is going to use xmm.
+{
+  // Save the registers.
+  Push(rdi); Push(rsi); Push(rdx);  Push(rcx); Push(r8); Push(r9);  Push(xmm0); Push(xmm1);
+  // Zero them. 
+  Xor64(rdi); Xor64(rsi); Xor64(rdx);  Xor64(rcx); Xor64(r8); Xor64(r9);  Xor64(xmm0); Xor64(xmm1);
+ // Restore them.
+  Pop(xmm1); Pop(xmm0); Pop(r9); Pop(r8); Pop(rcx); Pop(rdx); Pop(rsi); Pop(rdi); 
+ // Write them.
+ MOV_m64_imm32(rdi ,0x1);
+ MOV_m64_imm32(rsi ,0x2);
+ MOV_m64_imm32(rdx ,0x3);
+ MOV_m64_imm32(rcx ,0x4);
+ MOV_m64_imm32(r8  ,0x5);
+ MOV_m64_imm32(r9  ,0x6);
+ MOV_m64_imm32(xmm0,0x7);
+ MOV_m64_imm32(xmm1,0x8);
+ // Now C tests that the pointers point to the new values correctly.
+} 
