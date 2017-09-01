@@ -18,25 +18,49 @@
      Linux      System V AMD64 ABI                    RDI, RSI, RDX, RCX, R8, R9, XMM0–7            ?
      Windows    Microsoft x64 calling convention      RCX/XMM0, RDX/XMM1, R8/XMM2, R9/XMM3          ?
  
+  But see below, GCC is acatually giving us: rax; rsi; rdx; rcx; r10; r9; rdi; r8;
 */
 
-procedure CalleeSaveRestore()
-   modifies rdi; rsi; rdx; rcx; r8; r9; xmm0; xmm1; // Doubtful gcc is going to use xmm.
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+
+#verbatim
+module CalleeSaveRestore {
+
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+
+#endverbatim
+
+#verbatim
+predicate HasFrames(s: Stack, n : int) {
+ |s| == n         
+}         
+#endverbatim
+
+procedure {:refined} {:bridge} CalleeSaveRestore()
+   requires HasFrames(stack, 1);
+   modifies rax; rsi; rdx; rcx; r10; r9; rdi; r8; efl; stack;
 {
+  assert HasFrames(stack, 1);
   // Save the registers.
-  Push(rdi); Push(rsi); Push(rdx);  Push(rcx); Push(r8); Push(r9);  Push(xmm0); Push(xmm1);
+  PUSH(rax); PUSH(rsi); PUSH(rdx); PUSH(rcx); PUSH(r10); PUSH(r9); PUSH(rdi); PUSH(r8);  
+  assert HasFrames(stack, 9);
   // Zero them. 
-  Xor64(rdi); Xor64(rsi); Xor64(rdx);  Xor64(rcx); Xor64(r8); Xor64(r9);  Xor64(xmm0); Xor64(xmm1);
- // Restore them.
-  Pop(xmm1); Pop(xmm0); Pop(r9); Pop(r8); Pop(rcx); Pop(rdx); Pop(rsi); Pop(rdi); 
- // Write them.
- MOV_m64_imm32(rdi ,0x1);
- MOV_m64_imm32(rsi ,0x2);
- MOV_m64_imm32(rdx ,0x3);
- MOV_m64_imm32(rcx ,0x4);
- MOV_m64_imm32(r8  ,0x5);
- MOV_m64_imm32(r9  ,0x6);
- MOV_m64_imm32(xmm0,0x7);
- MOV_m64_imm32(xmm1,0x8);
- // Now C tests that the pointers point to the new values correctly.
+  Xor64(rax,rax); Xor64(rsi,rsi); Xor64(rdx,rdx); Xor64(rcx,rcx); Xor64(r10,r10); Xor64(r9,r9); Xor64(rdi,rdi); Xor64(r8,r8);  
+  assert HasFrames(stack, 9);
+  // Restore them.
+  POP(r8); POP(rdi); POP(r9); POP(r10); POP(rcx); POP(rdx); POP(rsi); POP(rax);
+  assert HasFrames(stack, 1);
+  // Now C tests that the pointers point to the old values correctly.
 } 
+
+#verbatim
+}
+#endverbatim  

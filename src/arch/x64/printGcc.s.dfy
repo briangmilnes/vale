@@ -290,7 +290,7 @@ method printIns(ins:ins)
         case MOVD_xmm_rmm32(dst, src)          => print ("  movd ");    printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case PCLMULQDQ(dst, src, imm8)     => print ("  pclmulqdq "); printOprnd(imm8); print(", "); printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case VPCLMULQDQ(dst, src1, src2, imm8)  => print ("  vpclmulqdq "); printOprnd(imm8); print(", "); printOprnd(src1); print(", "); printOprnd(src2); print(", "); printOprnd(dst); print("\n");
-        case VMOVDAQ(dst, src)             => print ("  vmovdaq "); printOprnd(src); print(", "); printOprnd(dst); print("\n");
+        case VMOVDQA(dst, src)             => print ("  vmovdaq "); printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case VPSHUFD(dst, src, imm8) => print ("  vpshufd "); print(","); printOprnd(imm8); print(", "); printOprnd(src); print(", "); printOprnd(dst); print("\n");
         case VPXOR(dst, src1, src2) => print ("  vpxor "); printOprnd(src1); print(", "); printOprnd(src2); print(", "); printOprnd(dst); print("\n");
         case MOVDQA(dst, src)              => print ("  movdqa ");  printOprnd(src); print(", "); printOprnd(dst); print("\n");
@@ -299,8 +299,9 @@ method printIns(ins:ins)
         case PSLLD (dst, imm8)             => print ("  pslld  "); printOprnd(imm8); print(", "); printOprnd(dst); print("\n");
         case PSRLDQ(dst, imm8)             => print ("  psrldq "); printOprnd(imm8); print(", "); printOprnd(dst); print("\n");
         case PSRLD (dst, imm8)             => print ("  psrld  "); printOprnd(imm8); print(", "); printOprnd(dst); print("\n");
-        case PUSH (src)                    => print ("  push  ");  printOprnd(src); print("\n");
-        case POP (dst)                     => print ("  pop  ");   printOprnd(dst); print("\n");
+        case PUSH (src)                    => print ("  push  ");  printOprnd64(src); print("\n");
+        case POP (dst)                     => print ("  pop  ");   printOprnd64(dst); print("\n");
+        case MOV_m64_imm32(dst,imm32)      => print ("  mov  ");  print(","); printOprnd(imm32); print(", "); printOprnd64(dst); print("\n");
 }
 
 method printBlock(b:codes, n:int) returns(n':int)

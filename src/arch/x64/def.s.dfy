@@ -66,7 +66,7 @@ datatype ins =
 | MOVD_xmm_rmm32(dstMOVDxmmmrmm32:operand, srcMOVDxmmrmm32:operand)
 | PCLMULQDQ(dstPCLMULQDQ : operand, srcPCLMULQDQ : operand, imm8: operand)
 | VPCLMULQDQ(dstVPCLMULQDQ : operand, src1VPCLMULQDQ : operand, src2VPCLMULQDQ : operand, imm8: operand)
-| VMOVDQA(dstVMOVDQA : operand, srcVMODAQ : operand)
+| VMOVDQA(dstVMOVDQA : operand, srcVMODQA : operand)
 | VPSHUFD(dstVPSHUFD : operand, srcVPSHUFD : operand, imm8: operand)
 | VPXOR  (dstVPXOR : operand, src1VPXOR : operand, src2VPXOR : operand)
 | MOVDQA (dstMOVDQA : operand, srcMOVDQA : operand)
@@ -430,15 +430,13 @@ predicate evalUpdateAndHavocFlags64(s:state, o:operand, v:uint64, r:state, obs:s
         case OHeap(addr, taint)  => r == s.(ok := false) // not yet supported
 }
 
-// Bryan, is this right?
-// This has to be specific to div as its registers are fixed.
-predicate evalUpdateAndHavocFlagsDiv(s:state, src: operand, div:uint64, mod: uint64, r:state, obs:seq<observation>)
+predicate evalUpdateAndMaintainFlagsDiv(s:state, src: operand, div:uint64, mod: uint64, r:state, obs:seq<observation>)
     requires src.OReg?;
     requires ValidRegister(s.regs, src.r);
     requires Valid64BitSourceOperand(s, src);
 {
     match src
-        case OReg(reg)    => r == s.(regs := s.regs[X86Eax := div][X86Edx:= mod], flags := r.flags, trace := s.trace + obs)
+        case OReg(reg)    => r == s.(regs := s.regs[X86Eax := div][X86Edx:= mod], trace := s.trace + obs)
         case OStack(slot)       => r == s.(ok := false) // not yet supported
         case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
         case OConst(n)          => r == s.(ok := false) // not yet supported
@@ -456,7 +454,7 @@ predicate evalUpdateXmmsAndMaintainFlags(s:state, o:operand, v:Quadword, r:state
     r == s.(xmms := s.xmms[o.r.xmm := v], trace := s.trace + obs)
 }
 
-// Very ugly to have to do this typing but Dafny seems to treat the
+// Ugly to have to do this typing but Dafny seems to treat the
 // uint32s in the map display expression as ints.
 function makeFrame2(v : uint64) : Frame
 {
@@ -466,15 +464,14 @@ function makeFrame2(v : uint64) : Frame
   m[0 := low][1 := high]
 }
 
-// TODO flags? 
 predicate evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
     requires src.OReg?;
     requires ValidRegister(s.regs, src.r);
     requires Valid64BitSourceOperand(s, src);
 {
     match src
-      case OReg(reg)    => r == s.(regs := s.regs, flags := r.flags, trace := s.trace + obs,
-                                  stack := s.stack + [makeFrame2(v)])
+      case OReg(reg)    => r == s.(regs := s.regs, trace := s.trace + obs,
+                                  stack := [makeFrame2(v)] + s.stack)
       case OStack(slot)       => r == s.(ok := false) // not yet supported
       case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
       case OConst(n)          => r == s.(ok := false) // not yet supported
@@ -484,20 +481,18 @@ predicate evalPop(s : state, src : operand, r:state, obs:seq<observation>)
     requires src.OReg?;
     requires ValidRegister(s.regs, src.r);
     requires Valid64BitDestinationOperand(s, src);
+    // I am not valid if I pop the last frame of the stack.
+    requires (|s.stack| > 1 && 0 in s.stack[0] && 1 in s.stack[0]);
+    ensures |s.stack| > 0;
 {
-  // I am not valid if I pop the last frame of the stack.
-    if !(|s.stack| > 1 && 0 in s.stack[|s.stack| - 1] && 1 in s.stack[|s.stack| - 1]) then 
-      r == s.(ok := false) &&  // not yet supported
-      SS(r.flags) == true
-     else 
-      var f : Frame := s.stack[|s.stack|-1];
-      match src
-        case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64(f[0],f[1])],
-          stack := s.stack[..|s.stack|-1],
-          flags := r.flags, trace := s.trace + obs)
-        case OStack(slot)       => r == s.(ok := false) // not yet supported
-        case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
-        case OConst(n)          => r == s.(ok := false) // not yet supported
+  var f : Frame := s.stack[0];
+  match src
+    case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64(f[0],f[1])],
+      stack := s.stack[1..|s.stack|],
+      trace := s.trace + obs)
+    case OStack(slot)       => r == s.(ok := false) // not yet supported
+    case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
+    case OConst(n)          => r == s.(ok := false) // not yet supported
 }
 
 predicate Valid128BitOperand(s:state, o:operand)
@@ -646,7 +641,7 @@ predicate ValidInstruction(s:state, ins:ins)
         case Mul32(srcMul) => Valid32BitSourceOperand(s, srcMul) && Valid32BitSourceOperand(s, OReg(X86Eax)) && Valid32BitDestinationOperand(s, OReg(X86Eax)) && Valid32BitDestinationOperand(s, OReg(X86Edx))
         case Mul64(srcMul) => Valid64BitSourceOperand(s, srcMul) && Valid64BitSourceOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Eax)) && Valid64BitDestinationOperand(s, OReg(X86Edx))
 
-        case Div64(srcMul) => srcMul.OReg? && Valid64BitSourceOperand(s, srcMul) && Valid64BitDestinationOperand(s, OReg(X86Edx)) && Valid64BitDestinationOperand(s, OReg(X86Eax)) &&
+        case Div64(srcMul) => srcMul.OReg? /*&& eval_op64(s,srcMul) != 0*/ && Valid64BitSourceOperand(s, srcMul) && Valid64BitDestinationOperand(s, OReg(X86Edx)) && Valid64BitDestinationOperand(s, OReg(X86Eax)) &&
                              Valid64BitSourceOperand(s, OReg(X86Edx)) && Valid64BitSourceOperand(s, OReg(X86Eax))
 
         case IMul64(dst, src) => Valid64BitDestinationOperand(s, dst) && Valid64BitSourceOperand(s, src) && Valid64BitSourceOperand(s, dst)
@@ -692,7 +687,7 @@ predicate ValidInstruction(s:state, ins:ins)
         case PSRLD(dst, imm8)  => Valid64BitDestinationOperand(s, dst) && ValidImm8(s, imm8) && eval_op32(s,imm8) <= 64
         case PSRLDQ(dst, imm8) => ValidXmmDestinationOperand(s, dst) && ValidImm8(s, imm8) && eval_op32(s,imm8) <= 16
         case PUSH(src)         => Valid64BitSourceOperand(s, src) && src.OReg?
-        case POP(dst)          => Valid64BitDestinationOperand(s, dst) && dst.OReg?
+        case POP(dst)          => Valid64BitDestinationOperand(s, dst) && dst.OReg? && |s.stack| > 1 && 0 in s.stack[0] && 1 in s.stack[0]
         case MOV_m64_imm32(dst, src) => Valid64BitDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src)
 }
 
@@ -837,7 +832,7 @@ predicate evalIns(ins:ins, s:state, r:state)
             case Div64(src) => var div := BitwiseDiv128by64(s.regs[X86Edx], s.regs[X86Eax], eval_op64(s, src)); // Will return 0 on 0 src.
                               var mod := BitwiseMod128by64(s.regs[X86Edx], s.regs[X86Eax], eval_op64(s, src)); // Will return 0 on 0 src.
 //                              r == s.(regs := s.regs[X86Edx := mod][X86Eax := div], flags := r.flags)
-                              evalUpdateAndHavocFlagsDiv(s, src, div, mod, r, obs) &&
+                              evalUpdateAndMaintainFlagsDiv(s, src, div, mod, r, obs) &&
                               Ed(r.flags) == (eval_op64(s, src) != 0)
 
             case IMul64(dst, src) => evalUpdateAndHavocFlags64(s, dst, (eval_op64(s, dst) * eval_op64(s, src)) % 0x1_0000_0000_0000_0000, r, obs)

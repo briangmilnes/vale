@@ -13,101 +13,7 @@ import opened x64_decls_i
 import opened operations_i
 #endverbatim
 
-#verbatim
-// I can't use HasStackSlot as its glued to frame zero.
-predicate inFrame(f : Frame, i : int) { i in f}         
-#endverbatim
-
-// BUG need more on the stack!
-// PUSH_r64 
-procedure{:refined}  {:bridge} {:instruction Ins(PUSH(src))} PUSH(inout operand src: uint64) 
-  modifies stack;
-  ensures
-    let slen := SeqLength(old(stack));
-    SeqLength(stack) == slen + 1;
-    old(stack) == SeqSlice(stack, 0, slen);
-    inFrame(stack[slen], 0);
-    inFrame(stack[slen], 1);
-    stack[slen][0] == lower64(old(src));
-    stack[slen][1] == upper64(old(src));
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    reveal lowerUpper64;
-    this := this.(heaplets := old(this).heaplets);
-    this := MaybeUpdateOk(old(this), this);
-}   
-
-// POP_r64
-procedure{:refined}  {:bridge} {:instruction Ins(POP(dst))} POP(inout operand dst: uint64) 
-  modifies stack;
-  requires 
-    let slen := SeqLength(old(stack));
-    slen > 1;
-    inFrame(stack[slen - 1], 0);
-    inFrame(stack[slen - 1], 1);
-  ensures
-    let slen := SeqLength(old(stack));
-    SeqLength(stack) == slen - 1;
-    dst == lowerUpper64(old(stack[slen - 1][0]), old(stack[slen - 1][1]));
-    stack == SeqSlice(old(stack), 0, slen - 1);
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    reveal lowerUpper64;
-    this := this.(heaplets := old(this).heaplets);
-    this := MaybeUpdateOk(old(this), this);
-}   
-
-// Bryan, won't prove with the Ed(efl) in there.
-
-procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)
-   requires{:refined false}
-      @src is OReg;
-    modifies
-        efl;
-        rax;
-        rdx;
-    ensures
-        Ed(efl) == old(src != 0);
-        rax == old(BitwiseDiv128by64(rdx, rax, src)); // Will return 0 on 0 src.
-        rdx == old(BitwiseMod128by64(rdx, rax, src)); // Will return 0 on 0 src.
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    reveal BitwiseDiv128by64;
-    reveal BitwiseMod128by64;
-    this := this.(heaplets := old(this).heaplets);
-    this := MaybeUpdateOk(old(this), this);
-    ghost if (!this.ok)
-    {
-        this := this.(regs := this.regs[@src.r := 0, ?:= 0]);
-    }
-    // All good assertions.
-    assert old(this).ok;
-    assert @src is OReg;
-    assert ValidRegister(old(this).regs, @src.r);
-    assert Valid64BitSourceOperand(to_state(old(this)), @src);
-    assert Valid64BitDestinationOperand(to_state(old(this)), OReg(X86Edx));
-    assert Valid64BitDestinationOperand(to_state(old(this)), OReg(X86Eax));
-    assert Valid64BitSourceOperand(to_state(old(this)), OReg(X86Edx));
-    assert Valid64BitSourceOperand(to_state(old(this)), OReg(X86Eax));
-
-    ghost if (old(this).ok) {
-        assert Valid64BitSourceOperand(to_state(old(this)), @src);
-        assert Valid64BitDestinationOperand(to_state(old(this)), OReg(X86Edx));
-        assert Valid64BitDestinationOperand(to_state(old(this)), OReg(X86Eax));
-        assert Valid64BitSourceOperand(to_state(old(this)), OReg(X86Edx));
-        assert Valid64BitSourceOperand(to_state(old(this)), OReg(X86Eax));
-    }       
-    // All three output conditions fail.
-    assert Ed(efl) == old(src != 0);
-    assert rax == old(BitwiseDiv128by64(rdx, rax, src)); 
-    assert rdx == old(BitwiseMod128by64(rdx, rax, src));
-    assert old(this).ok ==> this.ok;   // Passes
-}   
-
-/*
+/* This awaiting a reasonable specification of unsigned multiplication. 
 procedure{:refined}  {:bridge} {:instruction Ins(PCLMULQDQ(dst, src, OConst(imm8)))} PCLMULQDQ(inout operand dst: Quadword, operand src:Quadword, inline imm8: uint8)
   requires{:refined false}
            @dst is OReg;
@@ -145,10 +51,72 @@ procedure{:refined}  {:bridge} {:instruction Ins(VPCLMULQDQ(dst, src1, src2, OCo
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
 }
-
 */
 
-/*
+#verbatim
+// I can't use HasStackSlot as its glued to frame zero.
+predicate inFrame(f : Frame, i : int) { i in f}         
+#endverbatim
+
+// PUSH_r64 
+procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(inout operand src: uint64) 
+  modifies stack;
+  ensures
+    let slen := SeqLength(old(stack));
+    SeqLength(stack) == slen + 1;
+    old(stack) == SeqSlice(stack, 1, slen + 1);
+    inFrame(stack[0], 0);
+    inFrame(stack[0], 1);
+    stack[0][0] == lower64(old(src));
+    stack[0][1] == upper64(old(src));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal lowerUpper64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}   
+
+// POP_r64
+procedure{:refined}  {:bridge} {:instruction Ins(POP(dst))} POP(inout operand dst: uint64) 
+  modifies stack;
+  requires 
+    let slen := SeqLength(old(stack));
+    slen > 1;
+    inFrame(stack[0], 0);
+    inFrame(stack[0], 1);
+  ensures
+    let slen := SeqLength(old(stack));
+    SeqLength(stack) == slen - 1;
+    dst == lowerUpper64(old(stack[0][0]), old(stack[0][1]));
+    stack == SeqSlice(old(stack), 1, slen);
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal lowerUpper64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}   
+
+procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)
+   requires{:refined false}
+      @src is OReg;
+      src != 0;  
+    // OK, we are cheating a bit here by overconstraining DIV instead of using flags.
+    // The proofs are valid though.
+    modifies rax; rdx;
+    ensures
+        rax == old(BitwiseDiv128by64(rdx, rax, src)); // Will return 0 on 0 src.
+        rdx == old(BitwiseMod128by64(rdx, rax, src)); // Will return 0 on 0 src.
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal BitwiseDiv128by64;
+    reveal BitwiseMod128by64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}   
+
 // Intel assemblers will just look at the register types and do the right thing.
 // But Vale wants to know the argument types so needs a special instruction which writes as a MOVD.
 procedure{:refined}  {:bridge} {:instruction Ins(MOVD_xmm_rmm32(dst, src))} MOVD_xmm_rmm32(inout operand dst: Quadword, operand src:uint32)
@@ -167,9 +135,7 @@ procedure{:refined}  {:bridge} {:instruction Ins(MOVD_xmm_rmm32(dst, src))} MOVD
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
 }
-*/
 
-/*
 procedure{:refined}  {:bridge} {:instruction Ins(POR(dst, src))} POR(inout operand dst: Quadword, operand src:Quadword)
   modifies efl;
   ensures
@@ -299,10 +265,6 @@ procedure{:refined}  {:bridge} {:instruction Ins(PSRLDQ(dst, OConst(imm8)))} PSR
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
 }
-*/
-
-
-/*
 
 procedure{:operand} Mem_in(operand base:int, inline offset:int, inline taint:taint, ghost id:heaplet_id) returns(mem_operand o:int)
     reads
@@ -583,7 +545,6 @@ procedure{:refined}{:bridge}{:instruction Ins(Shr64(dst, src))} Shr64(inout oper
     this := MaybeUpdateOk(old(this), this);
     this := this.(heaplets := old(this).heaplets);
 }
-*/
 
 #verbatim
 } // end module

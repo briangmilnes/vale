@@ -28,11 +28,12 @@ lemma lemma_BitwiseAdd32()
     reveal_BitwiseAdd32();
 }
 
+/*
 // It's not clear to me what is the best way to allow proof.
 // 0b00010000 
 function uint8Tobv8(b : uint8) : bv8 { b as bv8 }
 
-/* Whoa, where are bit vectors specified?
+// Whoa, where are bit vectors specified?
 predicate isbv8eq0(b : bv8) {
   b[0] == 0
 }
@@ -96,15 +97,7 @@ method CL_MUL(src1 : bv128, src2 : bv128, imm8 : bv8) returns (dest : bv128)
   } 
   dest[127] := 0;
 }
+
 */
-
-
-// Find a new index that is open, 32 bit. 
-// Assume the rest after that is clear, which may cause proof issues.
-function FrameMax(f : Frame, upto : int) : int 
-  decreases |f|;
-{
-  if !(upto in f) then upto else FrameMax(map i | i in f && i != upto :: f[i], upto + 1)
-}
 
 }
