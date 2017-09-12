@@ -105,7 +105,7 @@ predicate evalPush'(s : state, src : operand, v: uint64, r:state, obs:seq<observ
     r == s.(trace := s.trace + obs, stack := [make64BitFrame(v)] + s.stack)
 }
 */
-
+/*
 function evalPush'(s : state, src : operand, v: uint64, obs:seq<observation>) : state
     requires src.OReg?;
     requires ValidRegister(s.regs, src.r);
@@ -150,7 +150,7 @@ predicate evalPush'''(s : state, src : operand, v: uint64, r:state, obs:seq<obse
     r == s.(trace := s.trace + obs, stack := [make64BitFrame(v)] + s.stack)
 }
 
-lemma lemma_evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
+lemma lemma_evalPush'(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
   requires src.OReg?;
   requires ValidRegister(s.regs, src.r);
   requires Valid64BitSourceOperand(s, src);
@@ -166,35 +166,39 @@ lemma lemma_evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<obser
   ensures r.stack[0][1] == upper64trans(v);
   ensures v == lowerUpper64trans(r.stack[0][0],r.stack[0][1]);
 {}        
+*/
 #endverbatim
 
-/*
+
 procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH'(operand src: uint64) 
   modifies stack;
   ensures
     stack == SeqPrependElt(make64BitFrame(old(src)), old(stack));
     inFrame(stack[0], 0);
     inFrame(stack[0], 1);
-    stack[0][0] == lower64(old(src));
-    stack[0][1] == upper64(old(src));
-    old(src)    == lowerUpper64(stack[0][0],stack[0][1]);
+    stack[0][0] == lower64trans(old(src));
+    stack[0][1] == upper64trans(old(src));
+    old(src)    == lowerUpper64trans(stack[0][0],stack[0][1]);
 {
     reveal evalCodeOpaque;
     reveal x86_ValidState;
+    // Should not be needed, using lower*upper*trans.
     reveal lowerUpper64;
     reveal lower64;
     reveal upper64;
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
 /*
-    assert SeqLength(stack) == SeqLength(old(stack)) + 1;
+    assert stack == SeqPrependElt(make64BitFrame(old(src)), old(stack));
     assert inFrame(stack[0], 0);
     assert inFrame(stack[0], 1);
-    assert stack[0][0] == lower64(old(src));
-    assert stack[0][1] == upper64(old(src));
+    assert stack[0][0] == lower64trans(old(src));
+    assert stack[0][1] == upper64trans(old(src));
+    assert old(src)    == lowerUpper64trans(stack[0][0],stack[0][1]);
 */
 }   
 
+/*
 procedure {:timeLimitMultiplier 8} {:refined} {:bridge} CalleeSave3()
   reads r9; rdi; r8;
   modifies efl; stack;
