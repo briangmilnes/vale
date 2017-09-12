@@ -348,6 +348,64 @@ function lower64trans(i:uint64):uint32 { i % 0x1_0000_0000 }
 function upper64trans(i:uint64):uint32 { i / 0x1_0000_0000 }
 function lowerUpper64trans(l:uint32, u:uint32):uint64 { l + 0x1_0000_0000 * u }
 
+// Ugly to have to do this typing but Dafny seems to treat the
+// uint32s in the map display expression as ints.
+function make64BitFrame(v : uint64) : Frame
+    ensures 0 in make64BitFrame(v);
+    ensures 1 in make64BitFrame(v);
+    ensures make64BitFrame(v)[0] == lower64trans(v);
+    ensures make64BitFrame(v)[1] == upper64trans(v);
+{
+  var low  : uint32  := lower64trans(v);
+  var high : uint32  := upper64trans(v);
+  var m    : map<int,uint32> := map[];
+  m[0 := low][1 := high]
+}
+
+predicate evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
+    requires src.OReg?;
+    requires ValidRegister(s.regs, src.r);
+    requires Valid64BitSourceOperand(s, src);
+{
+    r == s.(trace := s.trace + obs, stack := [make64BitFrame(v)] + s.stack)
+}
+
+// Bryan, Will this work to give me my entailments.
+lemma lemma_evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
+  requires src.OReg?;
+  requires ValidRegister(s.regs, src.r);
+  requires Valid64BitSourceOperand(s, src);
+  requires evalPush(s,src,v,r,obs);
+  ensures r.trace == s.trace + obs;
+  ensures r.regs == s.regs;
+  ensures r.stack == [make64BitFrame(v)] + s.stack;
+  ensures |r.stack| == |s.stack| + 1;
+  ensures |r.stack| > 0;
+  ensures 0 in r.stack[0];
+  ensures 1 in r.stack[0];
+  ensures r.stack[0][0] == lower64trans(v);
+  ensures r.stack[0][1] == upper64trans(v);
+  ensures v == lowerUpper64trans(r.stack[0][0],r.stack[0][1]);
+{}
+
+predicate evalPop(s : state, src : operand, r:state, obs:seq<observation>)
+    requires src.OReg?;
+    requires ValidRegister(s.regs, src.r);
+    requires Valid64BitDestinationOperand(s, src);
+    // I am not valid if I pop the last frame of the stack.
+    requires (|s.stack| > 1 && 0 in s.stack[0] && 1 in s.stack[0]);
+    ensures |s.stack| > 0;
+{
+  var f : Frame := s.stack[0];
+  match src
+    case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64(f[0],f[1])],
+      stack := s.stack[1..|s.stack|],
+      trace := s.trace + obs)
+    case OStack(slot)       => r == s.(ok := false) // not yet supported
+    case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
+    case OConst(n)          => r == s.(ok := false) // not yet supported
+}
+
 function eval_op64(s:state, o:operand) : uint64
     requires !(o.OReg? && o.r.X86Xmm?)
 {
@@ -452,47 +510,6 @@ predicate evalUpdateXmmsAndMaintainFlags(s:state, o:operand, v:Quadword, r:state
     requires ValidXmmOperand(s, o);
 {
     r == s.(xmms := s.xmms[o.r.xmm := v], trace := s.trace + obs)
-}
-
-// Ugly to have to do this typing but Dafny seems to treat the
-// uint32s in the map display expression as ints.
-function makeFrame2(v : uint64) : Frame
-{
-  var low  : uint32  := lower64(v);
-  var high : uint32  := upper64(v);
-  var m    : map<int,uint32> := map[];
-  m[0 := low][1 := high]
-}
-
-predicate evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
-    requires src.OReg?;
-    requires ValidRegister(s.regs, src.r);
-    requires Valid64BitSourceOperand(s, src);
-{
-    match src
-      case OReg(reg)    => r == s.(regs := s.regs, trace := s.trace + obs,
-                                  stack := [makeFrame2(v)] + s.stack)
-      case OStack(slot)       => r == s.(ok := false) // not yet supported
-      case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
-      case OConst(n)          => r == s.(ok := false) // not yet supported
-}
-
-predicate evalPop(s : state, src : operand, r:state, obs:seq<observation>)
-    requires src.OReg?;
-    requires ValidRegister(s.regs, src.r);
-    requires Valid64BitDestinationOperand(s, src);
-    // I am not valid if I pop the last frame of the stack.
-    requires (|s.stack| > 1 && 0 in s.stack[0] && 1 in s.stack[0]);
-    ensures |s.stack| > 0;
-{
-  var f : Frame := s.stack[0];
-  match src
-    case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64(f[0],f[1])],
-      stack := s.stack[1..|s.stack|],
-      trace := s.trace + obs)
-    case OStack(slot)       => r == s.(ok := false) // not yet supported
-    case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
-    case OConst(n)          => r == s.(ok := false) // not yet supported
 }
 
 predicate Valid128BitOperand(s:state, o:operand)
@@ -826,12 +843,9 @@ predicate evalIns(ins:ins, s:state, r:state)
 
             // Div64 is three registers. Divides rdx:rax / src and puts the quotient in rax and the remainder in rdx.
             // Intel 3-286 Vol. 2A, says DE gets turned on in EFL. Register state is unspecified.
-            // Bryan:
-            // Do I need a division lemma here? 
-            // Am I handling division by zero right?
+            // We are avoiding division by zero in the instruction instead of setting conditions.
             case Div64(src) => var div := BitwiseDiv128by64(s.regs[X86Edx], s.regs[X86Eax], eval_op64(s, src)); // Will return 0 on 0 src.
                               var mod := BitwiseMod128by64(s.regs[X86Edx], s.regs[X86Eax], eval_op64(s, src)); // Will return 0 on 0 src.
-//                              r == s.(regs := s.regs[X86Edx := mod][X86Eax := div], flags := r.flags)
                               evalUpdateAndMaintainFlagsDiv(s, src, div, mod, r, obs) &&
                               Ed(r.flags) == (eval_op64(s, src) != 0)
 
@@ -916,9 +930,6 @@ predicate evalIns(ins:ins, s:state, r:state)
             case PSRLD(dst, count)                 => evalUpdateAndMaintainFlags64(s, dst, BitwiseShr64(eval_op64(s, dst), eval_op32(s,count)), r, obs)
             case PSRLDQ(dst, count)                => evalUpdateXmmsAndMaintainFlags(s, dst,
                                                         Uint128ToQuadword(BitwiseShr128(QuadwordToUint128(Eval128BitOperand(s,dst)), 8 * eval_op32(s,count))), r, obs)
-
-
-// WRONG TODO
             case PCLMULQDQ(dst, src, imm8)         => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src), r, obs)
             case VPCLMULQDQ(dst, src1, src2, imm8) => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src1), r, obs)
             case PUSH(src) => evalPush(s, src, eval_op64(s, src), r, obs)

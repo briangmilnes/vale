@@ -59,7 +59,7 @@ predicate inFrame(f : Frame, i : int) { i in f}
 #endverbatim
 
 // PUSH_r64 
-procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(inout operand src: uint64) 
+procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(operand src: uint64) 
   modifies stack;
   ensures
     let slen := SeqLength(old(stack));
@@ -73,12 +73,21 @@ procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(inout operand s
     reveal evalCodeOpaque;
     reveal x86_ValidState;
     reveal lowerUpper64;
+    reveal lower64;
+    reveal upper64;
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
+
+    let slen := SeqLength(old(stack));
+    assume SeqLength(stack) == slen + 1;
+    assume old(stack) == SeqSlice(stack, 1, slen + 1);
+    assume inFrame(stack[0], 0);
+    assume inFrame(stack[0], 1);
+    assume stack[0][0] == lower64(old(src));
+    assume stack[0][1] == upper64(old(src));
 }   
 
-// POP_r64
-procedure{:refined}  {:bridge} {:instruction Ins(POP(dst))} POP(inout operand dst: uint64) 
+procedure {:refined} {:bridge} {:instruction Ins(POP(dst))} POP(inout operand dst: uint64) 
   modifies stack;
   requires 
     let slen := SeqLength(old(stack));
@@ -96,6 +105,7 @@ procedure{:refined}  {:bridge} {:instruction Ins(POP(dst))} POP(inout operand ds
     reveal lowerUpper64;
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
+    let slen := SeqLength(old(stack));
 }   
 
 procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)

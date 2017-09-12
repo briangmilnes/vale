@@ -307,10 +307,4 @@ function BitwiseShr128(x:uint128, y:uint128):uint128
     BitwiseShr128_opaque(x, y)
 }
 
-// For intel's PCLMULQDQ.
-function CL_MUL(x : uint64, y : uint64) : uint128
-{
-  (x * y) % 0x1_00000000_00000000_00000000_00000000
-} 
-
 } // end module operations_s

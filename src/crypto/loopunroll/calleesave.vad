@@ -39,27 +39,275 @@ import opened x64_decls64_i
 #endverbatim
 
 #verbatim
+predicate HasAtLeastN64BitFrames(s: Stack, n : int) {
+ |s| >= n && 
+ forall i: nat :: 0 <= i < n ==> 0 in s[i] && 1 in s[i]
+}         
+
 predicate HasFrames(s: Stack, n : int) {
  |s| == n         
 }         
 #endverbatim
 
-procedure {:refined} {:bridge} CalleeSaveRestore()
-   requires HasFrames(stack, 1);
-   modifies rax; rsi; rdx; rcx; r10; r9; rdi; r8; efl; stack;
+/*
+procedure {:refined} {:bridge} CalleeSave1()
+  reads r8;
+  modifies efl; stack;
+  ensures  
+   HasAtLeastN64BitFrames(stack, 1);
+   old(r8) == lowerUpper64(stack[0][0], stack[0][1]);
 {
-  assert HasFrames(stack, 1);
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
+  // Save the register.
+  PUSH(r8);  
+} 
+
+procedure {:refined} {:bridge} CalleeSave2()
+  reads r8; rdi;
+  modifies efl; stack;
+  ensures  
+   HasAtLeastN64BitFrames(stack, 2);
+   old(r8)  == lowerUpper64(stack[0][0], stack[0][1]);
+   old(rdi) == lowerUpper64(stack[1][0], stack[1][1]);
+{
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
+  // Save the registers.
+  PUSH(rdi); PUSH(r8);  
+} 
+*/
+
+#verbatim
+function SeqPrependElt<T>(elt:T, s:seq<T>) : seq<T> 
+  ensures |SeqPrependElt(elt,s)| == |s| + 1;
+{ [elt] + s }
+
+/*
+predicate evalPush'(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
+    requires src.OReg?;
+    requires ValidRegister(s.regs, src.r);
+    requires Valid64BitSourceOperand(s, src);
+// Bryan, Why can't it prove these? Is it that ensures on a predicate don't work?
+//    ensures r.trace == s.trace + obs;
+//    ensures r.regs == s.regs;
+//    ensures r.stack == [make64BitFrame(v)] + s.stack;
+//    ensures |r.stack| == |s.stack| + 1;
+//    ensures |r.stack| > 0;
+//    ensures 0 in r.stack[0];
+//    ensures 1 in r.stack[0];
+//    ensures r.stack[0][0] == lower64trans(v);
+//    ensures r.stack[0][1] == upper64trans(v);
+//    ensures v == lowerUpper64trans(r.stack[0][0],r.stack[0][1]);
+{
+    r == s.(trace := s.trace + obs, stack := [make64BitFrame(v)] + s.stack)
+}
+*/
+
+function evalPush'(s : state, src : operand, v: uint64, obs:seq<observation>) : state
+    requires src.OReg?;
+    requires ValidRegister(s.regs, src.r);
+    requires Valid64BitSourceOperand(s, src);
+    ensures evalPush'(s,src,v,obs).trace == s.trace + obs;
+    ensures evalPush'(s,src,v,obs).regs == s.regs;
+    ensures evalPush'(s,src,v,obs).stack == [make64BitFrame(v)] + s.stack;
+    ensures |evalPush'(s,src,v,obs).stack| == |s.stack| + 1;
+    ensures |evalPush'(s,src,v,obs).stack| > 0;
+    ensures 0 in evalPush'(s,src,v,obs).stack[0];
+    ensures 1 in evalPush'(s,src,v,obs).stack[0];
+    ensures evalPush'(s,src,v,obs).stack[0][0] == lower64trans(v);
+    ensures evalPush'(s,src,v,obs).stack[0][1] == upper64trans(v);
+    ensures v == lowerUpper64trans(evalPush'(s,src,v,obs).stack[0][0],evalPush'(s,src,v,obs).stack[0][1]);
+{
+    s.(trace := s.trace + obs, stack := [make64BitFrame(v)] + s.stack)
+}
+
+predicate evalPush''(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
+  requires src.OReg?;
+  requires ValidRegister(s.regs, src.r);
+  requires Valid64BitSourceOperand(s, src);
+  requires r.trace == s.trace + obs;
+{ r == evalPush'(s,src,v,obs) }    
+
+// But it won't apply in evalIns.
+predicate evalPush'''(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
+    requires src.OReg?;
+    requires ValidRegister(s.regs, src.r);
+    requires Valid64BitSourceOperand(s, src);
+    requires r.trace == s.trace + obs;
+    requires r.regs == s.regs;
+    requires r.stack == [make64BitFrame(v)] + s.stack;
+    requires |r.stack| == |s.stack| + 1;
+    requires |r.stack| > 0;
+    requires 0 in r.stack[0];
+    requires 1 in r.stack[0];
+    requires r.stack[0][0] == lower64trans(v);
+    requires r.stack[0][1] == upper64trans(v);
+    requires v == lowerUpper64trans(r.stack[0][0],r.stack[0][1]);
+{
+    r == s.(trace := s.trace + obs, stack := [make64BitFrame(v)] + s.stack)
+}
+
+lemma lemma_evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
+  requires src.OReg?;
+  requires ValidRegister(s.regs, src.r);
+  requires Valid64BitSourceOperand(s, src);
+  requires evalPush(s,src,v,r,obs);
+  ensures r.trace == s.trace + obs;
+  ensures r.regs == s.regs;
+  ensures r.stack == [make64BitFrame(v)] + s.stack;
+  ensures |r.stack| == |s.stack| + 1;
+  ensures |r.stack| > 0;
+  ensures 0 in r.stack[0];
+  ensures 1 in r.stack[0];
+  ensures r.stack[0][0] == lower64trans(v);
+  ensures r.stack[0][1] == upper64trans(v);
+  ensures v == lowerUpper64trans(r.stack[0][0],r.stack[0][1]);
+{}        
+#endverbatim
+
+/*
+procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH'(operand src: uint64) 
+  modifies stack;
+  ensures
+    stack == SeqPrependElt(make64BitFrame(old(src)), old(stack));
+    inFrame(stack[0], 0);
+    inFrame(stack[0], 1);
+    stack[0][0] == lower64(old(src));
+    stack[0][1] == upper64(old(src));
+    old(src)    == lowerUpper64(stack[0][0],stack[0][1]);
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal lowerUpper64;
+    reveal lower64;
+    reveal upper64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+/*
+    assert SeqLength(stack) == SeqLength(old(stack)) + 1;
+    assert inFrame(stack[0], 0);
+    assert inFrame(stack[0], 1);
+    assert stack[0][0] == lower64(old(src));
+    assert stack[0][1] == upper64(old(src));
+*/
+}   
+
+procedure {:timeLimitMultiplier 8} {:refined} {:bridge} CalleeSave3()
+  reads r9; rdi; r8;
+  modifies efl; stack;
+  ensures  
+   HasAtLeastN64BitFrames(stack, 3);
+   old(r9)  == lowerUpper64(stack[2][0], stack[2][1]);
+   old(rdi) == lowerUpper64(stack[1][0], stack[1][1]);
+   old(r8)  == lowerUpper64(stack[0][0], stack[0][1]);
+{
+  // This is quite the violation of abstraction. Bryan, opaque issues?
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
+  // Save the registers.
+  PUSH'(r9); 
+  assert old(r9)  == lowerUpper64(stack[0][0], stack[0][1]);
+  assert HasAtLeastN64BitFrames(stack, 1);
+  PUSH'(rdi); 
+  assert HasAtLeastN64BitFrames(stack, 2);
+  PUSH'(r8);  
+  assert HasAtLeastN64BitFrames(stack, 3);
+} 
+*/
+
+/*
+procedure {:refined} {:bridge} CalleeSave4()
+  modifies rax; rsi; rdx; rcx; r10; r9; rdi; r8; efl; stack;
+  ensures  
+   HasAtLeastN64BitFrames(stack, 4);
+   r10 == lowerUpper64(stack[3][0], stack[3][1]);
+   r9  == lowerUpper64(stack[2][0], stack[2][1]);
+   rdi == lowerUpper64(stack[1][0], stack[1][1]);
+   r8  == lowerUpper64(stack[0][0], stack[0][1]);
+{
+  // This is quite the violation of abstraction. Bryan, opaque issues?
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
+  // Save the registers.
+  PUSH(r10); PUSH(r9); PUSH(rdi); PUSH(r8);  
+} 
+
+procedure {:refined} {:bridge} CalleeSave8()
+  modifies rax; rsi; rdx; rcx; r10; r9; rdi; r8; efl; stack;
+  ensures  
+   HasAtLeastN64BitFrames(stack, 8);
+   rax == lowerUpper64(stack[7][0], stack[7][1]);
+   rsi == lowerUpper64(stack[6][0], stack[6][1]);
+   rdx == lowerUpper64(stack[5][0], stack[5][1]);
+   rcx == lowerUpper64(stack[4][0], stack[4][1]);
+   r10 == lowerUpper64(stack[3][0], stack[3][1]);
+   r9  == lowerUpper64(stack[2][0], stack[2][1]);
+   rdi == lowerUpper64(stack[1][0], stack[1][1]);
+   r8  == lowerUpper64(stack[0][0], stack[0][1]);
+{
+  // This is quite the violation of abstraction. Bryan, opaque issues?
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
   // Save the registers.
   PUSH(rax); PUSH(rsi); PUSH(rdx); PUSH(rcx); PUSH(r10); PUSH(r9); PUSH(rdi); PUSH(r8);  
-  assert HasFrames(stack, 9);
-  // Zero them. 
-  Xor64(rax,rax); Xor64(rsi,rsi); Xor64(rdx,rdx); Xor64(rcx,rcx); Xor64(r10,r10); Xor64(r9,r9); Xor64(rdi,rdi); Xor64(r8,r8);  
-  assert HasFrames(stack, 9);
+} 
+*/
+
+/*
+procedure {:refined} {:bridge} CalleeRestore()
+  requires HasFrames(stack, 1);
+  modifies rax; rsi; rdx; rcx; r10; r9; rdi; r8; efl; stack;
+  ensures  
+   rax == old(rax);
+   rsi == old(rsi);
+   rdx == old(rdx);
+   rcx == old(rcx);
+   r10 == old(r10);
+   r9  == old(r9);
+   rdi == old(rdi);
+   r8  == old(r8);
+{
+  // This is quite the violation of abstraction. Bryan, opaque issues?
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
   // Restore them.
   POP(r8); POP(rdi); POP(r9); POP(r10); POP(rcx); POP(rdx); POP(rsi); POP(rax);
-  assert HasFrames(stack, 1);
+} 
+
+procedure {:refined} {:bridge} CalleeSaveRestore()
+  requires HasFrames(stack, 1);
+  modifies rax; rsi; rdx; rcx; r10; r9; rdi; r8; efl; stack;
+  ensures  
+   rax == old(rax);
+   rsi == old(rsi);
+   rdx == old(rdx);
+   rcx == old(rcx);
+   r10 == old(r10);
+   r9  == old(r9);
+   rdi == old(rdi);
+   r8  == old(r8);
+{
+  // This is quite the violation of abstraction. Bryan, opaque issues?
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
+  CalleeSave();
+  // Zero them. 
+  Xor64(rax,rax); Xor64(rsi,rsi); Xor64(rdx,rdx); Xor64(rcx,rcx); Xor64(r10,r10); Xor64(r9,r9); Xor64(rdi,rdi); Xor64(r8,r8);  
+  CalleeRestore();
   // Now C tests that the pointers point to the old values correctly.
 } 
+*/
+
+// dummy
+procedure {:refined} {:bridge} CalleeSaveRestore() {} 
 
 #verbatim
 }

@@ -12,6 +12,7 @@ newtype{:nativeType "ulong"} ulong = i:int | 0 <= i < 0x1_0000_0000_0000_0000
 // Subset types
 /////////////////
 
+type uint1   = i:int | 0 <= i <= 1
 type uint8   = i:int | 0 <= i < 0x100
 type uint16  = i:int | 0 <= i < 0x10000
 type uint32  = i:int | 0 <= i < 0x1_0000_0000

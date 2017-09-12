@@ -49,6 +49,10 @@ method {:main} Main(ghost env:HostEnvironment)
     }
 
     var win := (platform_choice == Win);
+    printProcPlatform("CalleeSave3",
+       va_code_CalleeSave3(),
+        0, 0, asm_choice, platform_choice);
+
     printProcPlatform("CalleeSaveRestore",
        va_code_CalleeSaveRestore(),
         0, 0, asm_choice, platform_choice);

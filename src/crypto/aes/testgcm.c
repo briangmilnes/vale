@@ -7,8 +7,21 @@
 #include <string.h> // for memcmp
 #include "gcc_compat.h"
 
+// ipter   := rax;
+// iendptr := rsi;
+// optr    := rdx;
+// ctr     := rcx;
+// icbptr  := r10; // 96 high bits of IV and 32 bits of zero in memory in 128 bits of memory.
+void __stdcall AESGCTR(const void* iptr, const void* iendptr, const void* optr, const void* ctr, const void* icbptr);
+
+void test_aesgctr() {
+  
+
+}
+
+
 int __cdecl main(void) {
   printf("AES128 GCM tests\n");
-  printf("Nothing implemented.\n");
-  printf("\nAES128 GCM tests completed.");
+  test_aesgctr();
+  printf("AES128 GCM tests completed.\n");
 }

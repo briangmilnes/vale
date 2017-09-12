@@ -52,17 +52,8 @@ method {:main} Main(ghost env:HostEnvironment)
 
     // Make available the StdCall version for test from c of two routines plus AES.
 
-    printProcPlatform("GCMCTRONLY",
-        va_code_GCMCTRONLY(),
-        0, 0, asm_choice, platform_choice);
-
-      printProcPlatform("aes_main_i_KeyExpansionStdcall",
-         va_code_KeyExpansionStdcall(Secret, win),
-         0, 8,
-        asm_choice, platform_choice);
- 
-    printProcPlatform("AES128EncryptOneBlockStdcall",
-        va_code_AES128EncryptOneBlockStdcall(win),
+    printProcPlatform("AESGCTR",
+        va_code_AESGCTR(),
         0, 0, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);
