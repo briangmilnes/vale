@@ -44,17 +44,10 @@ method {:main} Main(ghost env:HostEnvironment)
     }
 
     printHeader(asm_choice );
-    if asm_choice_name[..] == "MASM" {
-        print(".XMM\n");
-    }
 
     var win := (platform_choice == Win);
-    printProcPlatform("CalleeSave3",
-       va_code_CalleeSave3(),
-        0, 0, asm_choice, platform_choice);
-
-    printProcPlatform("CalleeSaveRestore",
-       va_code_CalleeSaveRestore(),
+    printProcPlatform("CalleeSaveRestoreLinux",
+       va_code_CalleeSaveRestoreLinux(),
         0, 0, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);

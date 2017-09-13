@@ -132,13 +132,12 @@ method {:timeLimitMultiplier 10} CL_MUL_SHIFT(a : bv32, b : bv32) returns (r : b
 }
 */
 
-/*
 // Proves for 8, 16, 32, 64!
 function CL_MUL_SHIFT''(i : nat, a : bv64, b : bv64, r : bv128) : bv128
   requires 0 <= i <= 64;
   decreases 64 - i;
 {
- lemma_bv64_is_zero_or_upto_64_shifts_gives_zero(b);
+// lemma_bv64_is_zero_or_upto_64_shifts_gives_zero(b);
  if (b << i) != 0 then
    if ((a & 1) != 0) then
      CL_MUL_SHIFT''(i + 1, a >> 1, b, r ^ ((b << i) as bv128))
@@ -152,7 +151,6 @@ function CL_MUL_SHIFT'(a : bv64, b : bv64) : bv128
 {
  CL_MUL_SHIFT''(0, a, b, 0 as bv128)
 }
-*/
 
 lemma lemma_bv8_is_zero_or_8_shifts_gives_zero(b : bv8)
   ensures b == 0 || (b << 8) == 0;
@@ -180,10 +178,10 @@ lemma lemma_bv8_is_zero_or_upto_8_shifts_gives_zero(b : bv8)
 // Fails
 //      var j : nat :| j <= 8;
 //      assert b << j == 0;
-   assert b != 0;
-   assert b << 8 == 0;
-   assert exists i : nat :: i == 8 ==> b << i == 0;
+//   assert b != 0;
+   assert 8 <= 8;
   }
 }
+
 
 }

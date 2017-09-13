@@ -39,8 +39,8 @@ verify_options = {
   'obj/crypto/loopunroll/loopunroll.gen.dfy': BuildOptions(dafny_default_args_nlarith),
   'obj/crypto/loopunroll/seq.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'),
   'obj/crypto/loopunroll/memcpy.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'+ ' /noNLarith' + ' /errorLimit:3'), # + ' /traceverify' + ' /z3opt:TRACE=true' ' /trace' + ' /traceTimes' + ' /tracePOs'),
-  'obj/crypto/loopunroll/chrismem.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3'),
-  'obj/crypto/loopunroll/calleesave.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30' + ' /errorLimit:3' + ' /noNLarith'),
+  'obj/crypto/loopunroll/chrismem.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3'),
+  'obj/crypto/loopunroll/calleesave.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3 ' + ' /noNLarith'),
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_larith),
 

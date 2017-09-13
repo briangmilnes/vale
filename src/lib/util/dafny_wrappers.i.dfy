@@ -22,5 +22,7 @@ module dafny_wrappers_i {
 
     predicate InSet<T>(x:T, s:set<T>) { x in s }
     predicate InMap<T,S>(x:T, s:map<T,S>) { x in s }
-
+    function SeqPrepend<T>(elt:T, s:seq<T>) : seq<T>
+      ensures |SeqPrepend(elt,s)| == |s| + 1;
+    { [elt] + s }
 }

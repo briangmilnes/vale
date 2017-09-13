@@ -44,9 +44,10 @@ method {:main} Main(ghost env:HostEnvironment)
     }
 
     printHeader(asm_choice );
-    if asm_choice_name[..] == "MASM" {
-        print(".XMM\n");
-    }
+// Just if I'm 32 bit.
+//    if asm_choice_name[..] == "MASM" {
+//        print(".XMM\n");
+//    }
 
     var win := (platform_choice == Win);
 

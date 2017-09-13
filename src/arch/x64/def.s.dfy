@@ -93,6 +93,17 @@ datatype observation =
   | HeapAccessOffset(base:uint64, index:uint64)
 
 type Frame = map<int, uint32>
+// And some frame checking operations.
+predicate inFrame(f : Frame, i : int) { i in f}
+predicate HasAtLeastN64BitFrames(s: Stack, n : int) {
+ |s| >= n && 
+ forall i: nat :: 0 <= i < n ==> 0 in s[i] && 1 in s[i]
+}         
+
+predicate HasAtLeastFrames(s: Stack, n : int) {
+ |s| >= n         
+}         
+
 type Stack = seq<Frame>
 datatype heapEntry = HeapEntry(v:uint8, t:taint)
 type heap = map<int,heapEntry>
@@ -348,6 +359,18 @@ function lower64trans(i:uint64):uint32 { i % 0x1_0000_0000 }
 function upper64trans(i:uint64):uint32 { i / 0x1_0000_0000 }
 function lowerUpper64trans(l:uint32, u:uint32):uint64 { l + 0x1_0000_0000 * u }
 
+// Bryan, for some amazing reason POP won't prove on lowerUpper64trans but will with
+// lowerUpper64.
+lemma lemma_lower_upper_trans()
+   ensures forall l : uint32 :: forall u : uint32 :: lowerUpper64(l,u) == lowerUpper64trans(l,u);
+   ensures forall v : uint64 :: v == lowerUpper64(lower64(v), upper64(v));
+   ensures forall v : uint64 :: v == lowerUpper64trans(lower64trans(v), upper64trans(v));
+{ 
+ reveal_lowerUpper64();
+ reveal_lower64();
+ reveal_upper64();
+} 
+
 // Ugly to have to do this typing but Dafny seems to treat the
 // uint32s in the map display expression as ints.
 function make64BitFrame(v : uint64) : Frame
@@ -355,56 +378,30 @@ function make64BitFrame(v : uint64) : Frame
     ensures 1 in make64BitFrame(v);
     ensures make64BitFrame(v)[0] == lower64trans(v);
     ensures make64BitFrame(v)[1] == upper64trans(v);
+    ensures v == lowerUpper64trans(lower64trans(v), upper64trans(v));
+    ensures v == lowerUpper64(lower64(v), upper64(v));
 {
+  lemma_lower_upper_trans();
   var low  : uint32  := lower64trans(v);
   var high : uint32  := upper64trans(v);
   var m    : map<int,uint32> := map[];
   m[0 := low][1 := high]
 }
 
-predicate evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
-    requires src.OReg?;
-    requires ValidRegister(s.regs, src.r);
-    requires Valid64BitSourceOperand(s, src);
+predicate evalPop(s : state, dst : operand, r:state, obs:seq<observation>)
+  requires Valid64BitDestinationOperand(s, dst);
+  requires HasAtLeastN64BitFrames(s.stack, 1);
+  requires |s.stack| > 1;
 {
-    r == s.(trace := s.trace + obs, stack := [make64BitFrame(v)] + s.stack)
+  match dst
+    case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64trans(s.stack[0][0],s.stack[0][1])],
+                                stack := s.stack[1..],
+                                trace := s.trace + obs)
+    case OStack(slot)       => r == s.(ok := false) // Will never be supported.
+    case OHeap(addr, taint) => r == s.(ok := false) // Will never be supported.
+    case OConst(n)          => r == s.(ok := false) // Will never be supported.
 }
 
-// Bryan, Will this work to give me my entailments.
-lemma lemma_evalPush(s : state, src : operand, v: uint64, r:state, obs:seq<observation>)
-  requires src.OReg?;
-  requires ValidRegister(s.regs, src.r);
-  requires Valid64BitSourceOperand(s, src);
-  requires evalPush(s,src,v,r,obs);
-  ensures r.trace == s.trace + obs;
-  ensures r.regs == s.regs;
-  ensures r.stack == [make64BitFrame(v)] + s.stack;
-  ensures |r.stack| == |s.stack| + 1;
-  ensures |r.stack| > 0;
-  ensures 0 in r.stack[0];
-  ensures 1 in r.stack[0];
-  ensures r.stack[0][0] == lower64trans(v);
-  ensures r.stack[0][1] == upper64trans(v);
-  ensures v == lowerUpper64trans(r.stack[0][0],r.stack[0][1]);
-{}
-
-predicate evalPop(s : state, src : operand, r:state, obs:seq<observation>)
-    requires src.OReg?;
-    requires ValidRegister(s.regs, src.r);
-    requires Valid64BitDestinationOperand(s, src);
-    // I am not valid if I pop the last frame of the stack.
-    requires (|s.stack| > 1 && 0 in s.stack[0] && 1 in s.stack[0]);
-    ensures |s.stack| > 0;
-{
-  var f : Frame := s.stack[0];
-  match src
-    case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64(f[0],f[1])],
-      stack := s.stack[1..|s.stack|],
-      trace := s.trace + obs)
-    case OStack(slot)       => r == s.(ok := false) // not yet supported
-    case OHeap(addr, taint) => r == s.(ok := false) // not yet supported
-    case OConst(n)          => r == s.(ok := false) // not yet supported
-}
 
 function eval_op64(s:state, o:operand) : uint64
     requires !(o.OReg? && o.r.X86Xmm?)
@@ -490,7 +487,7 @@ predicate evalUpdateAndHavocFlags64(s:state, o:operand, v:uint64, r:state, obs:s
 
 predicate evalUpdateAndMaintainFlagsDiv(s:state, src: operand, div:uint64, mod: uint64, r:state, obs:seq<observation>)
     requires src.OReg?;
-    requires ValidRegister(s.regs, src.r);
+//    requires ValidRegister(s.regs, src.r);
     requires Valid64BitSourceOperand(s, src);
 {
     match src
@@ -703,8 +700,8 @@ predicate ValidInstruction(s:state, ins:ins)
 
         case PSRLD(dst, imm8)  => Valid64BitDestinationOperand(s, dst) && ValidImm8(s, imm8) && eval_op32(s,imm8) <= 64
         case PSRLDQ(dst, imm8) => ValidXmmDestinationOperand(s, dst) && ValidImm8(s, imm8) && eval_op32(s,imm8) <= 16
-        case PUSH(src)         => Valid64BitSourceOperand(s, src) && src.OReg?
-        case POP(dst)          => Valid64BitDestinationOperand(s, dst) && dst.OReg? && |s.stack| > 1 && 0 in s.stack[0] && 1 in s.stack[0]
+        case PUSH(srcPush)     => Valid64BitSourceOperand(s, srcPush)
+        case POP(dstPop)       => Valid64BitDestinationOperand(s, dstPop) && |s.stack| > 1 && 0 in s.stack[0] && 1 in s.stack[0]
         case MOV_m64_imm32(dst, src) => Valid64BitDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src)
 }
 
@@ -932,7 +929,7 @@ predicate evalIns(ins:ins, s:state, r:state)
                                                         Uint128ToQuadword(BitwiseShr128(QuadwordToUint128(Eval128BitOperand(s,dst)), 8 * eval_op32(s,count))), r, obs)
             case PCLMULQDQ(dst, src, imm8)         => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src), r, obs)
             case VPCLMULQDQ(dst, src1, src2, imm8) => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src1), r, obs)
-            case PUSH(src) => evalPush(s, src, eval_op64(s, src), r, obs)
+            case PUSH(src) => r == s.(stack := [make64BitFrame(eval_op64(s,src))] + s.stack)
             case POP(dst)  => evalPop(s, dst, r, obs)
             case MOV_m64_imm32(dst, src) => evalUpdateAndMaintainFlags64(s, dst, eval_op32(s, src), r, obs)
 }

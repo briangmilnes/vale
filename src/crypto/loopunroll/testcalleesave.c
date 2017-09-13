@@ -26,46 +26,29 @@
 #include "gcc_compat.h"
 #include <inttypes.h>
 
-void __stdcall CalleeSaveRestore(void *one, void *two, void *three, void *four, void *five, void *six, void *seven, void *eight);
-
-uint64_t *one;
-uint64_t *two;
-uint64_t *three;
-uint64_t *four;
-uint64_t *five;
-uint64_t *six;
-uint64_t *seven;
-uint64_t *eight;
+void __stdcall CalleeSaveRestoreLinux();
 
 int test_callee_save() {
-  one   = (uint64_t *) malloc(sizeof(uint64_t)); // rax
-  two   = (uint64_t *) malloc(sizeof(uint64_t)); // rsi
-  three = (uint64_t *) malloc(sizeof(uint64_t)); // rdx
-  four  = (uint64_t *) malloc(sizeof(uint64_t)); // rcx
-  five  = (uint64_t *) malloc(sizeof(uint64_t)); // r10
-  six   = (uint64_t *) malloc(sizeof(uint64_t)); // r9
-  seven = (uint64_t *) malloc(sizeof(uint64_t)); // rdi
-  eight = (uint64_t *) malloc(sizeof(uint64_t)); // r8 
+  register int old_rbx asm ("rbx");
+  register int old_rbp asm ("rbp");
+  register int old_r12 asm ("r12");
+  register int old_r13 asm ("r13");
+  register int old_r14 asm ("r14");    
+  register int old_r15 asm ("r15");
+  CalleeSaveRestoreLinux();
+  register int rbx asm ("rbx");
+  register int rbp asm ("rbp");
+  register int r12 asm ("r12");
+  register int r13 asm ("r13");
+  register int r14 asm ("r14");    
+  register int r15 asm ("r15");
 
-  *one   = 0x100000000;
-  *two   = 0x200000000;
-  *three = 0x300000000;
-  *four  = 0x400000000;
-  *five  = 0x500000000;
-  *six   = 0x600000000;
-  *seven = 0x700000000;
-  *eight = 0x800000000;
-
-  CalleeSaveRestore(one, two, three, four, five, six, seven, eight);
-
-  if (*one   != 0x100000000)  { printf("one   is %" PRIu64 "\n", *one);   return 1; }
-  if (*two   != 0x200000000)  { printf("two   is %" PRIu64 "\n", *two);   return 1; }
-  if (*three != 0x300000000)  { printf("three is %" PRIu64 "\n", *three); return 1; }
-  if (*four  != 0x400000000)  { printf("four  is %" PRIu64 "\n", *four);  return 1; }
-  if (*five  != 0x500000000)  { printf("five  is %" PRIu64 "\n", *five);  return 1; }
-  if (*six   != 0x600000000)  { printf("six   is %" PRIu64 "\n", *six);   return 1; }
-  if (*seven != 0x700000000)  { printf("seven is %" PRIu64 "\n", *seven); return 1; }
-  if (*eight != 0x800000000)  { printf("eight is %" PRIu64 "\n", *eight); return 1; }
+  if (old_rbx == rbx) { printf("rbx OK\n"); } else {printf("FAILURE rbx was %d is now %d.\n", old_rbx, rbx); return 1;}
+  if (old_rbp == rbp) { printf("rbp OK\n"); } else {printf("FAILURE rbp was %d is now %d.\n", old_rbp, rbp); return 1;}
+  if (old_r12 == r12) { printf("r12 OK\n"); } else {printf("FAILURE r12 was %d is now %d.\n", old_r12, r12); return 1;}
+  if (old_r13 == r13) { printf("r13 OK\n"); } else {printf("FAILURE r13 was %d is now %d.\n", old_r13, r13); return 1;}
+  if (old_r14 == r14) { printf("r14 OK\n"); } else {printf("FAILURE r14 was %d is now %d.\n", old_r14, r14); return 1;}
+  if (old_r15 == r15) { printf("r15 OK\n"); } else {printf("FAILURE r15 was %d is now %d.\n", old_r15, r15); return 1;}
 
   return 0;
 }

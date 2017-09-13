@@ -13,6 +13,53 @@ import opened x64_decls_i
 import opened operations_i
 #endverbatim
 
+// PUSH_r64 
+procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(operand src: uint64) 
+  modifies stack;
+  requires{:refined false}
+           @src is OReg;
+           Valid64BitSourceOperand(to_state(this), @src);
+           ValidOperand(to_state(this), 64, @src);
+  ensures
+    let slen := SeqLength(old(stack));
+    SeqLength(stack) == 1 + old(SeqLength(stack));
+    old(stack) == SeqSlice(stack, 1, slen + 1);
+    stack == old(SeqPrepend(make64BitFrame(src), stack));
+    inFrame(stack[0], 0);
+    inFrame(stack[0], 1);
+    stack[0][0] == lower64trans(old(src));
+    stack[0][1] == upper64trans(old(src));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal lowerUpper64;
+    reveal lower64;
+    reveal upper64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}   
+
+
+procedure {:refined} {:bridge} {:instruction Ins(POP(dst))} POP(inout operand dst: uint64) 
+  modifies stack;
+  requires 
+    SeqLength(stack) > 1;
+    HasAtLeastN64BitFrames(stack,1);
+    inFrame(stack[0], 0);
+    inFrame(stack[0], 1);
+  ensures
+    let slen := SeqLength(old(stack));
+    SeqLength(stack) == slen - 1;
+    dst == old(lowerUpper64(stack[0][0],stack[0][1]));
+    stack == old(SeqTail(stack,1));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal lowerUpper64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}   
+
 /* This awaiting a reasonable specification of unsigned multiplication. 
 procedure{:refined}  {:bridge} {:instruction Ins(PCLMULQDQ(dst, src, OConst(imm8)))} PCLMULQDQ(inout operand dst: Quadword, operand src:Quadword, inline imm8: uint8)
   requires{:refined false}
@@ -53,60 +100,6 @@ procedure{:refined}  {:bridge} {:instruction Ins(VPCLMULQDQ(dst, src1, src2, OCo
 }
 */
 
-#verbatim
-// I can't use HasStackSlot as its glued to frame zero.
-predicate inFrame(f : Frame, i : int) { i in f}         
-#endverbatim
-
-// PUSH_r64 
-procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(operand src: uint64) 
-  modifies stack;
-  ensures
-    let slen := SeqLength(old(stack));
-    SeqLength(stack) == slen + 1;
-    old(stack) == SeqSlice(stack, 1, slen + 1);
-    inFrame(stack[0], 0);
-    inFrame(stack[0], 1);
-    stack[0][0] == lower64(old(src));
-    stack[0][1] == upper64(old(src));
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    reveal lowerUpper64;
-    reveal lower64;
-    reveal upper64;
-    this := this.(heaplets := old(this).heaplets);
-    this := MaybeUpdateOk(old(this), this);
-
-    let slen := SeqLength(old(stack));
-    assume SeqLength(stack) == slen + 1;
-    assume old(stack) == SeqSlice(stack, 1, slen + 1);
-    assume inFrame(stack[0], 0);
-    assume inFrame(stack[0], 1);
-    assume stack[0][0] == lower64(old(src));
-    assume stack[0][1] == upper64(old(src));
-}   
-
-procedure {:refined} {:bridge} {:instruction Ins(POP(dst))} POP(inout operand dst: uint64) 
-  modifies stack;
-  requires 
-    let slen := SeqLength(old(stack));
-    slen > 1;
-    inFrame(stack[0], 0);
-    inFrame(stack[0], 1);
-  ensures
-    let slen := SeqLength(old(stack));
-    SeqLength(stack) == slen - 1;
-    dst == lowerUpper64(old(stack[0][0]), old(stack[0][1]));
-    stack == SeqSlice(old(stack), 1, slen);
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    reveal lowerUpper64;
-    this := this.(heaplets := old(this).heaplets);
-    this := MaybeUpdateOk(old(this), this);
-    let slen := SeqLength(old(stack));
-}   
 
 procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)
    requires{:refined false}

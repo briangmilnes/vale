@@ -546,6 +546,8 @@ method {:timeLimitMultiplier 8} SHA256_DigestOneBlock(ctx:SHA256Context, W:array
     ctx.z := lemma_SHA256DigestOneBlockHelper1(ctx.z, ToSeqUint32(W[..]), atoh, M);
 
     ghost var current_state';
+    // This is generating 16 * 64 or 32 bytes of extra stack space for save/restore.
+    // If you need to understand or replicate this, talk Barry Bonds.
     ctx.z, current_state' := SHA256_Compute64Steps(ctx.H, W, 
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
     ctx.z, SHA256_state_c(ToSeqUint32(ctx.H[..]), ToSeqUint32(W[..]), atoh));
