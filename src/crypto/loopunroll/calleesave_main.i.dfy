@@ -47,8 +47,12 @@ method {:main} Main(ghost env:HostEnvironment)
 
     var win := (platform_choice == Win);
     printProcPlatform("CalleeSaveRestoreLinux",
-       va_code_CalleeSaveRestoreLinux(),
-        0, 0, asm_choice, platform_choice);
+      va_code_CalleeSaveRestoreLinux(),
+      0, 0, asm_choice, platform_choice);
+
+    printProcPlatform("CalleeSaveRestoreWindowsMM",
+     va_code_CalleeSaveRestoreWindowsMM(),
+     10, 0, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);
 }

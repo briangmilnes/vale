@@ -13,6 +13,15 @@ import opened x64_decls_i
 import opened operations_i
 #endverbatim
 
+// This must be called before return or C call if one uses XMM registers.
+procedure{:refined} {:bridge} {:instruction Ins(EMMS)} EMMS()
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}   
+
 // PUSH_r64 
 procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(operand src: uint64) 
   modifies stack;

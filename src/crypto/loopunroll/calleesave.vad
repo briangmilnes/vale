@@ -23,7 +23,9 @@
  And we add to this the complexity of the ABIs
 
 https://github.com/hjl-tools/x86-psABI/wiki/x86-64-psABI-r252.pdf
-https://msdn.microsoft.com/en-us/library/ew5tede7.aspx
+
+https://msdn.microsoft.com/en-us/library/ms235286.aspx seems a better description.
+https://msdn.microsoft.com/en-us/library/9z1stfyw.aspx details the reegisters.
 
 So callee save restore works differently on Linux and Windows.
 
@@ -41,6 +43,9 @@ so %rsp must be divisible by 16 immediately preceding any 'call' instruction
   subq $16, %rsp
   movq %rsi, (%rsp)
   movq %r12, (%rsp+8)
+
+ Vale does not currently have a stack pointer on x64 so we really can't do this yet.
+
 
 On Windows:
 
@@ -62,7 +67,6 @@ import opened x64_decls_i
 import opened x64_decls64_i
 
 #endverbatim
-
 procedure {:refined} {:bridge} CalleeSaveLinux()
   reads rbx; rbp; r12; r13; r14; r15;
   requires HasAtLeastFrames(stack, 1);
@@ -118,8 +122,143 @@ procedure {:refined} {:bridge} CalleeSaveRestoreLinux()
   CalleeRestoreLinux();
 } 
 
-// dummy
-//procedure {:refined} {:bridge} CalleeSaveRestore() {} 
+/*
+RBX	Nonvolatile	Must be preserved by callee
+RBP	Nonvolatile	May be used as a frame pointer; must be preserved by callee
+RDI	Nonvolatile	Must be preserved by callee
+RSI	Nonvolatile	Must be preserved by callee
+R10:R11	Volatile	Must be preserved as needed by caller; used in syscall/sysret instructions
+R12:R15	Nonvolatile	Must be preserved by callee
+
+// But we don't save the XMMS on x64 as we have NO RSP
+
+XMM6:XMM15, YMM6:YMM15	Nonvolatile (XMM), Volatile (upper half of YMM)	Must be preserved as needed by callee. 
+YMM registers must be preserved as needed by caller.
+*/
+
+procedure {:refined} {:bridge} CalleeSaveWindowsMM()
+  reads rbx; rbp; rdi; rsi; r10; r11; r12; r14; r15;
+  requires HasAtLeastFrames(stack, 1);
+  modifies efl; stack;
+  ensures  
+   HasAtLeastFrames(stack, 10);
+   HasAtLeastN64BitFrames(stack, 9);
+   rbx == lowerUpper64trans(stack[8][0], stack[8][1]);
+   rbp == lowerUpper64trans(stack[7][0], stack[7][1]);
+   rdi == lowerUpper64trans(stack[6][0], stack[6][1]);
+   rsi == lowerUpper64trans(stack[5][0], stack[5][1]);
+   r10 == lowerUpper64trans(stack[4][0], stack[4][1]);
+   r11 == lowerUpper64trans(stack[3][0], stack[3][1]);
+   r12 == lowerUpper64trans(stack[2][0], stack[2][1]);
+   r14 == lowerUpper64trans(stack[1][0], stack[1][1]);
+   r15 == lowerUpper64trans(stack[0][0], stack[0][1]);
+{
+  PUSH(rbx); PUSH(rbp); PUSH(rdi); PUSH(rsi); PUSH(r10); PUSH(r11); PUSH(r12); PUSH(r14); PUSH(r15);
+} 
+
+procedure {:refined} {:bridge} CalleeRestoreWindowsMM()
+  requires/ensures HasAtLeastFrames(stack, 1);
+  requires 
+   HasAtLeastFrames(stack, 10); // We require one frame at all times for a valid state.
+   HasAtLeastN64BitFrames(stack, 9);
+  modifies rbx; rbp; rdi; rsi; r10; r11; r12; r14; r15; efl; stack;
+  ensures  
+  rbx == old(lowerUpper64trans(stack[8][0], stack[8][1])); 
+  rbp == old(lowerUpper64trans(stack[7][0], stack[7][1])); 
+  rdi == old(lowerUpper64trans(stack[6][0], stack[6][1])); 
+  rsi == old(lowerUpper64trans(stack[5][0], stack[5][1])); 
+  r10 == old(lowerUpper64trans(stack[4][0], stack[4][1])); 
+  r11 == old(lowerUpper64trans(stack[3][0], stack[3][1])); 
+  r12 == old(lowerUpper64trans(stack[2][0], stack[2][1])); 
+  r14 == old(lowerUpper64trans(stack[1][0], stack[1][1])); 
+  r15 == old(lowerUpper64trans(stack[0][0], stack[0][1]));
+{
+  lemma_lower_upper_trans(); // Why is this needed? 
+  POP(r15); POP(r14); POP(r12); POP(r11); POP(r10); POP(rsi); POP(rdi); POP(rbp); POP(rbx);  
+} 
+
+procedure {:refined} {:bridge} CalleeSaveRestoreWindowsMM()
+  requires/ensures HasAtLeastFrames(stack, 1);
+  modifies rbx; rbp; rdi; rsi; r10; r11; r12; r14; r15; efl; stack;
+  ensures  
+   rbx == old(rbx); 
+   rbp == old(rbp); 
+   rdi == old(rdi); 
+   rsi == old(rsi); 
+   r10 == old(r10); 
+   r11 == old(r11); 
+   r12 == old(r12); 
+   r14 == old(r14); 
+   r15 == old(r15);
+{
+  CalleeSaveWindowsMM();
+  // Zero the registers.
+  Xor64(rbx,rbx); Xor64(rbp,rbp); Xor64(rdi,rdi); Xor64(rsi,rsi); Xor64(r10,r10); Xor64(r11,r11); Xor64(r12,r12); Xor64(r14,r14); Xor64(r15,r15);
+  CalleeRestoreWindowsMM();
+} 
+
+// I can not get this to prove due to quadword to int and back again proof problems. 
+/*
+procedure {:refined} {:bridge} CalleeSaveWindowsXMM()
+  requires HasAtLeastFrames(stack, 1);
+  modifies r15; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; efl; stack;
+  ensures  
+   HasAtLeastFrames(stack, 2);
+   HasAtLeastN64BitFrames(stack, 2);
+//   old(xmm6) == Quadword(stack[1][0], stack[1][1], stack[0][0], stack[0][1]);
+{
+  MovLow64To64(r15, xmm6);
+  assert r15 == lowerUpper64(xmm6.lo, xmm6.mid_lo);
+  PUSH(r15);
+  assert stack[0][0] == lower64trans(r15);
+  assert stack[0][1] == upper64trans(r15);
+  PSRLDQ(xmm6,8);
+  assert xmm6 == old(Uint128ToQuadword(BitwiseShr128(QuadwordToUint128(xmm6), 8 * 8)));
+  assert xmm6 == Quadword(old(xmm6).mid_hi, old(xmm6).hi, 0, 0);
+  MovLow64To64(r15, xmm6);
+  
+  PUSH(r15);
+} 
+*/
+
+/*
+// Only if you're going to touch XMM registers. And remember to call EMM before return.
+procedure {:refined} {:bridge} CalleeRestoreWindowsXMM()
+  requires/ensures HasAtLeastFrames(stack, 1);
+  requires 
+   HasAtLeastFrames(stack, 10); // We require one frame at all times for a valid state.
+   HasAtLeastN64BitFrames(stack, 9);
+   modifies r15; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15;
+{
+  POP(r15);
+  ?(xmm6, r15);
+
+} 
+*/
+
+/*
+procedure {:refined} {:bridge} CalleeSaveRestoreWindowsXMM()
+  requires/ensures HasAtLeastFrames(stack, 1);
+  modifies r15; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; efl; stack;
+  ensures  
+   xmm6 == old(xmm6); 
+   xmm7 == old(xmm7); 
+   xmm8 == old(xmm8); 
+   xmm9 == old(xmm9); 
+   xmm10 == old(xmm10); 
+   xmm11 == old(xmm11); 
+   xmm12 == old(xmm12); 
+   xmm13 == old(xmm13); 
+   xmm14 == old(xmm14); 
+   xmm15 == old(xmm15);
+{
+  CalleeSaveWindowsXMM();
+  // Zero the registers.
+  Pxor(xmm6,xmm6); Pxor(xmm7,xmm7); Pxor(xmm8,xmm8); Pxor(xmm9,xmm9); Pxor(xmm10,xmm10); 
+  Pxor(xmm11,xmm11); Pxor(xmm12,xmm12); Pxor(xmm13,xmm13); Pxor(xmm14,xmm14); Pxor(xmm15,xmm15);
+  CalleeRestoreWindowsXMM();
+} 
+*/
 
 #verbatim
 }

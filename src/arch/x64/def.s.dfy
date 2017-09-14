@@ -78,6 +78,7 @@ datatype ins =
 | PUSH   (srcPUSH: operand)  // r64
 | POP    (dstPOP: operand)   // r64
 | MOV_m64_imm32(dstLoc: operand, imm32 : operand)
+| EMMS   // Must be executed before return if one touches an XMM register.
 
 datatype codes = CNil | va_CCons(hd:code, tl:codes)
 
@@ -703,6 +704,7 @@ predicate ValidInstruction(s:state, ins:ins)
         case PUSH(srcPush)     => Valid64BitSourceOperand(s, srcPush)
         case POP(dstPop)       => Valid64BitDestinationOperand(s, dstPop) && |s.stack| > 1 && 0 in s.stack[0] && 1 in s.stack[0]
         case MOV_m64_imm32(dst, src) => Valid64BitDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src)
+        case EMMS => true
 }
 
 lemma {:axiom} lemma_division_in_bounds(a:uint32, b:uint32)
@@ -788,6 +790,7 @@ function insObs(s:state, ins:ins):seq<observation>
         case PUSH(src)         => operandObs(s, 64, src)
         case POP (dst)         => operandObs(s, 64, dst)
         case MOV_m64_imm32(dst, src) => operandObs(s, 64, dst) + operandObs(s, 32, dst)
+        case EMMS => []
 }
 
 predicate evalIns(ins:ins, s:state, r:state)
@@ -932,6 +935,7 @@ predicate evalIns(ins:ins, s:state, r:state)
             case PUSH(src) => r == s.(stack := [make64BitFrame(eval_op64(s,src))] + s.stack)
             case POP(dst)  => evalPop(s, dst, r, obs)
             case MOV_m64_imm32(dst, src) => evalUpdateAndMaintainFlags64(s, dst, eval_op32(s, src), r, obs)
+            case EMMS => r == s
 }
 
 predicate evalBlock(block:codes, s:state, r:state)
