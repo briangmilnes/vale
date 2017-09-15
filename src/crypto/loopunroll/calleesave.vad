@@ -67,6 +67,7 @@ import opened x64_decls_i
 import opened x64_decls64_i
 
 #endverbatim
+
 procedure {:refined} {:bridge} CalleeSaveLinux()
   reads rbx; rbp; r12; r13; r14; r15;
   requires HasAtLeastFrames(stack, 1);
@@ -105,7 +106,7 @@ procedure {:refined} {:bridge} CalleeRestoreLinux()
   POP(r15); POP(r14); POP(r13); POP(r12); POP(rbp); POP(rbx); 
 } 
 
-procedure {:refined} {:bridge} CalleeSaveRestoreLinux()
+procedure {:refined} {:bridge} TestCalleeSaveRestoreLinux()
   requires/ensures HasAtLeastFrames(stack, 1);
   modifies rbx; rbp; r12; r13; r14; r15; efl; stack;
   ensures  
@@ -136,6 +137,7 @@ XMM6:XMM15, YMM6:YMM15	Nonvolatile (XMM), Volatile (upper half of YMM)	Must be p
 YMM registers must be preserved as needed by caller.
 */
 
+
 procedure {:refined} {:bridge} CalleeSaveWindowsMM()
   reads rbx; rbp; rdi; rsi; r10; r11; r12; r14; r15;
   requires HasAtLeastFrames(stack, 1);
@@ -143,15 +145,15 @@ procedure {:refined} {:bridge} CalleeSaveWindowsMM()
   ensures  
    HasAtLeastFrames(stack, 10);
    HasAtLeastN64BitFrames(stack, 9);
-   rbx == lowerUpper64trans(stack[8][0], stack[8][1]);
-   rbp == lowerUpper64trans(stack[7][0], stack[7][1]);
-   rdi == lowerUpper64trans(stack[6][0], stack[6][1]);
-   rsi == lowerUpper64trans(stack[5][0], stack[5][1]);
-   r10 == lowerUpper64trans(stack[4][0], stack[4][1]);
-   r11 == lowerUpper64trans(stack[3][0], stack[3][1]);
-   r12 == lowerUpper64trans(stack[2][0], stack[2][1]);
-   r14 == lowerUpper64trans(stack[1][0], stack[1][1]);
-   r15 == lowerUpper64trans(stack[0][0], stack[0][1]);
+   old(rbx) == lowerUpper64trans(stack[8][0], stack[8][1]);
+   old(rbp) == lowerUpper64trans(stack[7][0], stack[7][1]);
+   old(rdi) == lowerUpper64trans(stack[6][0], stack[6][1]);
+   old(rsi) == lowerUpper64trans(stack[5][0], stack[5][1]);
+   old(r10) == lowerUpper64trans(stack[4][0], stack[4][1]);
+   old(r11) == lowerUpper64trans(stack[3][0], stack[3][1]);
+   old(r12) == lowerUpper64trans(stack[2][0], stack[2][1]);
+   old(r14) == lowerUpper64trans(stack[1][0], stack[1][1]);
+   old(r15) == lowerUpper64trans(stack[0][0], stack[0][1]);
 {
   PUSH(rbx); PUSH(rbp); PUSH(rdi); PUSH(rsi); PUSH(r10); PUSH(r11); PUSH(r12); PUSH(r14); PUSH(r15);
 } 
@@ -177,7 +179,7 @@ procedure {:refined} {:bridge} CalleeRestoreWindowsMM()
   POP(r15); POP(r14); POP(r12); POP(r11); POP(r10); POP(rsi); POP(rdi); POP(rbp); POP(rbx);  
 } 
 
-procedure {:refined} {:bridge} CalleeSaveRestoreWindowsMM()
+procedure {:refined} {:bridge} TestCalleeSaveRestoreWindowsMM()
   requires/ensures HasAtLeastFrames(stack, 1);
   modifies rbx; rbp; rdi; rsi; r10; r11; r12; r14; r15; efl; stack;
   ensures  
@@ -197,49 +199,115 @@ procedure {:refined} {:bridge} CalleeSaveRestoreWindowsMM()
   CalleeRestoreWindowsMM();
 } 
 
-// I can not get this to prove due to quadword to int and back again proof problems. 
-/*
-procedure {:refined} {:bridge} CalleeSaveWindowsXMM()
-  requires HasAtLeastFrames(stack, 1);
-  modifies r15; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; efl; stack;
-  ensures  
-   HasAtLeastFrames(stack, 2);
-   HasAtLeastN64BitFrames(stack, 2);
-//   old(xmm6) == Quadword(stack[1][0], stack[1][1], stack[0][0], stack[0][1]);
-{
-  MovLow64To64(r15, xmm6);
-  assert r15 == lowerUpper64(xmm6.lo, xmm6.mid_lo);
-  PUSH(r15);
-  assert stack[0][0] == lower64trans(r15);
-  assert stack[0][1] == upper64trans(r15);
-  PSRLDQ(xmm6,8);
-  assert xmm6 == old(Uint128ToQuadword(BitwiseShr128(QuadwordToUint128(xmm6), 8 * 8)));
-  assert xmm6 == Quadword(old(xmm6).mid_hi, old(xmm6).hi, 0, 0);
-  MovLow64To64(r15, xmm6);
-  
-  PUSH(r15);
-} 
-*/
-
-/*
-// Only if you're going to touch XMM registers. And remember to call EMM before return.
-procedure {:refined} {:bridge} CalleeRestoreWindowsXMM()
-  requires/ensures HasAtLeastFrames(stack, 1);
+procedure {:refined} {:bridge} SaveXMM(inline initframes : nat, inline numsaved : nat, inout operand xmm: Quadword)
   requires 
-   HasAtLeastFrames(stack, 10); // We require one frame at all times for a valid state.
-   HasAtLeastN64BitFrames(stack, 9);
-   modifies r15; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15;
+   HasAtLeastFrames(stack,   initframes + numsaved * 2);
+   HasAtLeastN64BitFrames(stack, numsaved* 2);
+  modifies r15; efl; stack;
+  ensures  
+   HasAtLeastFrames(stack,       initframes + (numsaved + 1) * 2);
+   HasAtLeastN64BitFrames(stack, (numsaved + 1) * 2);
+   old(xmm) == Quadword(stack[1][0], stack[1][1], stack[0][0], stack[0][1]);
+   stack == old(SeqPrepend(make64BitFrame(lowerUpper64trans(xmm.mid_hi,xmm.hi)),
+                 SeqPrepend(make64BitFrame(lowerUpper64trans(xmm.lo,xmm.mid_lo)),stack)));
 {
-  POP(r15);
-  ?(xmm6, r15);
+  lemma_lower_upper_trans();
+  MovLow64To64(r15, xmm);
+  PUSH(r15);
+  MOVHLPS(xmm,xmm);
+  MovLow64To64(r15, xmm);
+  PUSH(r15);
+}
 
+procedure CalleeSaveWindowsXMM(inline initframes : nat, inline N64bitframes : nat)
+  requires 
+   HasAtLeastFrames(stack, initframes);
+   HasAtLeastN64BitFrames(stack, N64bitframes);
+  modifies r15; efl; stack; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; 
+  ensures  
+   HasAtLeastFrames(stack, initframes + 20);
+   HasAtLeastN64BitFrames(stack, N64bitframes + 20); 
+   old(xmm15) == Quadword(stack[1][0],  stack[1][1],  stack[0][0],  stack[0][1]);
+   old(xmm14) == Quadword(stack[3][0],  stack[3][1],  stack[2][0],  stack[2][1]);
+   old(xmm13) == Quadword(stack[5][0],  stack[5][1],  stack[4][0],  stack[4][1]);
+   old(xmm12) == Quadword(stack[7][0],  stack[7][1],  stack[6][0],  stack[6][1]);
+   old(xmm11) == Quadword(stack[9][0],  stack[9][1],  stack[8][0],  stack[8][1]);
+   old(xmm10) == Quadword(stack[11][0], stack[11][1], stack[10][0], stack[10][1]);
+   old(xmm9)  == Quadword(stack[13][0], stack[13][1], stack[12][0], stack[12][1]);
+   old(xmm8)  == Quadword(stack[15][0], stack[15][1], stack[14][0], stack[14][1]);
+   old(xmm7)  == Quadword(stack[17][0], stack[17][1], stack[16][0], stack[16][1]);
+   old(xmm6)  == Quadword(stack[19][0], stack[19][1], stack[18][0], stack[18][1]);
+   old(stack) == SeqTail(stack,20);
+{
+  SaveXMM(initframes, 0, xmm6);
+  SaveXMM(initframes, 1, xmm7);
+  SaveXMM(initframes, 2, xmm8);
+  SaveXMM(initframes, 3, xmm9);
+  SaveXMM(initframes, 4, xmm10);
+  SaveXMM(initframes, 5, xmm11);
+  SaveXMM(initframes, 6, xmm12);
+  SaveXMM(initframes, 7, xmm13);
+  SaveXMM(initframes, 8, xmm14);
+  SaveXMM(initframes, 9, xmm15);
+}
+
+procedure RestoreXMM(inline numsaved : nat, inout operand xmm: Quadword, inout operand xmmtmp : Quadword)
+  modifies r14; r15; efl; stack;
+  requires 
+   HasAtLeastFrames(stack,       1 + (numsaved  + 1) * 2);
+   HasAtLeastN64BitFrames(stack, (numsaved + 1) * 2);
+   @xmm != @xmmtmp;
+  ensures  
+   HasAtLeastFrames(stack,       1 + numsaved * 2);
+   HasAtLeastN64BitFrames(stack, numsaved * 2);
+   stack == old(SeqTail(stack,2));
+   xmm   == old(Quadword(stack[1][0], stack[1][1], stack[0][0], stack[0][1]));
+{
+  lemma_lower_upper_trans();
+  POP(r15); // Get the high bits.
+  POP(r14); // Get the low bits;
+  MovLow64To128(xmm, r14);    // Put in the low bits, zeroing the high bits.
+  MovLow64To128(xmmtmp,r15);  // Put the high bits into a temp xmm, xmm5 is not callee save.
+  MOVLHPS(xmm,xmmtmp);        // Put in the high bits, retaining the low bits.
 } 
-*/
 
-/*
-procedure {:refined} {:bridge} CalleeSaveRestoreWindowsXMM()
+procedure CalleeRestoreWindowsXMM(inline N64bitframes : nat)
+ modifies r14; r15; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; efl; stack;
+  requires 
+   HasAtLeastFrames(stack, 1 + N64bitframes + 20);
+   HasAtLeastN64BitFrames(stack, N64bitframes + 20);
+  ensures
+   HasAtLeastFrames(stack, 1 + N64bitframes);
+   HasAtLeastN64BitFrames(stack, N64bitframes);
+
+   xmm15 == old(Quadword(stack[1][0],  stack[1][1],  stack[0][0],  stack[0][1]));
+   xmm14 == old(Quadword(stack[3][0],  stack[3][1],  stack[2][0],  stack[2][1]));
+   xmm13 == old(Quadword(stack[5][0],  stack[5][1],  stack[4][0],  stack[4][1]));
+   xmm12 == old(Quadword(stack[7][0],  stack[7][1],  stack[6][0],  stack[6][1]));
+   xmm11 == old(Quadword(stack[9][0],  stack[9][1],  stack[8][0],  stack[8][1]));
+   xmm10 == old(Quadword(stack[11][0], stack[11][1], stack[10][0], stack[10][1]));
+   xmm9  == old(Quadword(stack[13][0], stack[13][1], stack[12][0], stack[12][1]));
+   xmm8  == old(Quadword(stack[15][0], stack[15][1], stack[14][0], stack[14][1]));
+   xmm7  == old(Quadword(stack[17][0], stack[17][1], stack[16][0], stack[16][1]));
+   xmm6  == old(Quadword(stack[19][0], stack[19][1], stack[18][0], stack[18][1]));
+
+   stack == old(SeqTail(stack,20));
+{
+ RestoreXMM(9, xmm15, xmm5);
+ RestoreXMM(8, xmm14, xmm5);
+ RestoreXMM(7, xmm13, xmm5);
+ RestoreXMM(6, xmm12, xmm5);
+ RestoreXMM(5, xmm11, xmm5);
+ RestoreXMM(4, xmm10, xmm5);
+ RestoreXMM(3, xmm9, xmm5);
+ RestoreXMM(2, xmm8, xmm5);
+ RestoreXMM(1, xmm7, xmm5);
+ RestoreXMM(0, xmm6, xmm5);
+} 
+
+procedure TestCalleeSaveRestoreWindowsXMM()
   requires/ensures HasAtLeastFrames(stack, 1);
-  modifies r15; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; efl; stack;
+  modifies r14; r15; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; efl; stack;
   ensures  
    xmm6 == old(xmm6); 
    xmm7 == old(xmm7); 
@@ -252,13 +320,79 @@ procedure {:refined} {:bridge} CalleeSaveRestoreWindowsXMM()
    xmm14 == old(xmm14); 
    xmm15 == old(xmm15);
 {
-  CalleeSaveWindowsXMM();
+  CalleeSaveWindowsXMM(1, 0);
   // Zero the registers.
   Pxor(xmm6,xmm6); Pxor(xmm7,xmm7); Pxor(xmm8,xmm8); Pxor(xmm9,xmm9); Pxor(xmm10,xmm10); 
   Pxor(xmm11,xmm11); Pxor(xmm12,xmm12); Pxor(xmm13,xmm13); Pxor(xmm14,xmm14); Pxor(xmm15,xmm15);
-  CalleeRestoreWindowsXMM();
+  CalleeRestoreWindowsXMM(0);
 } 
-*/
+
+procedure CalleeSaveWindows()
+  requires HasAtLeastFrames(stack, 1);
+  reads rbx; rbp; rdi; rsi; r10; r11; r12; r14; r15;
+  modifies r14; r15; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; efl; stack;
+  ensures 
+   HasAtLeastFrames(stack, 30);
+   HasAtLeastN64BitFrames(stack, 29);
+// 9 for 9 frames.
+   old(rbx) == lowerUpper64trans(stack[28][0], stack[28][1]);
+   old(rbp) == lowerUpper64trans(stack[27][0], stack[27][1]);
+   old(rdi) == lowerUpper64trans(stack[26][0], stack[26][1]);
+   old(rsi) == lowerUpper64trans(stack[25][0], stack[25][1]);
+   old(r10) == lowerUpper64trans(stack[24][0], stack[24][1]);
+   old(r11) == lowerUpper64trans(stack[23][0], stack[23][1]);
+   old(r12) == lowerUpper64trans(stack[22][0], stack[22][1]);
+   old(r14) == lowerUpper64trans(stack[21][0], stack[21][1]);
+   old(r15) == lowerUpper64trans(stack[20][0], stack[20][1]);
+// 10 for 20 frames.
+   old(xmm15) == Quadword(stack[1][0],  stack[1][1],  stack[0][0],  stack[0][1]);
+   old(xmm14) == Quadword(stack[3][0],  stack[3][1],  stack[2][0],  stack[2][1]);
+   old(xmm13) == Quadword(stack[5][0],  stack[5][1],  stack[4][0],  stack[4][1]);
+   old(xmm12) == Quadword(stack[7][0],  stack[7][1],  stack[6][0],  stack[6][1]);
+   old(xmm11) == Quadword(stack[9][0],  stack[9][1],  stack[8][0],  stack[8][1]);
+   old(xmm10) == Quadword(stack[11][0], stack[11][1], stack[10][0], stack[10][1]);
+   old(xmm9)  == Quadword(stack[13][0], stack[13][1], stack[12][0], stack[12][1]);
+   old(xmm8)  == Quadword(stack[15][0], stack[15][1], stack[14][0], stack[14][1]);
+   old(xmm7)  == Quadword(stack[17][0], stack[17][1], stack[16][0], stack[16][1]);
+   old(xmm6)  == Quadword(stack[19][0], stack[19][1], stack[18][0], stack[18][1]);
+{
+  CalleeSaveWindowsMM();
+  CalleeSaveWindowsXMM(10,9);
+} 
+
+procedure CalleeRestoreWindows()
+  modifies rbx; rbp; rdi; rsi; r10; r11; r12; r14; r15; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; efl; stack;
+  requires
+   HasAtLeastFrames(stack, 30);
+   HasAtLeastN64BitFrames(stack, 29);
+
+  ensures
+// 9 for 9 frames.
+   rbx == old(lowerUpper64trans(stack[28][0], stack[28][1]));
+   rbp == old(lowerUpper64trans(stack[27][0], stack[27][1]));
+   rdi == old(lowerUpper64trans(stack[26][0], stack[26][1]));
+   rsi == old(lowerUpper64trans(stack[25][0], stack[25][1]));
+   r10 == old(lowerUpper64trans(stack[24][0], stack[24][1]));
+   r11 == old(lowerUpper64trans(stack[23][0], stack[23][1]));
+   r12 == old(lowerUpper64trans(stack[22][0], stack[22][1]));
+   r14 == old(lowerUpper64trans(stack[21][0], stack[21][1]));
+   r15 == old(lowerUpper64trans(stack[20][0], stack[20][1]));
+// 10 for 20 frames.
+   xmm15 == old(Quadword(stack[1][0],  stack[1][1],  stack[0][0],  stack[0][1]));
+   xmm14 == old(Quadword(stack[3][0],  stack[3][1],  stack[2][0],  stack[2][1]));
+   xmm13 == old(Quadword(stack[5][0],  stack[5][1],  stack[4][0],  stack[4][1]));
+   xmm12 == old(Quadword(stack[7][0],  stack[7][1],  stack[6][0],  stack[6][1]));
+   xmm11 == old(Quadword(stack[9][0],  stack[9][1],  stack[8][0],  stack[8][1]));
+   xmm10 == old(Quadword(stack[11][0], stack[11][1], stack[10][0], stack[10][1]));
+   xmm9  == old(Quadword(stack[13][0], stack[13][1], stack[12][0], stack[12][1]));
+   xmm8  == old(Quadword(stack[15][0], stack[15][1], stack[14][0], stack[14][1]));
+   xmm7  == old(Quadword(stack[17][0], stack[17][1], stack[16][0], stack[16][1]));
+   xmm6  == old(Quadword(stack[19][0], stack[19][1], stack[18][0], stack[18][1]));
+   HasAtLeastFrames(stack, 1);
+{
+   CalleeRestoreWindowsXMM(9);
+   CalleeRestoreWindowsMM();
+} 
 
 #verbatim
 }

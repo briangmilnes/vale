@@ -158,7 +158,7 @@ predicate ValidHeapAddr(s:state, addr:maddr)
 
 predicate ValidXmmRegisterIndex(index:int)
 {
-    0 <= index <= 7
+    0 <= index <= 15
 }
 
 predicate ValidXmm(xmms:map<int,Quadword>, r:x86reg)
@@ -809,7 +809,6 @@ predicate evalIns(ins:ins, s:state, r:state)
               evalUpdateAndMaintainFlags64(s, dst, lowerUpper64(t.lo, t.mid_lo), r, obs) // mov doesn't change flags
 
           case MOVQXMM64(dst, src) =>
-            var d := eval_op128(s,dst);
             var t := eval_op64(s,src);
               evalUpdateXmmsAndMaintainFlags(s, dst, Quadword(lower64(t), upper64(t), 0, 0), r, obs) // mov doesn't change flags
 

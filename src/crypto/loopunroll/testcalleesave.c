@@ -26,7 +26,7 @@
 #include "gcc_compat.h"
 #include <inttypes.h>
 
-void __stdcall CalleeSaveRestoreLinux();
+void __stdcall TestCalleeSaveRestoreLinux();
 
 int test_callee_save_linux() {
   register int old_rbx asm ("rbx");
@@ -35,7 +35,7 @@ int test_callee_save_linux() {
   register int old_r13 asm ("r13");
   register int old_r14 asm ("r14");    
   register int old_r15 asm ("r15");
-  CalleeSaveRestoreLinux();
+  TestCalleeSaveRestoreLinux();
   register int rbx asm ("rbx");
   register int rbp asm ("rbp");
   register int r12 asm ("r12");
@@ -53,7 +53,7 @@ int test_callee_save_linux() {
   return 0;
 }
 
-void __stdcall CalleeSaveRestoreWindowsMM();
+void __stdcall TestCalleeSaveRestoreWindowsMM();
 
 int test_callee_save_windowsMM() {
   register int old_rbx asm ("rbx");
@@ -65,7 +65,7 @@ int test_callee_save_windowsMM() {
   register int old_r12 asm ("r12");
   register int old_r14 asm ("r14");
   register int old_r15 asm ("r15");
-  CalleeSaveRestoreWindowsMM();
+  TestCalleeSaveRestoreWindowsMM();
   register int rbx asm ("rbx");
   register int rbp asm ("rbp");
   register int rdi asm ("rdi");
@@ -89,17 +89,65 @@ int test_callee_save_windowsMM() {
   return 0;
 }
 
+void __stdcall TestCalleeSaveRestoreWindowsXMM();
+//xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15;
+int test_callee_save_windowsXMM() {
+  register long long int old_xmm6 asm ("xmm6"); 
+  register long long int old_xmm7 asm ("xmm7"); 
+  register long long int old_xmm8 asm ("xmm8"); 
+  register long long int old_xmm9 asm ("xmm9"); 
+  register long long int old_xmm10 asm ("xmm10"); 
+  register long long int old_xmm11 asm ("xmm11"); 
+  register long long int old_xmm12 asm ("xmm12"); 
+  register long long int old_xmm13 asm ("xmm13"); 
+  register long long int old_xmm14 asm ("xmm14"); 
+  register long long int old_xmm15 asm ("xmm15");
+  TestCalleeSaveRestoreWindowsXMM();
+  register long long int xmm6 asm ("xmm6"); 
+  register long long int xmm7 asm ("xmm7"); 
+  register long long int xmm8 asm ("xmm8"); 
+  register long long int xmm9 asm ("xmm9"); 
+  register long long int xmm10 asm ("xmm10"); 
+  register long long int xmm11 asm ("xmm11"); 
+  register long long int xmm12 asm ("xmm12"); 
+  register long long int xmm13 asm ("xmm13"); 
+  register long long int xmm14 asm ("xmm14"); 
+  register long long int xmm15 asm ("xmm15");
+
+  if (old_xmm6 == xmm6) { printf("xmm6 OK\n"); } else {printf("FAILURE xmm6 was %lld is now %lld.\n", old_xmm6, xmm6); return 1;}
+  if (old_xmm7 == xmm7) { printf("xmm7 OK\n"); } else {printf("FAILURE xmm7 was %lld is now %lld.\n", old_xmm7, xmm7); return 1;}
+  if (old_xmm8 == xmm8) { printf("xmm8 OK\n"); } else {printf("FAILURE xmm8 was %lld is now %lld.\n", old_xmm8, xmm8); return 1;}
+  if (old_xmm9 == xmm9) { printf("xmm9 OK\n"); } else {printf("FAILURE xmm9 was %lld is now %lld.\n", old_xmm9, xmm9); return 1;}
+  if (old_xmm10 == xmm10) { printf("xmm10 OK\n"); } else {printf("FAILURE xmm10 was %lld is now %lld.\n", old_xmm10, xmm10); return 1;}
+  if (old_xmm11 == xmm11) { printf("xmm11 OK\n"); } else {printf("FAILURE xmm11 was %lld is now %lld.\n", old_xmm11, xmm11); return 1;}
+  if (old_xmm12 == xmm12) { printf("xmm12 OK\n"); } else {printf("FAILURE xmm12 was %lld is now %lld.\n", old_xmm12, xmm12); return 1;}
+  if (old_xmm13 == xmm13) { printf("xmm13 OK\n"); } else {printf("FAILURE xmm13 was %lld is now %lld.\n", old_xmm13, xmm13); return 1;}
+  if (old_xmm14 == xmm14) { printf("xmm14 OK\n"); } else {printf("FAILURE xmm14 was %lld is now %lld.\n", old_xmm14, xmm14); return 1;}
+  if (old_xmm15 == xmm15) { printf("xmm15 OK\n"); } else {printf("FAILURE xmm15 was %lld is now %lld.\n", old_xmm15, xmm15); return 1;}
+
+  return 0;
+}
+
+
 int __cdecl main(void) {
   printf("Callee Save starting tests.\n");
+
   if (test_callee_save_linux() == 0) {
     printf("Callee Save all linux tests passed.\n");
   } else {
     printf("Callee Save some linux test failed.\n");
   }
+
   if (test_callee_save_windowsMM() == 0) {
     printf("Callee Save all windowsMM tests passed.\n");
   } else {
     printf("Callee Save some windowsMM test failed.\n");
+  }
+
+  if (test_callee_save_windowsXMM() == 0) {
+    printf("Callee Save all windowsXMM tests passed.\n");
+  } else {
+    printf("Callee Save some windowsXMM test failed.\n");
   }
 
   printf("Callee Save finished tests.\n");

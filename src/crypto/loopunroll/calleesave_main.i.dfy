@@ -46,13 +46,17 @@ method {:main} Main(ghost env:HostEnvironment)
     printHeader(asm_choice );
 
     var win := (platform_choice == Win);
-    printProcPlatform("CalleeSaveRestoreLinux",
-      va_code_CalleeSaveRestoreLinux(),
+    printProcPlatform("TestCalleeSaveRestoreLinux",
+      va_code_TestCalleeSaveRestoreLinux(),
       0, 0, asm_choice, platform_choice);
 
-    printProcPlatform("CalleeSaveRestoreWindowsMM",
-     va_code_CalleeSaveRestoreWindowsMM(),
+    printProcPlatform("TestCalleeSaveRestoreWindowsMM",
+     va_code_TestCalleeSaveRestoreWindowsMM(),
      10, 0, asm_choice, platform_choice);
+
+    printProcPlatform("TestCalleeSaveRestoreWindowsXMM",
+     va_code_TestCalleeSaveRestoreWindowsMM(),
+     20, 0, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);
 }

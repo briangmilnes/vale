@@ -92,8 +92,8 @@ predicate va_is_dst_operand_uint32(o:opr, s:va_state) { o.OReg? && !o.r.X86Xmm? 
 predicate va_is_src_operand_uint64(o:opr, s:va_state) { o.OConst? || (o.OReg? && !o.r.X86Xmm?) }
 predicate va_is_dst_operand_uint64(o:opr, s:va_state) { o.OReg? && !o.r.X86Xmm? }
 
-predicate va_is_src_operand_Quadword(o:opr, s:va_state) { o.OReg? && o.r.X86Xmm? && 0 <= o.r.xmm <= 7 }
-predicate va_is_dst_operand_Quadword(o:opr, s:va_state) { o.OReg? && o.r.X86Xmm? && 0 <= o.r.xmm <= 7 }
+predicate va_is_src_operand_Quadword(o:opr, s:va_state) { o.OReg? && o.r.X86Xmm? && 0 <= o.r.xmm <= 15 }
+predicate va_is_dst_operand_Quadword(o:opr, s:va_state) { o.OReg? && o.r.X86Xmm? && 0 <= o.r.xmm <= 15 }
 
 function va_eval_operand_imm8(s:va_state, o:opr):uint32
     requires va_is_src_operand_imm8(o, s);
