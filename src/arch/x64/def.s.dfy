@@ -389,6 +389,7 @@ function make64BitFrame(v : uint64) : Frame
   m[0 := low][1 := high]
 }
 
+// TODO see about restricting this to a register, although the instruction procedure does.
 predicate evalPop(s : state, dst : operand, r:state, obs:seq<observation>)
   requires Valid64BitDestinationOperand(s, dst);
   requires HasAtLeastN64BitFrames(s.stack, 1);
@@ -931,7 +932,7 @@ predicate evalIns(ins:ins, s:state, r:state)
                                                         Uint128ToQuadword(BitwiseShr128(QuadwordToUint128(Eval128BitOperand(s,dst)), 8 * eval_op32(s,count))), r, obs)
             case PCLMULQDQ(dst, src, imm8)         => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src), r, obs)
             case VPCLMULQDQ(dst, src1, src2, imm8) => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src1), r, obs)
-            case PUSH(src) => r == s.(stack := [make64BitFrame(eval_op64(s,src))] + s.stack)
+            case PUSH(src) => r == s.(stack := [make64BitFrame(eval_op64(s,src))] + s.stack, trace := s.trace + obs) // TODO check obs does not break anything.
             case POP(dst)  => evalPop(s, dst, r, obs)
             case MOV_m64_imm32(dst, src) => evalUpdateAndMaintainFlags64(s, dst, eval_op32(s, src), r, obs)
             case EMMS => r == s

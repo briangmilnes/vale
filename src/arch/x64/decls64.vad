@@ -49,6 +49,7 @@ procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(operand src: ui
 }   
 
 
+// TODO @src is OReg;
 procedure {:refined} {:bridge} {:instruction Ins(POP(dst))} POP(inout operand dst: uint64) 
   modifies stack;
   requires 
@@ -59,7 +60,7 @@ procedure {:refined} {:bridge} {:instruction Ins(POP(dst))} POP(inout operand ds
   ensures
     let slen := SeqLength(old(stack));
     SeqLength(stack) == slen - 1;
-    dst == old(lowerUpper64(stack[0][0],stack[0][1]));
+    dst == old(lowerUpper64trans(stack[0][0],stack[0][1])); 
     stack == old(SeqTail(stack,1));
 {
     reveal evalCodeOpaque;

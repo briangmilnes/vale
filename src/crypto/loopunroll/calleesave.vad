@@ -25,7 +25,7 @@
 https://github.com/hjl-tools/x86-psABI/wiki/x86-64-psABI-r252.pdf
 
 https://msdn.microsoft.com/en-us/library/ms235286.aspx seems a better description.
-https://msdn.microsoft.com/en-us/library/9z1stfyw.aspx details the reegisters.
+https://msdn.microsoft.com/en-us/library/9z1stfyw.aspx details the registers.
 
 So callee save restore works differently on Linux and Windows.
 
@@ -101,7 +101,6 @@ procedure {:refined} {:bridge} CalleeRestoreLinux()
    r14 == old(lowerUpper64trans(stack[1][0], stack[1][1]));
    r15 == old(lowerUpper64trans(stack[0][0], stack[0][1]));
 {
-  lemma_lower_upper_trans(); // Why is this needed? 
   // Restore them.
   POP(r15); POP(r14); POP(r13); POP(r12); POP(rbp); POP(rbx); 
 } 
@@ -175,7 +174,6 @@ procedure {:refined} {:bridge} CalleeRestoreWindowsMM()
   r14 == old(lowerUpper64trans(stack[1][0], stack[1][1])); 
   r15 == old(lowerUpper64trans(stack[0][0], stack[0][1]));
 {
-  lemma_lower_upper_trans(); // Why is this needed? 
   POP(r15); POP(r14); POP(r12); POP(r11); POP(r10); POP(rsi); POP(rdi); POP(rbp); POP(rbx);  
 } 
 
@@ -264,8 +262,8 @@ procedure RestoreXMM(inline numsaved : nat, inout operand xmm: Quadword, inout o
    xmm   == old(Quadword(stack[1][0], stack[1][1], stack[0][0], stack[0][1]));
 {
   lemma_lower_upper_trans();
-  POP(r15); // Get the high bits.
-  POP(r14); // Get the low bits;
+  POP(r15); // Get the high bits of ?xmm.
+  POP(r14); // Get the low bits of ?xmm.
   MovLow64To128(xmm, r14);    // Put in the low bits, zeroing the high bits.
   MovLow64To128(xmmtmp,r15);  // Put the high bits into a temp xmm, xmm5 is not callee save.
   MOVLHPS(xmm,xmmtmp);        // Put in the high bits, retaining the low bits.

@@ -31,6 +31,16 @@ import opened operations_i
 
 #endverbatim
 
+#verbatim
+lemma lemma_BitwiseAdd32()
+    ensures  forall x:uint32, y:uint32 :: x + y < 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y
+    ensures  forall x:uint32, y:uint32 :: x + y >= 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y - 0x1_0000_0000;
+    ensures  forall x:uint32 :: BitwiseAdd32(x, 0) == x;
+{
+    reveal_BitwiseAdd32();
+}
+#endverbatim
+
 // This lets us pass in constant small increments for the unrolling.
 procedure {:refined} {:bridge} AddN32(inout operand dst : uint32, inline src : uint32)
     modifies efl;

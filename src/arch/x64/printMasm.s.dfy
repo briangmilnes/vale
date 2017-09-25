@@ -262,7 +262,7 @@ method printIns(ins:ins)
         case PUSH (src)               => print ("  push  ");  printOprnd64(src); print("\n");
         case POP (dst)                => print ("  pop  ");   printOprnd64(dst); print("\n");
         case MOV_m64_imm32(dst,imm32) => print ("  mov  ");  print(", "); printOprnd64(dst); print(","); printOprnd(imm32); print("\n");
-        case EMMS => print("  emms  ");
+        case EMMS => print("  emms  \n");
 }
 
 method printBlock(b:codes, n:int) returns(n':int)

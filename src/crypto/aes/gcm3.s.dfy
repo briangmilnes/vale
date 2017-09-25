@@ -104,7 +104,8 @@ function AES_GCTR(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>)
 }
 
 // Use a ghost var of G, for ghosts, to cut the size of the code.
-datatype G = G(ghost key : seq<uint32>,
+datatype G = G(ghost alg: Algorithm,
+               ghost key : seq<uint32>,
                ghost key_heap : heaplet_id,
                ghost exp_key : seq<uint32>,
                ghost exp_key_heap : heaplet_id,

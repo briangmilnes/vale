@@ -28,34 +28,52 @@
 
 void __stdcall TestCalleeSaveRestoreLinux();
 
-int test_callee_save_linux() {
-  register int old_rbx asm ("rbx");
-  register int old_rbp asm ("rbp");
-  register int old_r12 asm ("r12");
-  register int old_r13 asm ("r13");
-  register int old_r14 asm ("r14");    
-  register int old_r15 asm ("r15");
-  TestCalleeSaveRestoreLinux();
-  register int rbx asm ("rbx");
-  register int rbp asm ("rbp");
-  register int r12 asm ("r12");
-  register int r13 asm ("r13");
-  register int r14 asm ("r14");    
-  register int r15 asm ("r15");
+int before_rbp = 0;
+int before_rbx = 0;
+int before_r12 = 0;
+int before_r13 = 0;
+int before_r14 = 0;
+int before_r15 = 0;
 
-  if (old_rbx == rbx) { printf("rbx OK\n"); } else {printf("FAILURE rbx was %d is now %d.\n", old_rbx, rbx); return 1;}
-  if (old_rbp == rbp) { printf("rbp OK\n"); } else {printf("FAILURE rbp was %d is now %d.\n", old_rbp, rbp); return 1;}
-  if (old_r12 == r12) { printf("r12 OK\n"); } else {printf("FAILURE r12 was %d is now %d.\n", old_r12, r12); return 1;}
-  if (old_r13 == r13) { printf("r13 OK\n"); } else {printf("FAILURE r13 was %d is now %d.\n", old_r13, r13); return 1;}
-  if (old_r14 == r14) { printf("r14 OK\n"); } else {printf("FAILURE r14 was %d is now %d.\n", old_r14, r14); return 1;}
-  if (old_r15 == r15) { printf("r15 OK\n"); } else {printf("FAILURE r15 was %d is now %d.\n", old_r15, r15); return 1;}
+int after_rbp = -1;
+int after_rbx = -1;
+int after_r12 = -1;
+int after_r13 = -1;
+int after_r14 = -1;
+int after_r15 = -1;
+
+int test_callee_save_linux() {
+  register int register_rbp asm ("rbp"); before_rbp = register_rbp;
+  register int register_rbx asm ("rbx"); before_rbx = register_rbx;
+  register int register_r12 asm ("r12"); before_r12 = register_r12;
+  register int register_r13 asm ("r13"); before_r13 = register_r13;
+  register int register_r14 asm ("r14"); before_r14 = register_r14;
+  register int register_r15 asm ("r15"); before_r15 = register_r15;
+
+  TestCalleeSaveRestoreLinux();
+
+  after_rbp = register_rbp;
+  after_rbx = register_rbx;
+  after_r12 = register_r12;
+  after_r13 = register_r13;
+  after_r14 = register_r14;
+  after_r15 = register_r15;
+
+  if (before_rbx == after_rbx) { printf("rbx OK\n"); } else {printf("FAILURE rbx was %d is now %d.\n", before_rbx, after_rbx); return 1;}
+  if (before_rbp == after_rbp) { printf("rbp OK\n"); } else {printf("FAILURE rbp was %d is now %d.\n", before_rbp, after_rbp); return 1;}
+  if (before_r12 == after_r12) { printf("r12 OK\n"); } else {printf("FAILURE r12 was %d is now %d.\n", before_r12, after_r12); return 1;}
+  if (before_r13 == after_r13) { printf("r13 OK\n"); } else {printf("FAILURE r13 was %d is now %d.\n", before_r13, after_r13); return 1;}
+  if (before_r14 == after_r14) { printf("r14 OK\n"); } else {printf("FAILURE r14 was %d is now %d.\n", before_r14, after_r14); return 1;}
+  if (before_r15 == after_r15) { printf("r15 OK\n"); } else {printf("FAILURE r15 was %d is now %d.\n", before_r15, after_r15); return 1;}
 
   return 0;
 }
 
+/*
 void __stdcall TestCalleeSaveRestoreWindowsMM();
 
 int test_callee_save_windowsMM() {
+
   register int old_rbx asm ("rbx");
   register int old_rbp asm ("rbp");
   register int old_rdi asm ("rdi");
@@ -128,6 +146,7 @@ int test_callee_save_windowsXMM() {
   return 0;
 }
 
+*/
 
 int __cdecl main(void) {
   printf("Callee Save starting tests.\n");
@@ -138,6 +157,7 @@ int __cdecl main(void) {
     printf("Callee Save some linux test failed.\n");
   }
 
+  /*
   if (test_callee_save_windowsMM() == 0) {
     printf("Callee Save all windowsMM tests passed.\n");
   } else {
@@ -149,6 +169,7 @@ int __cdecl main(void) {
   } else {
     printf("Callee Save some windowsXMM test failed.\n");
   }
+ */
 
   printf("Callee Save finished tests.\n");
 }

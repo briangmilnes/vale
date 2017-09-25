@@ -5,11 +5,6 @@ include "../../../lib/collections/Seqs.s.dfy"
 include "../../../arch/x64/vale.i.dfy"
 include "../../../lib/util/dafny_wrappers.i.dfy"
 
-include "../gcm3.s.dfy"
-
-include "../aes.s.dfy"
-include "../aes_helpers.i.dfy"
-
 module ShiftHelpers {
 
 import opened x64_vale_i

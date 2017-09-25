@@ -12,6 +12,7 @@ include "gcm.proven.vad"
 // for the instructions
 include{:verbatim} "../../../lib/util/words_and_bytes.i.dfy"
 include{:verbatim} "../../../lib/util/operations.i.dfy"
+include "../../loopunroll/calleesave.vad"
 
 #verbatim
 module GCM {
@@ -31,6 +32,7 @@ import opened proof
 import opened words_and_bytes_i
 import opened operations_i
 import opened aes_vale
+import opened CalleeSaveRestore
 
 #endverbatim
 
@@ -259,103 +261,53 @@ procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
 }
 */
 
-#verbatim
-predicate HasAtLeastN64BitFrames(s: Stack, n : int) {
- |s| >= n && 
- forall i: nat :: 0 <= i < n ==> 0 in s[i] && 1 in s[i]
-}         
-
-predicate HasFrames(s: Stack, n : int) {
- |s| == n         
-}         
-#endverbatim
-
-procedure CalleSave()
- reads rbx; rbp; rdi; rsi; r12; r14; r14; r15;
- modifies efl; stack;
- ensures
-  HasAtLeastN64BitFrames(stack, 7);
-  rbx == lowerUpper64(stack[0][0],stack[0][1]);
-  rbp == lowerUpper64(stack[1][0],stack[1][1]);
-  rdi == lowerUpper64(stack[2][0],stack[2][1]);
-  rsi == lowerUpper64(stack[3][0],stack[3][1]);
-  r12 == lowerUpper64(stack[4][0],stack[4][1]);
-  r14 == lowerUpper64(stack[5][0],stack[5][1]);
-  r15 == lowerUpper64(stack[6][0],stack[6][1]);
-{
-  PUSH(rbx);
-  PUSH(rbp);
-  PUSH(rdi);
-  PUSH(rsi);
-  PUSH(r12);
-  PUSH(r14);
-  PUSH(r15);
-}    
-
-procedure CalleRestore()
- modifies rbx; rbp; rdi; rsi; r12; r14; r14; r15; efl; stack;
- requires HasAtLeastN64BitFrames(stack, 7);
- ensures
-  stack == SeqSlice(old(stack),0,8);
-  rbx == old(lowerUpper64(stack[0][0],stack[0][1]));
-  rbp == old(lowerUpper64(stack[1][0],stack[1][1]));
-  rdi == old(lowerUpper64(stack[2][0],stack[2][1]));
-  rsi == old(lowerUpper64(stack[3][0],stack[3][1]));
-  r12 == old(lowerUpper64(stack[4][0],stack[4][1]));
-  r14 == old(lowerUpper64(stack[5][0],stack[5][1]));
-  r15 == old(lowerUpper64(stack[6][0],stack[6][1]));
-{
-  POP(r15);
-  POP(r14);
-  POP(r12);
-  POP(rsi);
-  POP(rdi);
-  POP(rbp);
-  POP(rbx);
-}
-
 // Perform just the AES GCTR computation, n way unfolded, callee save.
-// RAX, RCX, RDX, R8, R9, R10, and R11 are volitile. 
-// RBX, RBP, RDI, RSI, R12, R14, and R15 must be saved and restored.
 //
-// GCC is giving us: rax, rsi and rdx for our four arguments, iptr, iendptr, optr and IV.
-// iptr    - rax
-// iendptr - rsi
-// optr    - rdx
-// ctr     - rcx
-// IV      - r10
-// leaving us: RBX, RBP, RDI, R8, R9, R11, R12, R14, and R15.
+// GCC is giving us:
+// expanded_key - rdi 
+// iptr         - rsi
+// iendptr      - rdx
+// optr         - rcx
+// IV           - r8d
+// TO BE ADDED // AAD          - r9d 
+// TO BE ADDED // TAG          - r10d - the mac, called TAG by some of the tests. Will this be on the stack?
 //
+// We need a 32 bit counter, which we'll put in rax.
+//
+// As rsp is the stack pointer, and a frame pointer, rbp may be in use. 
+// callee save restore frees up everything for us
+// leaving us: rax, rbx, rsp, rbp, r11-r15 or 9 registers.
+
 // As we'd like to be able to unroll up to 8 way and we need 1 32 bit tmp counter per
-// GCTR unfolding, we need up to 8 32 bit temporary registers: rbx, rbp, rdi, rsi, r11, r12, r14 and r15.
+// GCTR unfolding, we need up to 8 32 bit temporary registers: 
+//
 // We need a 96 bit IV in memory, 128 bit, zeros for the last 32, pointed to by r10;
 // Then each unrolling gets two xmm registers for an eight way unrolling.
 // The temporary registers will be supplied by name to all but final routine.
-/*
-procedure {:timeLimitMultiplier 3} AESGCTR(ghost g : G)
-    modifies mem; efl; rax; rsi; rdx;
-    let ipter   := rax;
-    let iendptr := rsi;
-    let optr    := rdx;
-    let ctr     := rcx;
-    let icbptr  := r10; // 96 high bits of IV and 32 bits of zero in memory in 128 bits.
-    let items :=  (old(iendptr) - old(iptr)) / 4;
-    requires
-      g.iaddr == old(iptr);
-      g.oaddr == old(optr);
-      g.isize  == items;
-      g.iaddr != g.oaddr; // Hmm, is this necessary?
+//
+// Thus we own 100% of the 64 and 128 bit registers. 
+// 
 
+procedure {:timeLimitMultiplier 3} AES128GCTREncrypt(ghost g : G)
+    modifies mem; efl; rax; rdx; rcx; rdi; rsi; r10; r9; rbx; rbp; r12; r13; r14; r15; efl; stack;
     requires
-        0 < n <= 8;
-        iendptr >= iptr; 
-        (iendptr - iptr) % (n * 4) == 0;
-        HasFrames(stack, 1);
+     let expanded_key := rdi;
+     let iptr         := rsi;
+     let iendptr      := rdx;
+     let optr         := rcx;
+     let ivptr        := r8; // 96 high bits of IV and 32 bits of zero in memory in 128 bits.
+     let items        := (old(iendptr) - old(iptr)) / 4;
+     g.iaddr == old(iptr);
+     g.oaddr == old(optr);
+     g.isize  == items;
+     g.iaddr != g.oaddr; // Is this strong enough?
+     iendptr >= iptr; 
+     HasAtLeastFrames(stack, 1);
 
     requires/ensures
-        g.iheap != g.oheap;
-        ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, taint);
-        ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
+     g.iheap != g.oheap;
+     ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret);
+     ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
 
     ensures
 //        OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
@@ -363,21 +315,25 @@ procedure {:timeLimitMultiplier 3} AESGCTR(ghost g : G)
 //        WritesReg128(mem, g.oheap, g.oaddr, g.isize, g.isize, Public,
 //          AESGCTRSeq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
         // Ensure I don't mess up the old ptr, although C should not care.
-        let optr    := rdx; optr == old(optr);
-        // Ensure my registers are restored.
-        rbx == old(rbx);
-        rbp == old(rbp);
-        rdi == old(rdi);
-        rsi == old(rsi);
-        r12 == old(r12);
-        r14 == old(r14);
-        r15 == old(r15);
+     let optr    := rcx; optr == old(optr);
 {
-  CalleSave();
-//  AESGCTR(g, iptr, iendptr, optr, ctr, icbptr);
-  CalleRestore();
+ let expanded_key := rdi;
+ let iptr         := rsi;
+ let iendptr      := rdx;
+ let optr         := rcx;
+ let ivptr        := r8; // 96 high bits of IV and 32 bits of zero in memory in 128 bits.
+ let ctr          := rax;
+ let items        := (old(iendptr) - old(iptr)) / 4;
+ CalleeSaveLinux();
+ // AESGCTR(g, iptr, iendptr, optr, ctr, icbptr);
+ CalleeRestoreLinux();
+ EMMS(); // Intel says call this before a return if you are touching XMM.
 }
-*/
+
+
+// Dummies for testing the test code.
+//procedure {:timeLimitMultiplier 3} AES128GCTREncrypt(ghost g : G) {}  
+procedure {:timeLimitMultiplier 3} AES128GCTRDecrypt(ghost g : G) {} 
 
 #verbatim
 } // end module CGM

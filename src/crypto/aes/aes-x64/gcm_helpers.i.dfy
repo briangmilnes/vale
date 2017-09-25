@@ -20,6 +20,7 @@ import opened AESModule
 import opened AESHelpersModule
 import opened GCMModule
 
+/*
 lemma lemma_BitwiseAdd32()
     ensures  forall x:uint32, y:uint32 :: x + y < 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y
     ensures  forall x:uint32, y:uint32 :: x + y >= 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y - 0x1_0000_0000;
@@ -58,6 +59,7 @@ predicate BitTest128(x : bv128, amount : int)
 {
    ((x >> amount) & 0x1) == 1
 }
+*/
 
 /* 
 // Sanity checks.
@@ -249,5 +251,28 @@ method CL_MUL(src1 : bv128, src2 : bv128, imm8 : bv8) returns (dest : bv128)
   dest[127] := 0;
 }
 */
+
+predicate AlgReq(g : G) {
+  g.alg == AES_128 &&
+  |g.key| == Nk(g.alg) && 
+  SeqLength(g.key) == Nk(g.alg) &&
+  (Nb() * (Nr(g.alg) + 1)) / 4 == Nr(g.alg) + 1 &&
+  (Nb() * (Nr(g.alg) + 1)) % 4 == 0   
+}
+
+predicate KeyReq(g : G, exp_key_ptr : uint64, mem : Heaplets) {
+  ValidSrcAddrs(mem, g.exp_key_heap, exp_key_ptr, 128, Secret, 11*16) &&   // Key is readable
+  exp_key_ptr % 16 == 0 &&
+  SeqLength(g.exp_key) == 44 
+}
+
+predicate ExpKeyReq(g : G, exp_key_ptr : uint64, mem : Heaplets) {
+  AlgReq(g) && 
+  KeyReq(g, exp_key_ptr, mem) &&
+  (forall j :: 0 <= j <= 10 ==> mem[g.exp_key_heap].quads[exp_key_ptr + 16*j].v == 
+         Quadword(g.exp_key[4*j], g.exp_key[4*j+1], g.exp_key[4*j+2], g.exp_key[4*j+3])) &&
+    KeyExpansionPredicate(g.key, g.alg, g.exp_key)
+}
+
 
 }

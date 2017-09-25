@@ -1,10 +1,10 @@
-include "../../../../obj/crypto/aes/aes-x64/gcm.gen.dfy"
-include "../../../arch/x64/print.s.dfy"
-include "../../../lib/util/Io.s.dfy"
+include "../../../obj/crypto/loopunroll/returnvalue.gen.dfy"
+include "../../arch/x64/print.s.dfy"
+include "../../lib/util/Io.s.dfy"
 
-module GCMMain {
+module ReturnValueMain {
 
-import opened GCM
+import opened ReturnValue
 import opened x64_print_s
 import opened Io_s
 
@@ -44,23 +44,17 @@ method {:main} Main(ghost env:HostEnvironment)
     }
 
     printHeader(asm_choice );
+
     var win := (platform_choice == Win);
+    printProcPlatform("ReturnValueLinux0",
+      va_code_ReturnValueLinux0(),
+      0, 0, asm_choice, platform_choice);
 
-    // Allow C to call the key expansion.
-    printProcPlatform("aes_main_i_KeyExpansionStdcall",
-         va_code_KeyExpansionStdcall(Secret, win),
-         0, 8,
-        asm_choice, platform_choice);
-
-    printProcPlatform("AES128GCTREncrypt",
-        va_code_AES128GCTREncrypt(),
-        10, 2, asm_choice, platform_choice);
-
-    printProcPlatform("AES128GCTRDecrypt",
-        va_code_AES128GCTRDecrypt(),
-        20, 2, asm_choice, platform_choice);
+     printProcPlatform("ReturnValueLinux1",
+      va_code_ReturnValueLinux1(),
+      10, 0, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);
- }
+}
 
 }

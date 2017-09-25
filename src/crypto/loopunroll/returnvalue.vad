@@ -1,0 +1,40 @@
+/*
+  Test returning zero or one.
+*/
+
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/print.s.dfy"
+include{:verbatim} "../../lib/util/dafny_wrappers.i.dfy"
+
+#verbatim
+module ReturnValue {
+import opened x64_def_s
+import opened x64_vale_i
+import opened x64_print_s
+import opened dafny_wrappers_i
+import opened x64_decls_i
+import opened x64_decls64_i
+
+#endverbatim
+// Our C ints are 32 bit and so our returns are.
+
+procedure ReturnValue0()
+  modifies rax;
+  ensures
+   rax == 0;
+{
+  Mov32(rax,const(0));  
+} 
+
+procedure ReturnValue1()
+  modifies rax;
+  ensures
+   rax == 1;
+{
+  Mov32(rax,const(1));  
+} 
+
+#verbatim
+}
+#endverbatim  
