@@ -354,7 +354,7 @@ predicate GCMSpecDynInit(g : GCMSpec,
 }
 
 // Works nicely to get rid of some lemma issues on va_code.
-type uint8plus1   = i:int | 0 < i <= 8 witness 1 
+type uint8nonzero   = i:int | 0 < i <= 0x100 witness 1 
 
 lemma {:timeLimitMultiplier 2} lemma_regdiff_loop_ge'(endptr : nat, iptr : nat, bytes : nat)
     requires  2 <= bytes <= 128;

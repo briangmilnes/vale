@@ -41,7 +41,7 @@ import opened CalleeSaveRestore
 // Serious bug here with lets in this revision. As Chris has fixed this, perhaps I should update?
 procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
           (ghost g : GCMSpec,
-           inline n : uint8plus1)
+           inline n : uint8nonzero)
     reads    rdi; rdx; r8; 
     modifies mem; efl; rsi; rcx; rax;
              xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; 
