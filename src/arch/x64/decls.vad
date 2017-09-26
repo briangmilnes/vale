@@ -789,6 +789,22 @@ procedure {:refined} {:instruction Ins(MOVDQU(dst, MakeHeapOp(src, offset, taint
     this := MaybeUpdateOk(old(this), this);
 }
 
+// Bryan, Bridged version as I'm afraid of breaking things if I mess with Load128.
+procedure {:refined} {:bridge}   {:instruction Ins(MOVDQU(dst, MakeHeapOp(src, offset, taint))) } 
+          Load128'(out operand dst:Quadword, operand src:uint64, inline offset:int, 
+                  inline taint:taint, ghost id:heaplet_id)
+    requires/ensures
+        ValidSrcAddr(mem, id, src + offset, 128, taint);
+    reads mem;
+    modifies efl;
+    ensures
+        dst == mem[id].quads[src + offset].v;
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}
 
 procedure {:refined} {:instruction Ins(MOVDQU(MakeHeapOp(dst, offset, taint), src)) } 
           Store128(operand dst:uint64, operand src:Quadword, inline offset:int, 

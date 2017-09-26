@@ -52,13 +52,47 @@ method {:main} Main(ghost env:HostEnvironment)
          0, 8,
         asm_choice, platform_choice);
 
-    printProcPlatform("AES128GCTREncrypt",
-        va_code_AES128GCTREncrypt(),
+    printProcPlatform("AES128GCTREncryptStdcall",
+        va_code_AES128GCTREncryptStdcall(),
         10, 2, asm_choice, platform_choice);
 
-    printProcPlatform("AES128GCTRDecrypt",
-        va_code_AES128GCTRDecrypt(),
+/*
+    printProcPlatform("AES128GCTREncryptStdcall1",
+        va_code_AES128GCTREncryptStdcall1(),
+        10, 2, asm_choice, platform_choice);
+
+    printProcPlatform("AES128GCTREncryptStdcall2",
+        va_code_AES128GCTREncryptStdcall2(),
         20, 2, asm_choice, platform_choice);
+
+    printProcPlatform("AES128GCTREncryptStdcall3",
+        va_code_AES128GCTREncryptStdcall3(),
+        30, 2, asm_choice, platform_choice);
+
+    printProcPlatform("AES128GCTREncryptStdcall4",
+        va_code_AES128GCTREncryptStdcall4(),
+        40, 2, asm_choice, platform_choice);
+
+    printProcPlatform("AES128GCTREncryptStdcall5",
+        va_code_AES128GCTREncryptStdcall5(),
+        50, 2, asm_choice, platform_choice);
+
+    printProcPlatform("AES128GCTREncryptStdcall6",
+        va_code_AES128GCTREncryptStdcall6(),
+        60, 2, asm_choice, platform_choice);
+
+    printProcPlatform("AES128GCTREncryptStdcall7",
+        va_code_AES128GCTREncryptStdcall7(),
+        70, 2, asm_choice, platform_choice);
+
+    printProcPlatform("AES128GCTREncryptStdcall8",
+        va_code_AES128GCTREncryptStdcall8(),
+        80, 2, asm_choice, platform_choice);
+*/
+
+    printProcPlatform("AES128GCTRDecryptStdcall",
+        va_code_AES128GCTRDecryptStdcall(),
+        100, 2, asm_choice, platform_choice);
 
  	  printFooter(asm_choice);
  }

@@ -1,0 +1,138 @@
+
+// Totall failed casting experiment.
+// One must have a procedure that matches the effect of Load and Store
+// to prove the cast.
+// Try a cast on the input data size.
+
+#verbatim
+// Try casting bytes to words by just logically equating them.
+
+// This is probably either a great way to prove or way too complicated. -bgm 
+// Map an arbitrary number of bytes to an integer
+function BEByteSeqToInt'(bytes:seq<uint8>) : int
+    decreases |bytes|;
+{
+    if bytes == [] then 0
+    else BEByteSeqToInt(bytes[..|bytes|-1]) * 256 + (bytes[|bytes|-1] as int)
+}
+
+function BytesToWord'(b0:uint8, b1:uint8, b2:uint8, b3:uint8) : uint32
+{
+    var w := BEByteSeqToInt'([b0, b1, b2, b3]);
+    if 0 <= w < 0x1_0000_0000 then (w as uint32) else 42
+    // We defer the proof that BEByteSeqToInt is in bounds to the verified implementation
+}
+
+function uint8stouint32(b3 : uint8, b2 : uint8, b1 : uint8, b0 : uint8) : uint32
+{
+  ((b3 * 0x1000000) + (b2 * 0x10000) + (b1 * 0x100) + b0) % 0x1_0000_0000
+}
+
+predicate CastSrcReg8to32(mem : Heaplets, src_id8 : heaplet_id, src_id32 : heaplet_id, base : nat, size8 : nat, taint : taint)
+  requires size8 % 4 == 0;
+  requires ValidSrcReg8 (mem, src_id8, base, size8, taint);
+  requires ValidSrcReg32(mem, src_id32, base, size8 / 4, taint);
+{
+  // Taint should be handled right by the precondition.
+  // BytesToWord is opaque though.
+  forall i : nat :: 0 <= i < size8 / 4 ==> 
+    mem[src_id32].words[addr32(base, i)].t == mem[src_id8].bytes[addr8(base, 4 * i)].t &&
+    mem[src_id32].words[addr32(base, i)].v == 
+      uint8stouint32(mem[src_id8].bytes[addr8(base, (4 * i) + 3)].v,
+                  mem[src_id8].bytes[addr8(base, (4 * i) + 2)].v,
+                  mem[src_id8].bytes[addr8(base, (4 * i) + 1)].v,
+                  mem[src_id8].bytes[addr8(base, (4 * i) + 0)].v)
+}
+
+
+predicate CastDstReg8to32(mem : Heaplets, dst_id8 : heaplet_id, dst_id32 : heaplet_id, base : nat, size8 : nat)
+  requires size8 % 4 == 0;
+  requires ValidDstReg8 (mem, dst_id8, base, size8);
+  requires ValidDstReg32(mem, dst_id32, base, size8 / 4);
+{
+  // BytesToWord is opaque though.
+  forall i : nat :: 0 <= i < size8 / 4 ==> 
+    mem[dst_id32].words[addr32(base, i)].v == 
+      uint8stouint32(mem[dst_id8].bytes[addr8(base, (4 * i) + 3)].v,
+                   mem[dst_id8].bytes[addr8(base, (4 * i) + 2)].v,
+                   mem[dst_id8].bytes[addr8(base, (4 * i) + 1)].v,
+                   mem[dst_id8].bytes[addr8(base, (4 * i) + 0)].v)
+}
+#end
+
+
+procedure Copy32Word(inline taint:taint, 
+           ghost src_id8 : heaplet_id, ghost src_id32 : heaplet_id,
+           ghost dst_id8 : heaplet_id, ghost dst_id32 : heaplet_id)
+    let items8 :=  4;
+    let items32 := 1;
+
+    reads    esi;
+    modifies mem; efl; edi; eax;
+
+    requires/ensures
+        src_id8 != src_id32 && src_id8 != dst_id8 && src_id8 != dst_id32;
+        src_id32 != dst_id8 && src_id32 != dst_id32;
+        dst_id8 != dst_id32;
+
+        ValidSrcReg8(mem, src_id8, esi, items8, taint);
+        ValidDstReg8(mem, dst_id8, edi, items8);
+
+        ValidSrcReg32(mem, src_id32, esi, items32, taint);
+        ValidDstReg32(mem, dst_id32, edi, items32);
+
+        CastSrcReg8to32(mem, src_id8, src_id32, esi, items8, taint); 
+        CastDstReg8to32(mem, dst_id8, dst_id32, edi, items8);
+
+    ensures 
+//        OnlyWritesReg32(mem, mem, dst_id32, edi, items32);
+//        WritesReg32(mem, dst_id32, edi, items32, items32, taint,
+//         Copy32Seq(old(mem), src_id32, old(esi), items32, items32));
+//
+//        OnlyWritesReg8(mem, mem, dst_id8, edi, items8);
+//        WritesReg8(mem, dst_id8, edi, items8, items8, taint,
+//         Copy8Seq(old(mem), src_id8, old(esi), items8, items8));
+{
+    LoadArray32(eax, esi, 0, taint, src_id32);
+    StoreArray32(edi, eax, 0, taint, dst_id32);  
+}
+  
+/*
+
+procedure CastingCopy32(inline taint:taint, 
+           ghost src_id8 : heaplet_id, ghost src_id32 : heaplet_id,
+           ghost dst_id8 : heaplet_id, ghost dst_id32 : heaplet_id)
+
+    let items8 :=  (edx - esi);
+    let items32 :=  (edx - esi) / 4;
+
+    reads    esi;
+    modifies mem; efl; edi;
+
+    requires/ensures
+        src_id8 != src_id32 && src_id8 != dst_id8 && src_id8 != dst_id32;
+        src_id32 != dst_id8 && src_id32 != dst_id32;
+        dst_id8 != dst_id32;
+
+        ValidSrcReg8(mem, src_id8, esi, items8, taint);
+        ValidDstReg8(mem, dst_id8, edi, items8);
+
+        ValidSrcReg32(mem, src_id32, esi, items32, taint);
+        ValidDstReg32(mem, dst_id32, edi, items32);
+
+    requires 
+        CastSrcReg8to32(mem, src_id8, src_id32, esi, items8, taint); 
+        CastDstReg8to32(mem, dst_id8, dst_id32, edi, items8);
+
+    ensures
+//        OnlyWritesReg32(mem, mem, dst_id32, edi, items32);
+//        WritesReg32(mem, dst_id32, edi, items32, items32, taint,
+//         Copy32Seq(old(mem), src_id32, esi, items32, items32));
+
+//        OnlyWritesReg8(old(mem), mem, dst_id8, edi, items8);
+//        WritesReg8(mem, dst_id, old(edi), items8, items8, taint,
+//         Copy8Seq(old(mem), src_id, old(esi), items8, items8));
+{
+    Copy32Word(taint, src_id32, dst_id32, src_id8, dst_id8); 
+}
+*/

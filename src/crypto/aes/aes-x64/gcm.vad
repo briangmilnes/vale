@@ -23,11 +23,10 @@ import opened x64_print_s
 import opened dafny_wrappers_i
 import opened x64_decls_i
 import opened x64_decls64_i
-//import opened aes_vale
 import opened regions128wrappers
-import opened copy128
 import opened GCMModule
 import opened GCMHelpers
+import opened GCMProven
 import opened proof
 import opened words_and_bytes_i
 import opened operations_i
@@ -36,235 +35,125 @@ import opened CalleeSaveRestore
 
 #endverbatim
 
-/*
-procedure {:refined} {:bridge}
-{:instruction Ins(Pxor(dst, src))} Pxor'(inout operand dst:Quadword, operand src:Quadword)
-  modifies efl;
-  ensures
-    dst == old(QuadwordXor(dst, src));
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    this := MaybeUpdateOk(old(this), this);
-    this := this.(heaplets := old(this).heaplets);
-}
-*/
+#verbatim
+#endverbatim
 
-/*
-procedure {:refined} {:bridge}   {:instruction Ins(MOVDQU(dst, MakeHeapOp(src, offset, taint))) } 
-          Load128'(out operand dst:Quadword, operand src:uint64, inline offset:int, 
-                  inline taint:taint, ghost id:heaplet_id)
-    requires/ensures
-        ValidSrcAddr(mem, id, src + offset, 128, taint);
-    reads mem;
-    modifies efl;
-    ensures
-        dst == mem[id].quads[src + offset].v;
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    this := this.(heaplets := old(this).heaplets);
-    this := MaybeUpdateOk(old(this), this);
-}
-
-procedure BUG(operand ipter  : uint64,
-          ghost    iheap  : heaplet_id,
-          ghost    iaddr  : uint64, 
-          ghost    isize  : uint64,
-          ghost    off    : nat,
-          inline   add    : nat, 
-          inout operand tmpctr : Quadword, 
-          inout operand tmp : Quadword)
-  requires{:refined false}
-      @ipter  is OReg;
-
-  requires
-        ValidSrcRegPtrs128(mem, iheap, iaddr, isize, Secret, ipter, off, add);
-
-  modifies xmm0; efl; mem;
-{
-     Load128'(tmp,    ipter, add, Secret, iheap);         // Load the plaintext.
-     LoadArray128 (tmp,    ipter, add, Secret, iheap);         // Load the plaintext.
-     Pxor(tmp,tmp);
-}    
-*/
-
-/*
-// Test to move to a ghost G.
-// Key for AES is in r8, 16 byte aligned.
-procedure {:bridge} {:timeLimitMultiplier 3} AESGCTR128
-         (ghost g: G,
-          operand ipter  : uint64,
-          operand optr  : uint64,
-          ghost    off    : nat,
-          inline   add    : nat, 
-          operand       icb : Quadword,    // The ICB in the left high 92 bits.
-          operand       ctr : uint32,      // The counter that we read from and add a fixed offset.
-          inout operand addtmp : uint32,   // Where we add the ctr.
-          inout operand tmpctr : Quadword, // Where we build the ICB||CTR.
-          inout operand tmp    : Quadword  // A tmp for AES plus where we put the plain text.
-)
-    reads r8;
-    modifies mem; efl; xmm0; rsi;
-    requires DistinctORegs3(@ipter, @optr, @tmp);
-
-    requires/ensures 
-        off + add < g.isize;
-        ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, g.isize, Public, ipter, off, add);
-        ValidDstRegPtrs128(mem, g.oheap, g.oaddr, g.isize,        optr, off, add);
-//        WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add, Public,
-//                   Copy128Seq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
-
-    ensures 
-         OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-         OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-//         WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add + 1, Public,
-//                   Copy128Seq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
-{
-
-   Mov(addtmp, ctr);                                 // Get the ctr.
-   AddN32(addtmp, add);                              // Add our offset to it: 0, 1, ...; const folding elim here?
-   Mov32ToLow128(tmp, addtmp);                       // Put low 32 bits into an xmm tmp.
-   Load128(tmpctr, icbptr, 0, Private, );                             // Get the IV+32 bit counter from memory.
-   Pxor(tmpctr, tmp);                                // ICB (96 bits) || ctr for this offset.
-   AES128EncryptOneBlockOp(g.key, tmpctr, g.exp_key, Secret, tmpctr, tmp, g.key_heap); // Encrypt the counter back into tmpctr.
-   LoadArray128(tmp, ipter, add, Secret, g.iheap);   // Load the plaintext into tmp.
-   Pxor(tmp, tmpctr);                                // Xor the encrypted counter with the plaintext.
-   StoreArray128(optr,   tmp, add, Public, g.oheap); // Write it back to the output.
-}     
-*/
-
-/*
-
-// This primed version works but the final loop takes 22s to prove due to the complete
-// graph of inequalities of registers.
-procedure {:recursive} {:timeLimitMultiplier 1} AESGCTRUnrolled
-         (ghost g: G,
-          operand iptr : uint64, operand optr : uint64, 
-          inout operand tmp1 : Quadword, inout operand tmp2 : Quadword, inout operand tmp3 : Quadword, inout operand tmp4 : Quadword, 
-          ghost off : nat, inline step : nat)
-                               
-    modifies mem; efl; 
-
-    requires
-       1 <= g.isize;
-       // Must have at least on address to write.
-       off + step < g.isize; 
-       0 <= step < 4;
-       g.iaddr != g.oaddr;
-       DistinctORegs6(@iptr, @optr, @tmp1, @tmp2, @tmp3, @tmp4);
-
-    requires/ensures 
-           g.iheap != g.oheap; 
-           ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, g.isize, Secret, iptr, off, step);
-           ValidDstRegPtrs128(mem, g.oheap, g.oaddr, g.isize,        optr, off, step);
-           WritesReg128(mem, g.oheap, g.oaddr, g.isize, off, Public,
-                 Copy128Seq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
-
-    ensures
-         OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-         OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-         // This means I wrote off + step + 1 of the output in total.
-         WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + step + 1, Public
-                   Copy128Seq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
-{
-  inline if (step == 3) {
-       AESGCTRUnrolled(g, iptr, optr, tmp1, tmp2, tmp3, tmp4, off, step - 1);
-       AESGCTR(g, taint, iptr, optr, off, step, tmp1);
-  } else if (step == 2) {
-       AESGCTRUnrolled(g, iptr, optr, tmp1, tmp2, tmp3, tmp4, off, step - 1);
-       AESGCTR(g, taint, iptr, optr, off, step, tmp2);
-  } else if (step == 1) {
-       AESGCTRUnrolled(g, iptr, optr, tmp1, tmp2, tmp3, tmp4, off, step - 1);
-       AESGCTR(g, taint, iptr, optr, off, step, tmp3);
-   } else if (step == 0) {                                    
-       AESGCTR(g, taint, iptr, optr, off, step, tmp4);
-   }
-}
-*/
-
-/*
+// Serious bug here with lets in this revision. As Chris has fixed this, perhaps I should update?
 procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
-          (ghost g : G,
-           inline taint:taint, 
-           inout operand iptr : uint64, operand iendptr : uint64, inout operand optr : uint64,
-           inout operand tmp1 : Quadword, inout operand tmp2 : Quadword, inout operand tmp3 : Quadword, inout operand tmp4 : Quadword, 
-           inline n : uint8)
-    let items :=  (old(iendptr) - old(iptr)) / 16;
-
-    modifies mem; efl; 
-    // But will this call? May have to split out the iptr/iendptr/optr/items.
+          (ghost g : GCMSpec,
+           inline n : uint8plus1)
+    reads    rdi; rdx; r8; 
+    modifies mem; efl; rsi; rcx; rax;
+             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; 
+             rbx; r9; r10; r11; r12; r13; r14; r15;
     requires
-      g.iaddr == old(iptr);
-      g.oaddr == old(optr);
-      g.isize  == items;
+      let exp_key_ptr  := rdi; let iptr  := rsi; let iendptr := rdx; let optr := rcx; let ivptr := r8;  let ctr := rax;
+      let items        := (old(iendptr) - old(iptr)) / 4;
+      GCMSpecDynInit(g, exp_key_ptr, iptr, iendptr, optr, ivptr, mem);
       g.iaddr != g.oaddr; // Hmm, is this necessary?
-    requires
-        0 < n <= 4;
-        iendptr >= iptr; 
-        (iendptr - iptr) % (n * 16) == 0;
-        DistinctORegs7(@iptr, @iendptr, @optr, @tmp1, @tmp2, @tmp3, @tmp4);
+      0 < n <= 8;
+      (iendptr - iptr) % (n * 16) == 0;
 
     requires/ensures
-        g.iheap != g.oheap;
-        ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, taint);
+        let exp_key_ptr  := rdi; let iptr  := rsi; let iendptr := rdx; let optr := rcx; let ivptr := r8;  let ctr := rax;
+        GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, mem);
+        ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Public);
         ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
 
     ensures
-        OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-        OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-        WritesReg128(mem, g.oheap, g.oaddr, g.isize, g.isize, Public,
-         AESGCTRSeq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
+       OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
+//       OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
+//        WritesReg128(mem, g.oheap, g.oaddr, g.isize, g.isize, Public,
+//         AESGCTRSeq(old(mem), g, g.isize));
 {
+    let exp_key_ptr  := rdi; let iptr  := rsi; let iendptr := rdx; let optr := rcx; let ivptr := r8;  let ctr := rax;
+    let items        := (old(iendptr) - old(iptr)) / 4;
     ghost var index   : int := 0;
-    lemma_regdiff_loop_ge_uint128(iendptr, iptr, n);
-    while (iptr < iendptr)
+    // Bug Proof impedence mismatch: (iendptr - iptr) > 0 vs iptr < iendptr.
+    lemma_regdiff_loop_ge_uint128'(iendptr, iptr, n);
+    assert (iendptr - iptr) > 0 ==> (iendptr - iptr) >= (n * 16);
+    assert (iendptr - iptr) > 0 ==> n - 1 < (iendptr - iptr) / 16;
+    // Won't take lets here.
+    while (rsi < rdx)
         invariant
-            ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, taint);
+            ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret);
             ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
 
             0 <= index <= g.isize;
             index == g.isize - (iendptr - iptr) / 16;
-            iptr == g.iaddr + 16 * index;
-            optr == g.oaddr + 16 * index;
+            iptr  == g.iaddr + 16 * index;
+            optr  == g.oaddr + 16 * index;
             (iptr < iendptr) ==> g.isize >= 1; // Interesting that it can't prove this on entry wo ==>.
             (iendptr - iptr) % (n * 16) == 0;
             (iptr < iendptr) ==> (iendptr - iptr) >= (n * 16); // lemma above
+            (iendptr - iptr) > 0 ==> index + n - 1 < (iendptr - iptr) / 16;
 
             (iptr < iendptr) ==> 0 <= index + n - 1 < g.isize;
-            (index < g.isize) ==> ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, g.isize, taint, iptr, index, n - 1);
-            (index < g.isize) ==> ValidDstRegPtrs128(mem, g.oheap, g.oaddr, g.isize,        optr, index, n - 1);
+            (index < g.isize) ==> 
+               ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, g.isize, Secret, iptr, index, n - 1);
+            (index < g.isize) ==> 
+               ValidDstRegPtrs128(mem, g.oheap, g.oaddr, g.isize,         optr, index, n - 1);
 
             OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
             OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-            WritesReg128(mem, g.oheap, g.oaddr, g.isize, index, Public,
-               AESGCTRSeq(old(mem), g.iheap, g.iaddr, g.isize, g.isize));
+            WritesReg128(mem, g.oheap, g.oaddr, g.isize, index, Public, 
+                                 AESGCTRSeq(old(mem), g, g.isize));
           decreases (iendptr - iptr);
     {
-     // Bryan, constant folding issues.
-        inline if (n == 1) {
-          AESGCTRUnrolled(g, iptr, optr, tmp1, tmp2, tmp3, tmp4, index, 0);
-         } else if (n == 2) {
-          AESGCTRUnrolled(g, iptr, optr, tmp1, tmp2, tmp3, tmp4, index, 1);
-         } else if (n == 3) {
-          AESGCTRUnrolled(g, iptr, optr, tmp1, tmp2, tmp3, tmp4, index, 2);
-         } else {
-          AESGCTRUnrolled(g, iptr, optr, tmp1, tmp2, tmp3, tmp4, index, 3);
-         }         
+        assert rsi < rdx;
+        assert iptr == rsi;
+        assert iendptr == rdx;
+        assert iptr < iendptr; // BUG Can't prove this, we have some serious let issue.
+        assert iptr < iendptr ==> (iendptr - iptr) > 0;
+        assert (iendptr - iptr) > 0;
+        assert (iendptr - iptr) > 0 ==> index + n - 1 < (iendptr - iptr) / 16;
+        assert index + n - 1 < (iendptr - iptr) / 16;
+        AESGCTRUnrolled(g, index, n - 1);
         ghost var iptr' := iptr;
-        Add(iptr, const(n * 16));
-        Add(optr, const(n * 16));
+        // Won't take lets here.
+        Add(rsi, const(n * 16));
+        Add(rcx, const(n * 16));
+        Add(rax, const(n));
         index := index + n;
     }
   assert g.isize == index; 
   assert iendptr - iptr == 0;
 }
+
+
+/* Proves blank under call.
+// Encrypt, gctr only with the stack saved and the arguments in the expected place.
+procedure AES128GCTREncrypt(ghost g : G,
+          operand exp_key : uint64,
+          operand iptr : uint64,
+          operand iendptr : uint64,
+          operand optr : uint64,
+          operand ivptr : uint64,
+          operand ctr : uint32)
+    modifies mem; efl; rax; rdx; rcx; rdi; rsi; rbx; rbp; r8; r9; r10; r11; r12; r13; r14; r15; efl; stack;
+    requires
+     let items        := (old(iendptr) - old(iptr)) / 4;
+     g.iaddr == old(iptr);
+     g.oaddr == old(optr);
+     g.isize  == items;
+     g.iaddr != g.oaddr; // Is this strong enough?
+     iendptr >= iptr; 
+    requires/ensures
+     g.iheap != g.oheap;
+     ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret);
+     ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
+    ensures
+      stack == old(stack);
+{
+} 
 */
 
-// Perform just the AES GCTR computation, n way unfolded, callee save.
+// Setup just the GCM CTR mode from a standard call.
 //
+// All MM registers are: rax, rbx, rcx, rdx, rbp, rsi, rdi, rsp, r8, r9, r10, r11, r12, r13, r14, r15.
+// 
 // GCC is giving us:
-// expanded_key - rdi 
+// exp_key      - rdi 
 // iptr         - rsi
 // iendptr      - rdx
 // optr         - rcx
@@ -272,11 +161,10 @@ procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
 // TO BE ADDED // AAD          - r9d 
 // TO BE ADDED // TAG          - r10d - the mac, called TAG by some of the tests. Will this be on the stack?
 //
+// callee save restore frees up everything for us but:
 // We need a 32 bit counter, which we'll put in rax.
-//
-// As rsp is the stack pointer, and a frame pointer, rbp may be in use. 
-// callee save restore frees up everything for us
-// leaving us: rax, rbx, rsp, rbp, r11-r15 or 9 registers.
+// As rsp is the stack pointer, and a frame pointer, rbp may be in use.
+// Leaving us: rax, rbx, r9, r10, r11, r12, r13, r14, r15.
 
 // As we'd like to be able to unroll up to 8 way and we need 1 32 bit tmp counter per
 // GCTR unfolding, we need up to 8 32 bit temporary registers: 
@@ -286,16 +174,19 @@ procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
 // The temporary registers will be supplied by name to all but final routine.
 //
 // Thus we own 100% of the 64 and 128 bit registers. 
+
 // 
 
-procedure {:timeLimitMultiplier 3} AES128GCTREncrypt(ghost g : G)
-    modifies mem; efl; rax; rdx; rcx; rdi; rsi; r10; r9; rbx; rbp; r12; r13; r14; r15; efl; stack;
+/*
+procedure {:timeLimitMultiplier 3} AES128GCTREncryptStdcall(ghost g : GCMSpec)
+    modifies mem; efl; rax; rdx; rcx; rdi; rsi; rbx; rbp; r8; r9; r10; r11; r12; r13; r14; r15; efl; stack;
     requires
-     let expanded_key := rdi;
+     let exp_key      := rdi;
      let iptr         := rsi;
      let iendptr      := rdx;
      let optr         := rcx;
      let ivptr        := r8; // 96 high bits of IV and 32 bits of zero in memory in 128 bits.
+     let ctr          := rax;
      let items        := (old(iendptr) - old(iptr)) / 4;
      g.iaddr == old(iptr);
      g.oaddr == old(optr);
@@ -317,23 +208,18 @@ procedure {:timeLimitMultiplier 3} AES128GCTREncrypt(ghost g : G)
         // Ensure I don't mess up the old ptr, although C should not care.
      let optr    := rcx; optr == old(optr);
 {
- let expanded_key := rdi;
- let iptr         := rsi;
- let iendptr      := rdx;
- let optr         := rcx;
- let ivptr        := r8; // 96 high bits of IV and 32 bits of zero in memory in 128 bits.
- let ctr          := rax;
- let items        := (old(iendptr) - old(iptr)) / 4;
  CalleeSaveLinux();
- // AESGCTR(g, iptr, iendptr, optr, ctr, icbptr);
+ // Initialize CTR.
+ Mov32(rax,const(1)); // It starts out at 1.
+ AES128GCTREncrypt(g, rdi, rsi, rdx, rcx, r8, rax);
  CalleeRestoreLinux();
  EMMS(); // Intel says call this before a return if you are touching XMM.
 }
-
+*/
 
 // Dummies for testing the test code.
-//procedure {:timeLimitMultiplier 3} AES128GCTREncrypt(ghost g : G) {}  
-procedure {:timeLimitMultiplier 3} AES128GCTRDecrypt(ghost g : G) {} 
+procedure {:timeLimitMultiplier 3} AES128GCTREncryptStdcall(ghost g : GCMSpec) {}  
+procedure {:timeLimitMultiplier 3} AES128GCTRDecryptStdcall(ghost g : GCMSpec) {} 
 
 #verbatim
 } // end module CGM

@@ -12,6 +12,7 @@ import opened AESModule
 import opened x64_vale_i
 import opened regions128
 
+
 // 6.2 
 // This is specified big endian, thank gosh.
 function inc32(iv96ctr32 : Quadword) : Quadword
@@ -104,24 +105,35 @@ function AES_GCTR(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>)
 }
 
 // Use a ghost var of G, for ghosts, to cut the size of the code.
-datatype G = G(ghost alg: Algorithm,
-               ghost key : seq<uint32>,
-               ghost key_heap : heaplet_id,
-               ghost exp_key : seq<uint32>,
+datatype GCMSpec = GCMSpecCon(
+               ghost alg: Algorithm,
+// The key is purely ghostly.
+               ghost key      : seq<uint32>,
+// The expanded key is here of fixed size. 
+               ghost exp_key_addr : uint64,
+               ghost exp_key      : seq<uint32>,
                ghost exp_key_heap : heaplet_id,
-               ghost iheap : heaplet_id,
+// The input is here of this size in this heap.
                ghost iaddr : uint64,
+               ghost iendaddr : uint64,
+               ghost iheap : heaplet_id,
                ghost isize : nat, 
-               ghost oheap : heaplet_id,
+// The output is here of this size in this heap.
                ghost oaddr : uint64,
                ghost osize : nat,
-               ghost ICB   : Quadword // The input counter block.
+               ghost oheap : heaplet_id,
+// The input counter block (ICB) is in the high 92 bits of ivaddr, 
+// ivsize is 16 bytes.
+               ghost ICB     : Quadword, 
+               ghost ivaddr  : uint64,
+               ghost ivsize  : nat,
+               ghost ivheap  : heaplet_id
                ) 
 
 // AESGCTR is in the style of CopyNSeq proofs, see regions64.vad writeup.
 // It's mapping its input memory directly into the desired output Quadword sequence.
 
-function AESGCTR(mem : Heaplets, g : G, i : nat) : Quadword
+function AESGCTR(mem : Heaplets, g : GCMSpec, i : nat) : Quadword
  requires ValidDstReg128(mem, g.iheap, g.iaddr, g.isize);
  requires 0 <= i < g.isize;
  requires |g.key| == Nk(AES_128);
@@ -132,10 +144,10 @@ function AESGCTR(mem : Heaplets, g : G, i : nat) : Quadword
 // Generate the whole sequence with this function that knows what the values are to
 // obviate any subsequence proof problems.
 
-function AESGCTRSeq(mem : Heaplets, g : G, count : nat) : seq<Quadword> 
+function AESGCTRSeq(mem : Heaplets, g : GCMSpec, count : nat) : seq<Quadword>
  requires ValidDstReg128(mem, g.iheap, g.iaddr, g.isize);
- requires 0 <= count < g.isize;
  requires |g.key| == Nk(AES_128);
+ requires 0 <= count <= g.isize;
  ensures  |AESGCTRSeq(mem, g, count)| == count;
  // Doing this here at the function definition is CRITICAL as it proves and then is available
  // when you need it in specifications.
@@ -166,7 +178,7 @@ function AESGCTRSeq(mem : Heaplets, g : G, count : nat) : seq<Quadword>
 //• 1 ≤ len(IV) ≤ 2^64-1. 
 //
 //Although GCM is defined on bit strings, the bit lengths of the
-//plaintext, the AAD, and the IV shall all be multiples of 8, so th at
+//plaintext, the AAD, and the IV shall all be multiples of 8, so that
 //these values are byte strings
 
 predicate LenReq(PorC : seq<Quadword>, A : seq<Quadword>, IV : Quadword) {

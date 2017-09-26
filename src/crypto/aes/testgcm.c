@@ -116,8 +116,8 @@ void test_tests(CTEST *c) {
 
 // Our three calls so far, only doing CTR not GHASH mac creation.
 void __stdcall aes_main_i_KeyExpansionStdcall(const void * key_ptr, void *exp_key_ptr);
-void __stdcall AES128GCTREncrypt(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
-int __stdcall AES128GCTRDecrypt(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
+void __stdcall AES128GCTREncryptStdcall(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
+int __stdcall AES128GCTRDecryptStdcall(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
 // TO DO add AAD and TAG.
 
 // Test vectors from,https://pdfs.semanticscholar.org/114a/4222c53f1a6879f1a77f1bae2fc0f8f55348.pdf seem broken as they don't have AAD.
@@ -224,15 +224,15 @@ int test_ghash_encrypt(int i, CTEST *c) {
   //	movq	%rsp, %rdi
   //	addq	%rsi, %rdx
   //	call	AES128GCTREncrypt
-  AES128GCTREncrypt(exp_key_ptr, u->PT, u->PT + u->PTlen, optr, u->IV);
-  if (memcmp(optr, u->CT, u->PTlen) == 0) {
+  AES128GCTREncryptStdcall(exp_key_ptr, u->PT, u->PT + u->PTlen, optr, u->IV);
+  if (memcmp(optr, u->PT, u->PTlen) == 0) {
     printf("SUCCEEDED\n"); 
     return 1;
   } else {
     printf("FAILED\n");
       if (trace == 1) {
         printUTEST(u);
-        printf("\n encrypted output calculated ");
+        printf("\n decrypted output calculated ");
   	print128BitVectorHex(optr);
      }
     return 0;
@@ -240,38 +240,35 @@ int test_ghash_encrypt(int i, CTEST *c) {
 }
 
 int test_ghash_encrypts(int num, CTEST c[]) {
-  printf("\nStarting tests test_ghash_encrypts");
+  printf("\nStarting tests test_ghash_encrypts.\n");
   int i = 0;
   for (i = 0; i < num; ++i) {
     test_ghash_encrypt(i, &(c[i]));
   }
-  printf("\nEnding test test_ghash_encrypts\n");
+  printf("\nEnding test test_ghash_encrypts.\n");
 }
-
 
 int test_ghash_decrypt(int i, CTEST *c) {
   UTEST   *u = mkUTEST(c);
   uint8_t  exp_key_ptr[176];
   uint8_t *optr = malloc(u->PTlen);
 
-  printf("\nTest test_ghash_decrypt %d. \n", i);
+  printf("\nTest test_ghash_decrypt %d ", i);
   aes_main_i_KeyExpansionStdcall(u->Key, exp_key_ptr);
 
-
-  // GCC generates:
+  // GCC is generating:
   //	movslq	32(%rbp), %rdx
-  //	movq	48(%rbp), %rsi
+  //	movq	24(%rbp), %rsi
   //	movq	%rbx, %rcx
   //	movq	16(%rbp), %r8
   //	movq	%rsp, %rdi
   //	addq	%rsi, %rdx
-  //	call	AES128GCTRDecrypt
-  int code = AES128GCTRDecrypt(exp_key_ptr, u->CT, u->CT + u->PTlen, optr, u->IV);
-  // TODO this must understand the success/fail flag. 
+  //	call	AES128GCTREncrypt
+  int code = AES128GCTRDecryptStdcall(exp_key_ptr, u->CT, u->CT + u->PTlen, optr, u->IV);
   if (c->FAIL) {
     if (code == 1) {
       printf("Expecting FAIL, found FAIL, SUCCEEDED.\n");
-      return 0;
+      return 1;
     } else {
       printf("Expecting FAIL, found success, FAILED.\n");
       if (trace == 1) {
@@ -281,7 +278,7 @@ int test_ghash_decrypt(int i, CTEST *c) {
      }
     }
   } else {
-    printf("Expecting success, found success. \n");
+    printf("Expecting success, found success, testing decrypted text.\n");
   }
   if (memcmp(optr, u->CT, u->PTlen) == 0) {
     printf("SUCCEEDED\n"); 

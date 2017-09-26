@@ -1,0 +1,167 @@
+
+        Learning Vale
+        Brian Milnes, 10 Aug 2017
+
+
+   Vale is incredibly powerful in that it allows full proofs of assembly language
+   but it's difficult to learn. As Bryan has two students starting in the fall of
+   2017, I am writing this up to make it easy for them to get started with Vale.
+
+  Some of the reasons it is difficult to learn are:
+
+  1) You're really learning two languages, Dafny and Vale and soon it will be
+    Vale over F* so you'll need to learn F* too. Eventually new users will
+    get to learn just F*.
+
+  2) You're likely learning to prove programs in a mechanical system with an SMT for the
+    first time.
+
+  3) Vale is a research project and as such it's not really documented for learning
+    and the language has many corner cases, often from Dafny or from learning along the
+    way.
+
+  4) Dafny is also a research language and is documented fairly well but its manual
+    and the research papers will both leave you with lots of questions.
+
+  5) The best examples for Vale are full cryptographic algorithms and they are
+    not well factored for learning and modifying.
+
+  6) Vale writes Dfny and Dfny writes boogie and boogie writes Z3. By the time
+    our code and proofs get to Z3 they're huge. This should improve with Vale on F*.
+
+  7) But foremost is that Vale's compilation to proof chain can be slow and can be
+    very unstable in proof. This is called the 'butterfly effect' in the Dafny papers.
+
+
+General Advice
+
+ Work only in the x64 model if you can. 
+
+ Good headers look something like this:
+<verbatim>
+include "../../arch/x64/decls.vad"
+include "../../arch/x64/decls64.vad"
+include{:verbatim} "../../arch/x64/def.s.dfy"
+include{:verbatim} "../../arch/x64/vale.i.dfy"
+
+include{:verbatim} "regions64.dfy"    
+include{:verbatim} "copy64.dfy"    
+include "regions64wrappers.vad"
+
+#verbatim
+module regionsproven {
+
+import opened x64_decls_i
+import opened x64_decls64_i
+import opened x64_def_s
+import opened x64_vale_i
+
+import opened regions64
+import opened regions64wrappers
+import opened copy64
+
+#endverbatim
+</verbatim>
+
+ You are including Dafny verbatim into your .vdfy files that are then validated using this.
+
+ Bryan and Chris have not filled out tons of instructions, so you may have to learn to build
+ instructions. TODO
+
+Emacs
+
+   Emacs is a pretty good environment for working on Vale, but I don't work in the Windows
+   model so can not give advice there.
+
+   Install the boogie-friends package and ask me for my fairly well working vad mode.
+   Tags and compilation buffers work nearly flawlessly.
+
+   Don't run the installation script in an emacs shell, it causes it to misbehave due to
+    io issues.
+
+Proof Advice
+
+  The best advice I can give is that if the proof of a procedure or lemma is more than about
+  4 seconds, you are apt to get the butterfly effect. Try and stop this immediately with a
+  lemma.
+
+  Proving P1, then addeding P2 can even cause P1 to timeout.
+
+  There is ordering in the requires clauses, and again they are subject to the butterfly effect.
+
+Examples
+
+Vale Language Edge Cases
+  
+  Don't put lemmas #verbatim in .vad files, sometimes they fail to trigger.
+
+ :refiled and :bridge
+
+  What are my types anyway?
+
+Compiling and Proving
+
+ We're using SConstruct which is some fairly annoying python build system. Barry Bonds
+ at Microsoft built it, and it works pretty well.
+
+ It can often tell if you've made no substantive change to a file and skips recompliling it.
+
+ The emacs compilation mode does not agressively read the output file, which is annoying
+ as you can't start on issues until it's done.
+
+ You can run it like this on a .vad file:
+
+ cd ~/everest/vale; time scons obj/crypto/loopunroll/regions.gen.vdfy
+
+ or like this on a dafny file:
+
+ cd ~/everest/vale; time scons obj/crypto/loopunroll/regions.vdfy
+
+ or like this on a C test file:
+
+ cd ~/everest/vale; time scons obj/testregions.exe
+
+ It's copying files out to the obj tree and keeping all but the C code in the equivalent
+ paths.
+
+ gcc -o obj/testregions.exe obj/crypto/loopunroll/testregions.o obj/regions-linux.o
+
+ gcc -O3 -Wa,-adhln -c -g -DKRML_NOUINT128 -Itools/Kremlin/kremlib -Isrc/lib/util obj/crypto/loopunroll/testregions.c
+ will output the C and the assembly in a readable form. This really helps you select instructions and to make
+ sure you are calling your Vale correctly from C even with our optimize C code.
+
+ Adding an instruction
+
+  Find the most similar instruction in delcs64.vad and modify it. But you may have added an
+  actual new instruction, say HLT. Those are defined in def.s.dfy in datatype ins. Then
+  their validity is checked in ValidInstruction. An 'observation' of this instruction is added in
+  insObs. evalIns evaluates it in our state model. And then you need to put it into the assembly
+  code printer. There are two: PrintGcc and PrintMasm.
+
+ 
+ Callee Save Restore
+
+  callesaverestore has examples and comments on the ABI for saving the right registers.
+  Windows and Linux are different.
+
+ Compilation And Proof Time
+
+  Lots of the work that you will be doing will require a lot of recompilation of Vale.
+  Vale is not currently modularized to allow minimal compilation and proof time.
+  If you have to touch def.s.dfy or decls*.vad, while adding instructions, the time
+  can be a real hinderance.
+
+  Don't hesitate to move your instructions to the top of decls.vad or decls64.vad and
+  comment out ALL of the stuff you don't need to touch to get fast compile times.
+  Certainly in emacs you also will not get feedback until the entire file is compiled,
+  so comment out everything you don't need to speed things up.
+
+ Operand identity
+
+  Vale automatically knows that that operands of different types are different.
+  But it does not assum that an operand and a register of the same type are different.
+  
+ Return Values
+   There is a returnvalue.vad to show you how to do this if you need to return a value
+   to C. The procedures .. returns () syntax is only used for ghosts so far.
+   

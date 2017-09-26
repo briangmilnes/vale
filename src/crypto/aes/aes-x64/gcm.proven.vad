@@ -11,9 +11,10 @@ include{:verbatim} "proof.dfy"
 // for the instructions
 include{:verbatim} "../../../lib/util/words_and_bytes.i.dfy"
 include{:verbatim} "../../../lib/util/operations.i.dfy"
+include "aes.vad" 
 
 #verbatim
-module GCMproven {
+module GCMProven {
 
 import opened x64_def_s
 import opened x64_vale_i
@@ -28,17 +29,8 @@ import opened GCMHelpers
 import opened proof
 import opened words_and_bytes_i
 import opened operations_i
+import opened aes_vale
 
-#endverbatim
-
-#verbatim
-lemma lemma_BitwiseAdd32()
-    ensures  forall x:uint32, y:uint32 :: x + y < 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y
-    ensures  forall x:uint32, y:uint32 :: x + y >= 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y - 0x1_0000_0000;
-    ensures  forall x:uint32 :: BitwiseAdd32(x, 0) == x;
-{
-    reveal_BitwiseAdd32();
-}
 #endverbatim
 
 // This lets us pass in constant small increments for the unrolling.
@@ -64,6 +56,104 @@ procedure {:refined} {:bridge} Mov128'(inout operand dst:Quadword, operand src:Q
 {
   Mov128(dst,src);
 }
+
+procedure {:timeLimitMultiplier 3} AESGCTR1(
+          ghost g : GCMSpec, 
+          operand exp_key_ptr : uint64,
+          operand iptr : uint64,
+          operand iendptr : uint64,
+          operand optr : uint64,
+          operand ivptr : uint64,
+          operand ctr : uint32,
+          ghost    off    : uint32,
+          inline   add    : uint32,
+          inout operand addtmp : uint32,   // Where we add the ctr.
+          inout operand tmpctr : Quadword, // Where we build the ICB||CTR.
+          inout operand tmp    : Quadword  // A tmp for AES plus where we put the plain text.
+          )
+   modifies mem; efl; 
+   requires DistinctORegs3(@iptr, @optr, @tmp);
+
+   requires/ensures 
+      GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, mem);
+      off + add < g.isize;
+      ValidSrcRegPtrs128(mem, g.iheap,  g.iaddr,  g.isize,  Public, iptr, off, add);
+      ValidDstRegPtrs128(mem, g.oheap,  g.oaddr,  g.osize,          optr, off, add);
+      WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add,     Secret, AESGCTRSeq(mem, g, g.isize));
+
+   ensures 
+      OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
+      OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
+      WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add + 1, Secret, AESGCTRSeq(mem, g, g.isize));
+{
+
+   Mov32(addtmp, ctr);                               // Put the counter into a tmp.
+   AddN32(addtmp, add);                              // Add our offset to it: 0, 1, ...; const folding elim here?
+   MOVD_xmm_rmm32(tmp, addtmp);                      // Put low 32 bits into an xmm tmp.
+   Load128'(tmpctr, ivptr, 0, Secret, g.ivheap);     // Get the IV+32 0s from memory.
+   Pxor(tmpctr, tmp);                                // ICB (96 bits) || ctr for this offset.
+   AES128EncryptOneBlockOp(g.key, tmpctr, g.exp_key, Secret, tmpctr, tmp, exp_key_ptr, g.exp_key_heap); // Encrypt the counter back into tmpctr.
+   LoadArray128(tmp, iptr, add, Secret, g.iheap);    // Load the plaintext into tmp.
+   Pxor(tmp, tmpctr);                                // Xor the encrypted counter with the plaintext.
+   StoreArray128(optr, tmp, add, Public, g.oheap);   // Write it back to the output.
+}
+
+// We can't use operands into here due to the inability to timely prove their inequalty with registers.
+procedure {:recursive} {:timeLimitMultiplier 3} AESGCTRUnrolled
+         (ghost g: GCMSpec,
+          ghost off : uint32, 
+          inline step : uint32)
+                               
+    reads  rdi; rsi; rdx; rcx; r8; rax;
+    modifies mem; efl; 
+             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; 
+             rbx; r9; r10; r11; r12; r13; r14; r15;
+
+    requires
+        let exp_key_ptr  := rdi; let iptr  := rsi; let iendptr := rdx; let optr := rcx; let ivptr := r8;  let ctr := rax;
+       off + step < (iendptr - iptr) / 16;
+       0 <= step < 8;
+       g.iaddr != g.oaddr;      // Why they are in different heaps.
+
+    requires/ensures 
+        let exp_key_ptr  := rdi; let iptr  := rsi; let iendptr := rdx; let optr := rcx; let ivptr := r8;  let ctr := rax;
+        GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, mem);
+        ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, g.isize, Public, iptr, off, step);
+        ValidDstRegPtrs128(mem, g.oheap, g.oaddr, g.isize,         optr, off, step);
+        WritesReg128(mem, g.oheap, g.oaddr, g.isize, off,         Public, AESGCTRSeq(mem, g, g.isize));
+
+    ensures
+         OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
+         OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
+         // This means I wrote off + step + 1 of the output in total.
+         WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + step + 1, Public, AESGCTRSeq(mem, g, g.isize));
+{
+  let exp_key_ptr  := rdi; let iptr  := rsi; let iendptr := rdx; let optr := rcx; let ivptr := r8;  let ctr := rax;
+  inline if (step == 7) {
+       AESGCTRUnrolled(g, off, step - 1);
+       AESGCTR1       (g, rdi, rsi, rdx, rcx, r8, rax, off, step, r15, xmm13, xmm14);
+  } else if (step == 6) {
+       AESGCTRUnrolled(g, off, step - 1);
+       AESGCTR1       (g, rdi, rsi, rdx, rcx, r8, rax, off, step, r14, xmm12, xmm13);
+  } else if (step == 5) {
+       AESGCTRUnrolled(g, off, step - 1);
+       AESGCTR1       (g, rdi, rsi, rdx, rcx, r8, rax, off, step, r13, xmm10, xmm11);
+  }  else if (step == 4) {
+       AESGCTRUnrolled(g, off, step - 1);
+       AESGCTR1       (g, rdi, rsi, rdx, rcx, r8, rax, off, step, r12, xmm8, xmm9);
+  } else if (step == 3) {
+       AESGCTRUnrolled(g, off, step - 1);
+       AESGCTR1       (g, rdi, rsi, rdx, rcx, r8, rax, off, step, r11, xmm6, xmm7); 
+  } else if (step == 2) {
+       AESGCTRUnrolled(g, off, step - 1);
+       AESGCTR1       (g, rdi, rsi, rdx, rcx, r8, rax, off, step, r10, xmm4, xmm5);
+  } else if (step == 1) {
+       AESGCTRUnrolled(g, off, step - 1);
+       AESGCTR1       (g, rdi, rsi, rdx, rcx, r8, rax, off, step,  r9, xmm2, xmm3);
+   } else if (step == 0) {                                    
+       AESGCTR1       (g, rdi, rsi, rdx, rcx, r8, rax, off, step, rbx, xmm0, xmm1);
+   }
+}  
 
 #verbatim
 }

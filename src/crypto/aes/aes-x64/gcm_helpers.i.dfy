@@ -20,7 +20,6 @@ import opened AESModule
 import opened AESHelpersModule
 import opened GCMModule
 
-/*
 lemma lemma_BitwiseAdd32()
     ensures  forall x:uint32, y:uint32 :: x + y < 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y
     ensures  forall x:uint32, y:uint32 :: x + y >= 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y - 0x1_0000_0000;
@@ -29,6 +28,8 @@ lemma lemma_BitwiseAdd32()
     reveal_BitwiseAdd32();
 }
 
+
+/*
 // Testing bits, not known if it proves well yet.
 predicate BitTest8(x : bv8, amount : int)
   requires 0 <= amount < 8;
@@ -252,7 +253,12 @@ method CL_MUL(src1 : bv128, src2 : bv128, imm8 : bv8) returns (dest : bv128)
 }
 */
 
-predicate AlgReq(g : G) {
+
+// Bundle up all of the requirements for our ghosts via static/dynamic requirements
+// and into a single predicate.
+
+// Static
+predicate GCMAlgSpecStat(g : GCMSpec) {
   g.alg == AES_128 &&
   |g.key| == Nk(g.alg) && 
   SeqLength(g.key) == Nk(g.alg) &&
@@ -260,19 +266,131 @@ predicate AlgReq(g : G) {
   (Nb() * (Nr(g.alg) + 1)) % 4 == 0   
 }
 
-predicate KeyReq(g : G, exp_key_ptr : uint64, mem : Heaplets) {
-  ValidSrcAddrs(mem, g.exp_key_heap, exp_key_ptr, 128, Secret, 11*16) &&   // Key is readable
-  exp_key_ptr % 16 == 0 &&
+predicate GCMKeySpecStat(g : GCMSpec) {
+  g.exp_key_addr % 16 == 0 &&
   SeqLength(g.exp_key) == 44 
 }
 
-predicate ExpKeyReq(g : G, exp_key_ptr : uint64, mem : Heaplets) {
-  AlgReq(g) && 
-  KeyReq(g, exp_key_ptr, mem) &&
-  (forall j :: 0 <= j <= 10 ==> mem[g.exp_key_heap].quads[exp_key_ptr + 16*j].v == 
-         Quadword(g.exp_key[4*j], g.exp_key[4*j+1], g.exp_key[4*j+2], g.exp_key[4*j+3])) &&
-    KeyExpansionPredicate(g.key, g.alg, g.exp_key)
+predicate GCMExpKeySpecStat(g : GCMSpec) 
+  requires |g.key| == Nk(g.alg);
+{
+  KeyExpansionPredicate(g.key, g.alg, g.exp_key)
+}
+
+predicate GCMInputSpecStat(g : GCMSpec) {
+  g.iaddr <= g.iendaddr && 
+  (g.iendaddr - g.iaddr) / 16 == g.isize
+}
+
+predicate GCMOutputSpecStat(g : GCMSpec) {
+  g.osize == g.isize
+}
+
+predicate GCMHeapSpecStat(g : GCMSpec) {
+ g.exp_key_heap != g.iheap && g.exp_key_heap != g.oheap && g.exp_key_heap != g.ivheap && 
+ g.iheap != g.oheap && g.iheap != g.ivheap &&  
+ g.oheap != g.ivheap
+}
+
+predicate GCMSpecStat(g : GCMSpec) {
+ GCMAlgSpecStat(g) &&
+ GCMKeySpecStat(g) &&
+ GCMExpKeySpecStat(g) &&
+ GCMInputSpecStat(g) &&
+ GCMOutputSpecStat(g) &&
+ GCMHeapSpecStat(g)
+}
+
+// Dynamic
+
+predicate GCMExpKeySpecDyn(g : GCMSpec, exp_key_ptr : uint64, mem : Heaplets) {
+  GCMKeySpecStat(g) && 
+  exp_key_ptr == g.exp_key_addr &&
+  ValidSrcAddrs(mem, g.exp_key_heap, g.exp_key_addr, 128, Secret, 11*16) &&
+  (forall j :: 0 <= j <= 10 ==> mem[g.exp_key_heap].quads[g.exp_key_addr + 16*j].v == 
+         Quadword(g.exp_key[4*j], g.exp_key[4*j+1], g.exp_key[4*j+2], g.exp_key[4*j+3]))
+}
+
+predicate GCMIVSpecDyn(g : GCMSpec, ivptr : uint64, mem : Heaplets) {
+  g.ivaddr == ivptr &&
+  ValidSrcRegPtrs128(mem, g.ivheap, g.ivaddr, g.ivsize, Secret, ivptr, 0, 0) &&
+//  ICB is in memory there. 
+  mem[g.ivheap].quads[g.ivaddr] == QuadwordHeapletEntry(g.ICB, Secret)
+}
+
+predicate GCMInputSpecDyn(g : GCMSpec, iptr : uint64, iendptr : uint64, mem : Heaplets) {
+ ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret) 
+ // iendptr >= iptr - hard to prove the equality.
+ // TODO do I want to specify that iptr is in range?
+}
+
+predicate GCMOutputSpecDyn(g : GCMSpec, iptr : uint64, iendptr : uint64, optr : uint64, mem : Heaplets) {
+ ValidSrcReg128(mem, g.oheap, g.oaddr, g.osize, Public)
+ // TODO do I want to specify that opr is in range?
+}
+
+predicate GCMSpecDyn(g : GCMSpec, 
+  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64,
+  mem : Heaplets) {
+// All of the static specs.
+  GCMSpecStat(g) && 
+// All of the dynamic specs.
+  GCMExpKeySpecDyn(g, exp_key_ptr, mem) && 
+  GCMIVSpecDyn(g, ivptr, mem) &&
+  GCMInputSpecDyn(g, iptr, iendptr, mem) &&
+  GCMOutputSpecDyn(g, iptr, iendptr, optr, mem)
 }
 
 
+// When we start off what do we have?
+predicate GCMSpecDynInit(g : GCMSpec, 
+  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64,
+  mem : Heaplets) {
+  GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, mem) && 
+  iptr    == g.iaddr &&
+  iendptr == g.iendaddr &&
+  optr    == g.oaddr &&
+  iendptr >= iptr
 }
+
+// Works nicely to get rid of some lemma issues on va_code.
+type uint8plus1   = i:int | 0 < i <= 8 witness 1 
+
+lemma {:timeLimitMultiplier 2} lemma_regdiff_loop_ge'(endptr : nat, iptr : nat, bytes : nat)
+    requires  2 <= bytes <= 128;
+    requires  endptr >= iptr;
+    requires (endptr - iptr) % bytes == 0;
+    ensures  (endptr - iptr) > 0 ==> (endptr - iptr) >= bytes;
+{
+  assume (endptr - iptr) > 0 ==> (endptr - iptr) >= bytes;
+}
+
+lemma lemma_regdiff_loop_ge_uint128'(endptr : nat, iptr : nat, uint128s : nat)
+    requires  1 <= uint128s <= 8;
+    requires  endptr >= iptr;
+    requires (endptr - iptr) % (uint128s * 16) == 0;
+    ensures  (endptr - iptr) > 0 ==> (endptr - iptr) >= (uint128s * 16);
+{
+  if (uint128s == 1) {
+    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 2) {
+    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 3) {
+    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 4) {
+    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 5) {
+    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 6) {
+    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 7) {
+    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
+  } else {
+    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
+  }
+}
+
+}
+
+
+

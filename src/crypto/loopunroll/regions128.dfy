@@ -204,7 +204,6 @@ lemma lemma_regdiff_loop_ge(endptr : nat, iptr : nat, bytes : nat)
 {
 }
 
-// Bryan, what's the forall version of this?
 lemma lemma_regdiff_loop_ge_uint128(endptr : nat, iptr : nat, uint128s : nat)
     requires  1 <= uint128s <= 4;
     requires  endptr >= iptr;
