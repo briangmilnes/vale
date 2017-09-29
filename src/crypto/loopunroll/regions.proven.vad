@@ -273,7 +273,7 @@ procedure Copy64LoopPred(inline taint:taint, ghost src_id:heaplet_id, ghost dst_
 // Output is rdi.
 procedure Copy64LoopArbitraryAlignedSize
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(rdx) - old(rsi)) / 8;
+    lets items :=  (old(rdx) - old(rsi)) / 8;
     reads
         rsi; rdi; rdx;
     modifies
@@ -324,7 +324,7 @@ procedure Copy64LoopArbitraryAlignedSize
 // This leaves more registers for loop unrolling.
 procedure Copy64LoopArbitraryAlignedSizeModifyInpOutPtr
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(rdx) - old(rsi)) / 8;
+    lets items :=  (old(rdx) - old(rsi)) / 8;
     reads
         rdx;
     modifies
@@ -409,7 +409,7 @@ procedure {:bridge} {:timeLimitMultiplier 3} Copy64
 // Tmp is rax;
 procedure CopyLoopArbitraryAlignedSizeModifyInpOutPtrCall
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(rdx) - old(rsi)) / 8;
+    lets items :=  (old(rdx) - old(rsi)) / 8;
     reads
         rdx;
     modifies
@@ -504,7 +504,7 @@ procedure {:recursive} {:timeLimitMultiplier 1} Copy64Unrolled
 // Try calling the unrolled loop with a single step.
 procedure CopyLoopOverUnrolled1
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(rdx) - old(rsi)) / 8;
+    lets items :=  (old(rdx) - old(rsi)) / 8;
     reads rdx;
     modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
@@ -562,7 +562,7 @@ procedure CopyLoopOverUnrolled1
 
 procedure CopyLoopOverUnrolled2
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(rdx) - old(rsi)) / 8;
+    lets items :=  (old(rdx) - old(rsi)) / 8;
     reads rdx;
     modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
@@ -617,9 +617,9 @@ procedure CopyLoopOverUnrolled2
 }
 
 // TODO it would be nice if this was parameterized on registers.
-procedure {:timeLimitMultiplier 1} CopyLoopOverUnrolledN
+procedure {:timeLimitMultiplier 3} CopyLoopOverUnrolledN
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, inline n : uint8)
-    let items :=  (old(rdx) - old(rsi)) / 8;
+    lets items :=  (old(rdx) - old(rsi)) / 8;
     reads rdx;
     modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
@@ -689,7 +689,7 @@ procedure {:timeLimitMultiplier 1} CopyLoopOverUnrolledN
 // Just checking that calls to the above prove.
 procedure {:timeLimitMultiplier 1} CallCopyLoopOverUnrolledN
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, inline n : uint8)
-    let items :=  (old(rdx) - old(rsi)) / 8;
+    lets items :=  (old(rdx) - old(rsi)) / 8;
     reads rdx;
     modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
@@ -714,7 +714,7 @@ procedure {:timeLimitMultiplier 1} CallCopyLoopOverUnrolledN
 
 procedure CopyLoopOverUnrolled4
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id)
-    let items :=  (old(rdx) - old(rsi)) / 8;
+    lets    items :=  (old(rdx) - old(rsi)) / 8;
     reads rdx;
     modifies mem; efl; rax; rbx; rcx; rdx; rbp; rsi; rdi;
     requires
@@ -816,12 +816,12 @@ procedure {:recursive} {:timeLimitMultiplier 1} Copy64Unrolled'
    }
 }
 
-procedure {:timeLimitMultiplier 2} CopyLoopOverUnrolledN'
+procedure {:timeLimitMultiplier 3} CopyLoopOverUnrolledN'
           (inline taint:taint, ghost src_id:heaplet_id, ghost dst_id:heaplet_id, 
            inout operand iptr : uint64, operand iendptr : uint64, inout operand optr : uint64, 
            inout operand tmp1 : uint64, inout operand tmp2 : uint64, inout operand tmp3 : uint64, inout operand tmp4 : uint64,
            inline n : uint8)
-    let items :=  (old(iendptr) - old(iptr)) / 8;
+    lets items :=  (old(iendptr) - old(iptr)) / 8;
 
     modifies mem; efl; 
     requires

@@ -13,6 +13,34 @@ import opened x64_decls_i
 import opened operations_i
 #endverbatim
 
+// Intel assemblers will just look at the register types and do the right thing.
+// But Vale wants to know the argument types so needs a special instruction which writes as a MOVD.
+procedure{:refined}  {:bridge} {:instruction Ins(MOVD(dst, src))} MOVD_xmm_rmm32(inout operand dst: Quadword, operand src:uint32)
+//  requires{:refined false}
+//           @dst is OReg;
+//           @src is OReg;
+//           Valid32BitSourceOperand(to_state(this), @src);
+//           ValidOperand(to_state(this), 32, @src);
+    requires{:refined false} op32(this, @src);
+//  modifies
+//    efl;
+
+  ensures
+    dst == Quadword(old(src), 0, 0, 0);
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := MaybeUpdateOk(old(this), this);
+    this := this.(heaplets := old(this).heaplets);
+    assert old(this).ok ==> this.ok;        // Failed initially
+    ghost if (old(this).ok) {
+         assert 0 <= src < 0x1_0000_0000;
+         assert dst.lo == old(src); // Failing here.
+         assert dst.hi == 0;
+         assert dst == old(Quadword(src, 0, 0, 0));
+    }
+}
+
 // This must be called before return or C call if one uses XMM registers.
 procedure{:refined} {:bridge} {:instruction Ins(EMMS)} EMMS()
 {
@@ -129,25 +157,6 @@ procedure{:refined}{:instruction Ins(Div64(src))} Div64(operand src:uint64)
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
 }   
-
-// Intel assemblers will just look at the register types and do the right thing.
-// But Vale wants to know the argument types so needs a special instruction which writes as a MOVD.
-procedure{:refined}  {:bridge} {:instruction Ins(MOVD_xmm_rmm32(dst, src))} MOVD_xmm_rmm32(inout operand dst: Quadword, operand src:uint32)
-  requires{:refined false}
-           @dst is OReg;
-           @src is OReg;
-           Valid32BitSourceOperand(to_state(this), @src);
-           ValidOperand(to_state(this), 32, @src);
-  modifies
-    efl;
-  ensures
-    dst == Quadword(old(src), 0, 0, 0);
-{
-    reveal evalCodeOpaque;
-    reveal x86_ValidState;
-    this := this.(heaplets := old(this).heaplets);
-    this := MaybeUpdateOk(old(this), this);
-}
 
 procedure{:refined}  {:bridge} {:instruction Ins(POR(dst, src))} POR(inout operand dst: Quadword, operand src:Quadword)
   modifies efl;

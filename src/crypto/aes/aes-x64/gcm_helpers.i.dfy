@@ -20,6 +20,7 @@ import opened AESModule
 import opened AESHelpersModule
 import opened GCMModule
 
+// Some bitmath.
 lemma lemma_BitwiseAdd32()
     ensures  forall x:uint32, y:uint32 :: x + y < 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y
     ensures  forall x:uint32, y:uint32 :: x + y >= 0x1_0000_0000 ==> BitwiseAdd32(x, y) == x + y - 0x1_0000_0000;
@@ -28,6 +29,62 @@ lemma lemma_BitwiseAdd32()
     reveal_BitwiseAdd32();
 }
 
+lemma lemma_CBAt_fixed(i : uint32,  ICB : Quadword)
+  ensures CB(i, ICB) == Quadword(BitwiseAdd32(1,i), ICB.mid_lo, ICB.mid_hi, ICB.hi);
+{
+  lemma_BitwiseAdd32();
+  if (i == 0) {
+    assert CB(0,ICB) == Quadword(1, ICB.mid_lo, ICB.mid_hi, ICB.hi);
+  } else {
+    lemma_CBAt_fixed(i-1, ICB);
+  }
+}
+
+
+lemma lemma_BitXorWithZeroLeft(x:bv32)
+    ensures BitXor(0,x) == x;
+{
+    reveal_BitXor();
+}
+
+lemma lemma_BitwiseXorWithZeroLeft(x:uint32)
+    ensures BitwiseXor(0, x) == x;
+{
+    reveal_WordToBits();
+    reveal_BitsToWord();
+    calc {
+        BitwiseXor(0,x);
+        BitsToWord(BitXor(WordToBits(0), WordToBits(x)));
+           { lemma_WordToBitsPreservesZeroness(0); assert WordToBits(0) == 0; }
+        BitsToWord(BitXor(0, WordToBits(x)));
+          { lemma_BitXorWithZeroLeft(WordToBits(x)); assert BitXor(0, WordToBits(x)) == WordToBits(x);}
+        BitsToWord(WordToBits(x));
+          { lemma_WordToBitsToWord(x); assert BitsToWord(WordToBits(x)) == x; } 
+        x;
+    }
+}   
+
+lemma lemma_QuadwordXorZeros(x:Quadword, y : Quadword)
+    ensures y.lo     == 0 ==> QuadwordXor(x, y).lo     == x.lo;
+    ensures y.mid_lo == 0 ==> QuadwordXor(x, y).mid_lo == x.mid_lo;
+    ensures y.mid_hi == 0 ==> QuadwordXor(x, y).mid_hi == x.mid_hi;
+    ensures y.hi     == 0 ==> QuadwordXor(x, y).hi     == x.hi;
+
+    ensures x.lo     == 0 ==> QuadwordXor(x, y).lo     == y.lo;
+    ensures x.mid_lo == 0 ==> QuadwordXor(x, y).mid_lo == y.mid_lo;
+    ensures x.mid_hi == 0 ==> QuadwordXor(x, y).mid_hi == y.mid_hi;
+    ensures x.hi     == 0 ==> QuadwordXor(x, y).hi     == y.hi;
+{
+ lemma_BitwiseXorWithZero(x.lo);
+ lemma_BitwiseXorWithZero(x.mid_lo);
+ lemma_BitwiseXorWithZero(x.mid_hi);
+ lemma_BitwiseXorWithZero(x.hi);
+
+ lemma_BitwiseXorWithZeroLeft(y.lo);
+ lemma_BitwiseXorWithZeroLeft(y.mid_lo);
+ lemma_BitwiseXorWithZeroLeft(y.mid_hi);
+ lemma_BitwiseXorWithZeroLeft(y.hi);
+}
 
 /*
 // Testing bits, not known if it proves well yet.
@@ -277,6 +334,12 @@ predicate GCMExpKeySpecStat(g : GCMSpec)
   KeyExpansionPredicate(g.key, g.alg, g.exp_key)
 }
 
+predicate GCMIVSpecStat(g : GCMSpec)
+{
+  g.ivsize == 128 && 
+  g.ICB.lo == 0
+}
+
 predicate GCMInputSpecStat(g : GCMSpec) {
   g.iaddr <= g.iendaddr && 
   (g.iendaddr - g.iaddr) / 16 == g.isize
@@ -296,6 +359,7 @@ predicate GCMSpecStat(g : GCMSpec) {
  GCMAlgSpecStat(g) &&
  GCMKeySpecStat(g) &&
  GCMExpKeySpecStat(g) &&
+ GCMIVSpecStat(g) &&
  GCMInputSpecStat(g) &&
  GCMOutputSpecStat(g) &&
  GCMHeapSpecStat(g)
@@ -306,14 +370,16 @@ predicate GCMSpecStat(g : GCMSpec) {
 predicate GCMExpKeySpecDyn(g : GCMSpec, exp_key_ptr : uint64, mem : Heaplets) {
   GCMKeySpecStat(g) && 
   exp_key_ptr == g.exp_key_addr &&
+  exp_key_ptr % 16 == 0 && 
   ValidSrcAddrs(mem, g.exp_key_heap, g.exp_key_addr, 128, Secret, 11*16) &&
   (forall j :: 0 <= j <= 10 ==> mem[g.exp_key_heap].quads[g.exp_key_addr + 16*j].v == 
          Quadword(g.exp_key[4*j], g.exp_key[4*j+1], g.exp_key[4*j+2], g.exp_key[4*j+3]))
 }
 
 predicate GCMIVSpecDyn(g : GCMSpec, ivptr : uint64, mem : Heaplets) {
+  GCMIVSpecStat(g) &&
   g.ivaddr == ivptr &&
-  ValidSrcRegPtrs128(mem, g.ivheap, g.ivaddr, g.ivsize, Secret, ivptr, 0, 0) &&
+  ValidSrcAddr(mem, g.ivheap, g.ivaddr, g.ivsize, Secret) &&
 //  ICB is in memory there. 
   mem[g.ivheap].quads[g.ivaddr] == QuadwordHeapletEntry(g.ICB, Secret)
 }
@@ -329,8 +395,18 @@ predicate GCMOutputSpecDyn(g : GCMSpec, iptr : uint64, iendptr : uint64, optr : 
  // TODO do I want to specify that opr is in range?
 }
 
+// How do our ptrs change with offset into the calculation? 
+predicate GCMPtrSpecDyn(g : GCMSpec, 
+   iptr : uint64, iendptr : uint64, optr : uint64,  ctr: uint32, off : nat, 
+   mem : Heaplets) {
+    off == (iptr - g.iaddr) / 12 && 
+    ctr == off + 1 && // When we write the zeroth addr we are at ctr 1.
+    optr == g.oaddr + off
+}
+
 predicate GCMSpecDyn(g : GCMSpec, 
-  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64,
+  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint32,
+  off : nat, 
   mem : Heaplets) {
 // All of the static specs.
   GCMSpecStat(g) && 
@@ -338,59 +414,50 @@ predicate GCMSpecDyn(g : GCMSpec,
   GCMExpKeySpecDyn(g, exp_key_ptr, mem) && 
   GCMIVSpecDyn(g, ivptr, mem) &&
   GCMInputSpecDyn(g, iptr, iendptr, mem) &&
-  GCMOutputSpecDyn(g, iptr, iendptr, optr, mem)
+  GCMOutputSpecDyn(g, iptr, iendptr, optr, mem) &&
+  GCMPtrSpecDyn(g, iptr, iendptr, optr, ctr, off, mem)
 }
 
 
 // When we start off what do we have?
 predicate GCMSpecDynInit(g : GCMSpec, 
-  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64,
+  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint32,
+  off : nat, 
   mem : Heaplets) {
-  GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, mem) && 
+  GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, mem) && 
   iptr    == g.iaddr &&
   iendptr == g.iendaddr &&
   optr    == g.oaddr &&
   iendptr >= iptr
 }
 
+// And when we need operands, we need to know they are distinct.
+// Even if tmp is a 32 bit register it is part of a 64 bit register.
+predicate GCMRegUnique(exp_key_ptr : operand, iptr : operand, iendptr : operand, optr : operand, ivptr : operand, ctr: operand, tmp : operand) {
+  exp_key_ptr != iptr && exp_key_ptr != iendptr && exp_key_ptr != optr && exp_key_ptr != ivptr && exp_key_ptr != ctr && exp_key_ptr != tmp &&
+  iptr != iendptr && iptr != optr && iptr != ivptr && iptr != ctr && iptr != tmp &&
+  iendptr != optr && iendptr != ivptr && iendptr != ctr && iendptr != tmp &&
+  optr != ivptr && optr != tmp && ctr != tmp && 
+  ivptr != tmp && ivptr != ctr &&
+  ctr != tmp
+}
+
 // Works nicely to get rid of some lemma issues on va_code.
 type uint8nonzero   = i:int | 0 < i <= 0x100 witness 1 
 
-lemma {:timeLimitMultiplier 2} lemma_regdiff_loop_ge'(endptr : nat, iptr : nat, bytes : nat)
-    requires  2 <= bytes <= 128;
-    requires  endptr >= iptr;
-    requires (endptr - iptr) % bytes == 0;
-    ensures  (endptr - iptr) > 0 ==> (endptr - iptr) >= bytes;
+/*
+lemma Writes_AESGCTR_step(mem : Heaplets, g : GCMSpec, off : nat, add : nat) 
+   requires WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add, Secret, 
+                          AESGCTRSeq(mem, g, g.isize));
+   assert InMap(addr128(g.oaddr, off + add), mem[g.oheap].quads);
+   assert mem[g.oheap].quads[addr128(g.oaddr, off + add)].t == Public;
+   assert mem[g.oheap].quads[addr128(g.oaddr, off + add)].v == tmp;
+   assert mem[g.oheap].quads[addr128(g.oaddr, off + add)].v == AESGCTR(mem, g, i);
+
+   ensures WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add + 1, Secret, 
+                          AESGCTRSeq(mem, g, g.isize));
 {
-  assume (endptr - iptr) > 0 ==> (endptr - iptr) >= bytes;
 }
-
-lemma lemma_regdiff_loop_ge_uint128'(endptr : nat, iptr : nat, uint128s : nat)
-    requires  1 <= uint128s <= 8;
-    requires  endptr >= iptr;
-    requires (endptr - iptr) % (uint128s * 16) == 0;
-    ensures  (endptr - iptr) > 0 ==> (endptr - iptr) >= (uint128s * 16);
-{
-  if (uint128s == 1) {
-    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
-  } else if (uint128s == 2) {
-    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
-  } else if (uint128s == 3) {
-    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
-  } else if (uint128s == 4) {
-    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
-  } else if (uint128s == 5) {
-    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
-  } else if (uint128s == 6) {
-    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
-  } else if (uint128s == 7) {
-    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
-  } else {
-    lemma_regdiff_loop_ge'(endptr, iptr, 16 * uint128s);
-  }
-}
+*/
 
 }
-
-
-

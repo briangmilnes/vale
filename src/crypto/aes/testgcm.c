@@ -13,13 +13,22 @@ int trace  = 1;   // Turn on extra tracing.
 
 /* Utilities */
 
-void print128BitVectorHex(const uint8_t v[16]) {
+void print128BitVectorHexBE(const uint8_t v[16]) {
+  printf("{");
+  for (int i = 15; i >= 0; --i) {
+    printf(" 0x%2x",v[i]);
+  }
+  printf("}\n");
+}
+
+void print128BitVectorHexLE(const uint8_t v[16]) {
   printf("{");
   for (int i = 0; i < 16; ++i) {
     printf(" 0x%2x",v[i]);
   }
   printf("}\n");
 }
+
 
 uint8_t hexDigitToUint8(char digit) {
     digit = tolower(digit);
@@ -31,12 +40,22 @@ uint8_t hexDigitToUint8(char digit) {
       return (uint8_t) -1;
 }
 
-uint8_t *HexStringToUint8(char* hexstring, int min) {
-  int      len    = (strlen(hexstring) < min ? min : strlen(hexstring)) / 2;
-  uint8_t *output = malloc(len);
-  memset(output, 48, len); // Put char zeros in.
-  for(int i= 0; i < len; i++) {
-    *(output+i) = hexDigitToUint8(hexstring[2 * i]) * 16 + hexDigitToUint8(hexstring[2 * i + 1]);
+// Fix to 16 for now.
+uint8_t *HexStringToUint8LE(char* hexstring) {
+  uint8_t *output = malloc(16);
+  memset(output, 0, 16);
+  for(int i= 0; i < 16; i++) {
+    *(output+i) = hexDigitToUint8(hexstring[2 * i]) + hexDigitToUint8(hexstring[2 * i + 1]) * 16;
+  }  
+  return output;
+}
+
+// Big endian.
+uint8_t *HexStringToUint8BE(char* hexstring) {
+  uint8_t *output = malloc(16);
+  memset(output, 0, 16);
+  for(int i = 0; i < 16; i++) {
+    *(output+((16 - i) - 1)) = hexDigitToUint8(hexstring[2 * i]) * 16 + hexDigitToUint8(hexstring[2 * i + 1]);
   }  
   return output;
 }
@@ -71,12 +90,12 @@ UTEST *mkUTEST(CTEST *s) {
   UTEST *u = malloc(sizeof(UTEST));  
   u->Count = s->Count;
   u->PTlen = strlen(s->PT) / 2;
-  u->Key   = HexStringToUint8(s->Key,16);
-  u->IV    = HexStringToUint8(s->IV, 16);
-  u->PT    = HexStringToUint8(s->PT, 16);
-  u->AAD   = HexStringToUint8(s->AAD,16);
-  u->CT    = HexStringToUint8(s->CT, 16);
-  u->Tag   = HexStringToUint8(s->Tag,16);
+  u->Key   = HexStringToUint8LE(s->Key); 
+  u->IV    = HexStringToUint8LE(s->IV);  
+  u->PT    = HexStringToUint8LE(s->PT);  
+  u->AAD   = HexStringToUint8LE(s->AAD);
+  u->CT    = HexStringToUint8LE(s->CT);
+  u->Tag   = HexStringToUint8LE(s->Tag);
   u->FAIL  = s->FAIL;
   return u;
 }
@@ -97,13 +116,13 @@ void printCTEST(CTEST *c) {
 void printUTEST(UTEST *e) {
   printf("UTEST {\n");
   printf("    Count %d,\n", e->Count);
-  printf("    Key   "); print128BitVectorHex(e->Key);
-  printf("    IV    "); print128BitVectorHex(e->IV);
-  printf("    PT    "); print128BitVectorHex(e->PT);
+  printf("    Key   "); print128BitVectorHexLE(e->Key);
+  printf("    IV    "); print128BitVectorHexLE(e->IV);
+  printf("    PT    "); print128BitVectorHexLE(e->PT);
   printf("    PTlen %d,\n", e->PTlen);
-  printf("    AAD   "); print128BitVectorHex(e->AAD);
-  printf("    CT    "); print128BitVectorHex(e->CT);
-  printf("    Tag   "); print128BitVectorHex(e->Tag);
+  printf("    AAD   "); print128BitVectorHexLE(e->AAD);
+  printf("    CT    "); print128BitVectorHexLE(e->CT);
+  printf("    Tag   "); print128BitVectorHexLE(e->Tag);
   printf("    FAIL %d\n", e->FAIL);
   printf("}\n");
 }
@@ -116,11 +135,30 @@ void test_tests(CTEST *c) {
 
 // Our three calls so far, only doing CTR not GHASH mac creation.
 void __stdcall aes_main_i_KeyExpansionStdcall(const void * key_ptr, void *exp_key_ptr);
+
 void __stdcall AES128GCTREncryptStdcall(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
+void __stdcall AES128GCTREncryptStdcall1(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
+
 int __stdcall AES128GCTRDecryptStdcall(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
 // TO DO add AAD and TAG.
 
-// Test vectors from,https://pdfs.semanticscholar.org/114a/4222c53f1a6879f1a77f1bae2fc0f8f55348.pdf seem broken as they don't have AAD.
+
+// Test vectors from https://pdfs.semanticscholar.org/114a/4222c53f1a6879f1a77f1bae2fc0f8f55348.pdf seem broken as they don't have AAD.
+// But here is the first one with zero key and zero IV to help sanity check.
+// Test case 2.
+// Pretty certain we read this little endian. 
+
+CTEST zero_encrypt[] = {
+  {0,
+   "00000000000000000000000000000000", // Key
+   "00000000000000000000000000000000", // IV 
+   "00000000000000000000000000000000", // PT
+   "00000000000000000000000000000000", // AAD
+   "0388dace60b6a392f328c2b971b2fe78", // CT
+   "00000000000000000000000000000000", // Tag
+   0}
+};
+
 // Test vectors from https://csrc.nist.gov/projects/cryptographic-algorithm-validation-program/cavp-testing-block-cipher-modes#GCMVS
 
 //[Keylen = 128]
@@ -155,7 +193,7 @@ CTEST ctestsmac_encrypt[] = {
 //[Taglen = 128]
 
 CTEST ctests128_encrypt[] = {
-  { 0, "c939cc13397c1d37de6ae0e1cb7c423c", "b3d8cc017cbb89b39e0f67e2", "c3b3c41f113a31b73d9a5cd432103069", "24825602bd12a984e0092d3e448eda5f", "93fe7d9e9bfd10348a5606e5cafa7354", "0032a1dc85f1c9786925a2e71d8272dd", 0},
+  { 0, "c939cc13397c1d37de6ae0e1cb7c423c", "b3d8cc017cbb89b39e0f67e200000000", "c3b3c41f113a31b73d9a5cd432103069", "24825602bd12a984e0092d3e448eda5f", "93fe7d9e9bfd10348a5606e5cafa7354", "0032a1dc85f1c9786925a2e71d8272dd", 0},
   { 1, "599eb65e6b2a2a7fcc40e51c4f6e3257", "d407301cfa29af8525981c17", "a6c9e0f248f07a3046ece12125666921", "10e72efe048648d40139477a2016f8ce", "1be9359a543fd7ec3c4bc6f3c9395e89", "e2e9c07d4c3c10a6137ca433da42f9a8", 0},
   { 2, "2d265491712fe6d7087a5545852f4f44", "c59868b8701fbf88e6343262", "301873be69f05a84f22408aa0862d19a", "67105634ac9fbf849970dc416de7ad30", "98b03c77a67831bcf16b1dd96c324e1c", "39152e26bdc4d17e8c00493fa0be92f2", 0},
   { 3, "1fd1e536a1c39c75fd583bc8e3372029", "281f2552f8c34fb9b3ec85aa", "f801e0839619d2c1465f0245869360da", "bf12a140d86727f67b860bcf6f34e55f", "35371f2779f4140dfdb1afe79d563ed9", "cc2b0b0f1f8b3db5dc1b41ce73f5c221", 0},
@@ -212,6 +250,7 @@ int test_ghash_encrypt(int i, CTEST *c) {
   UTEST   *u = mkUTEST(c);
   uint8_t  exp_key_ptr[176];
   uint8_t *optr = malloc(u->PTlen);
+  memset(optr, 0, 16);
 
   printf("\nTest test_ghash_encrypt %d ", i);
   aes_main_i_KeyExpansionStdcall(u->Key, exp_key_ptr);
@@ -224,7 +263,7 @@ int test_ghash_encrypt(int i, CTEST *c) {
   //	movq	%rsp, %rdi
   //	addq	%rsi, %rdx
   //	call	AES128GCTREncrypt
-  AES128GCTREncryptStdcall(exp_key_ptr, u->PT, u->PT + u->PTlen, optr, u->IV);
+  AES128GCTREncryptStdcall1(exp_key_ptr, u->PT, u->PT + u->PTlen, optr, u->IV);
   if (memcmp(optr, u->PT, u->PTlen) == 0) {
     printf("SUCCEEDED\n"); 
     return 1;
@@ -233,7 +272,7 @@ int test_ghash_encrypt(int i, CTEST *c) {
       if (trace == 1) {
         printUTEST(u);
         printf("\n decrypted output calculated ");
-  	print128BitVectorHex(optr);
+  	print128BitVectorHexLE(optr);
      }
     return 0;
   }
@@ -274,7 +313,7 @@ int test_ghash_decrypt(int i, CTEST *c) {
       if (trace == 1) {
         printUTEST(u);
         printf("\n decrypted output calculated ");
-  	print128BitVectorHex(optr);
+  	print128BitVectorHexLE(optr);
      }
     }
   } else {
@@ -288,7 +327,7 @@ int test_ghash_decrypt(int i, CTEST *c) {
       if (trace == 1) {
         printUTEST(u);
         printf("\n decrypted output calculated ");
-  	print128BitVectorHex(optr);
+  	print128BitVectorHexLE(optr);
      }
     return 0;
   }
@@ -304,12 +343,17 @@ int test_ghash_decrypts(int num, CTEST c[]) {
 }
 
 
+// BUG not producing with zero Key, IV and PT the expected CT.
+// This does not seem to be an endianess issue.
+// 
+
 int test_aesgctr() {
   printf("Starting AES128 GCTR tests \n");
   //  test_tests(&(ctests128[0])); // just during development.
   printf("Finished AES128 GCTR tests \n");
-  test_ghash_encrypts(15, ctests128_encrypt);
-  test_ghash_decrypts(14, ctests128_decrypt);
+  test_ghash_encrypts(1, zero_encrypt);
+  // test_ghash_encrypts(15, ctests128_encrypt);
+  //  test_ghash_decrypts(14, ctests128_decrypt);
   return 0;
 }
 

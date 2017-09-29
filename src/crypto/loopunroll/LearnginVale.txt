@@ -95,7 +95,7 @@ Vale Language Edge Cases
   
   Don't put lemmas #verbatim in .vad files, sometimes they fail to trigger.
 
- :refiled and :bridge
+ :refined and :bridge
 
   What are my types anyway?
 
@@ -158,10 +158,45 @@ Compiling and Proving
 
  Operand identity
 
-  Vale automatically knows that that operands of different types are different.
-  But it does not assum that an operand and a register of the same type are different.
+  Vale automatically knows that that operands of very different types are different,
+   such as uint32 and uint64 vs quadwords.
+  But 32 bit registers are part of a 64 bit registers so you must show they are different
+  when using operands.
   
+
  Return Values
    There is a returnvalue.vad to show you how to do this if you need to return a value
    to C. The procedures .. returns () syntax is only used for ghosts so far.
    
+
+ Contradictions
+
+   It is quite easy to generate and miss a contradiction. Good ways to prevent
+  this is to put an ensures false at the end of your requires/ensures. If the
+  procedure validates, you've got a contradiction.
+
+  You may still get a contradiction in the body, so while you are developing you
+  can check for this with an assert false at the end of the body. If it validates,
+  you have a contradiction.
+
+  Before accepting the proof a procudure it is good practice to try both of these
+  tests.
+
+  Reg32's require reg32 and op32 declarations for operands (in some cases).
+
+procedure R32(inout operand tmp    : Quadword,
+              inout operand addtmp : uint32)
+   modifies efl;
+   requires/ensures op32(this, @addtmp);
+{
+   MOVD_xmm_rmm32(tmp, addtmp);
+}  
+
+procedure CallWithR32()
+   modifies efl; eax; xmm0;
+   requires reg32(this, X86Eax);
+{
+  R32(xmm0, eax);
+} 
+
+  Its like they lose their Reg32ishness because they can be written as 64 bit values.

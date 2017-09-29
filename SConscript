@@ -42,6 +42,7 @@ verify_options = {
   'obj/crypto/loopunroll/chrismem.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3'),
   'obj/crypto/loopunroll/calleesave.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3 ' + ' /noNLarith'),
   'obj/crypto/loopunroll/returnvalue.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3 ' + ' /noNLarith'),
+  'obj/crypto/loopunroll/catchingcontradictions.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3 ' + ' /noNLarith'),
   # .dfy files default to this set of options
   '.dfy': BuildOptions(dafny_default_args_larith),
 
@@ -66,9 +67,10 @@ sha_asm = env.ExtractValeCode(
   'src/crypto/hashing/$SHA_ARCH_DIR/sha256_vale_main.i.dfy', # Dafny main
   'sha256'                                                   # Base name for the ASM files and EXE
   )
-sha_c_h = env.ExtractDafnyCode(['src/crypto/hashing/sha256_main.i.dfy'])
-sha_include_dir = os.path.split(str(sha_c_h[0][1]))[0]
-env.BuildTest(['src/crypto/hashing/testsha256.c', sha_asm[0], sha_c_h[0][0]], sha_include_dir, 'testsha256')
+if 'KREMLIN_HOME' in os.environ:
+  sha_c_h = env.ExtractDafnyCode(['src/crypto/hashing/sha256_main.i.dfy'])
+  sha_include_dir = os.path.split(str(sha_c_h[0][1]))[0]
+  env.BuildTest(['src/crypto/hashing/testsha256.c', sha_asm[0], sha_c_h[0][0]], sha_include_dir, 'testsha256')
 
 #
 # build ctr-exe
@@ -177,6 +179,19 @@ else:
   print('Not building Return Value for this target architecture')  
 
 #
+# build catchingcontradictions-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  catchingcontradictions_asm = env.ExtractValeCode(
+    ['src/crypto/loopunroll/catchingcontradictions.vad'], # Vale source
+     'src/crypto/loopunroll/catchingcontradictions_main.i.dfy',
+     'catchingcontradictions'
+    )
+  env.BuildTest(['src/crypto/loopunroll/testcatchingcontradictions.c', catchingcontradictions_asm[0]], '', 'testcatchingcontradictions')
+else:
+  print('Not building CatchingContradictions for this target architecture')  
+
+#
 # build memcpy-exe
 #
 if env['TARGET_ARCH']=='amd64':  
@@ -231,15 +246,12 @@ else:
 
 if 'KREMLIN_HOME' in os.environ:
   kremlin_path = os.environ['KREMLIN_HOME']
-else:
-  kremlin_path = '#tools/Kremlin'
-
-kremlib_path = kremlin_path + '/kremlib'
+  kremlib_path = kremlin_path + '/kremlib'
 
 #
 # Build the OpenSSL engine
 #
-if env['OPENSSL_PATH'] != None:
+if env['OPENSSL_PATH'] != None and 'KREMLIN_HOME' in os.environ:
   engineenv = env.Clone()
   engineenv.Append(CPPPATH=[kremlib_path, '#obj/crypto/hashing', '$OPENSSL_PATH/include', '#src/lib/util'])
   cdeclenv = engineenv.Clone(CCFLAGS='/Ox /Zi /Gd /LD') # compile __cdecl so it can call OpenSSL code

@@ -63,7 +63,7 @@ datatype ins =
 | VPSLLDQ(dstVPSLLDQ:operand, srcVPSLLDQ:operand, countVPSLLDQ:operand)
 // New instructions for aes-gcm.
 | MOVDQU(dstMovdqu:operand, srcMovdqu:operand)
-| MOVD_xmm_rmm32(dstMOVDxmmmrmm32:operand, srcMOVDxmmrmm32:operand)
+| MOVD(dstMOVDxmmmrmm32:operand, srcMOVDxmmrmm32:operand)
 | PCLMULQDQ(dstPCLMULQDQ : operand, srcPCLMULQDQ : operand, imm8: operand)
 | VPCLMULQDQ(dstVPCLMULQDQ : operand, src1VPCLMULQDQ : operand, src2VPCLMULQDQ : operand, imm8: operand)
 | VMOVDQA(dstVMOVDQA : operand, srcVMODQA : operand)
@@ -511,6 +511,12 @@ predicate evalUpdateXmmsAndMaintainFlags(s:state, o:operand, v:Quadword, r:state
     r == s.(xmms := s.xmms[o.r.xmm := v], trace := s.trace + obs)
 }
 
+predicate evalMOVDAndMaintainFlags(s:state, o:operand, v: uint32, r:state, obs:seq<observation>)
+    requires ValidXmmOperand(s, o);
+{
+    r == s.(xmms := s.xmms[o.r.xmm := Quadword(v,0,0,0)], trace := s.trace + obs)
+}
+
 predicate Valid128BitOperand(s:state, o:operand)
 {
     match o
@@ -572,6 +578,19 @@ predicate evalUpdate128AndHavocFlags(s:state, o:operand, v:Quadword, r:state, ob
                                      flags := r.flags,
                                      trace := s.trace + obs)
 }
+
+predicate evalUpdate128AndMaintainFlags(s:state, o:operand, v:Quadword, r:state, obs:seq<observation>)
+    requires Valid128BitDestinationOperand(s, o);
+{
+    match o
+        case OReg(reg)    => r == s.(xmms := s.xmms[reg.xmm := v], trace := s.trace + obs)
+        case OStack(slot) => r == s.(stack := s.stack[0 := s.stack[0][slot := v.lo][slot+1 := v.mid_lo][slot+2 := v.mid_hi][slot+3 := v.hi]],
+                                     trace := s.trace + obs)
+        case OHeap(addr, taint)  => var m0 := EvalMemAddr(s.regs, addr);
+                             r == s.(heap := UpdateHeap128(s.heap, m0, v, taint),
+                                     trace := s.trace + obs)
+}
+
 
 function evalCmp(c:ocmp, i1:uint64, i2:uint64):bool
 {
@@ -687,7 +706,8 @@ predicate ValidInstruction(s:state, ins:ins)
         case Pshufd(dst, src, permutation) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src) && ValidImm8(s, permutation)
         case VPSLLDQ(dst, src, count) => ValidXmmDestinationOperand(s, dst) && ValidXmmSourceOperand(s, src) && ValidImm8(s, count) && eval_op32(s, count) == 4
         case MOVDQU(dst, src) => Valid128BitDestinationOperand(s, dst) && Valid128BitSourceOperand(s, src) && !src.OConst? && (IsXmmOperand(dst) || IsXmmOperand(src))
-        case MOVD_xmm_rmm32(dst, src) => Valid128BitDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src) && !src.OConst? && IsXmmOperand(dst)
+// RESTART Here make it look like AESN_enc
+        case MOVD(dst, src) => ValidXmmDestinationOperand(s, dst) && Valid32BitSourceOperand(s, src)
         case PCLMULQDQ(dst, src, imm8) => Valid128BitDestinationOperand(s, dst) && Valid128BitSourceOperand(s, src) && !src.OConst? && (IsXmmOperand(dst) || IsXmmOperand(src)) && ValidImm8(s, imm8)
         case VPCLMULQDQ(dst, src1, src2, imm8) => Valid128BitDestinationOperand(s, dst) && Valid128BitSourceOperand(s, src1) && Valid128BitSourceOperand(s, src2) && 
           IsXmmOperand(dst) && IsXmmOperand(src1) && ValidImm8(s, imm8)
@@ -776,7 +796,7 @@ function insObs(s:state, ins:ins):seq<observation>
         case Pshufd(dst, src, permutation) => operandObs(s, 128, dst) +  operandObs(s, 128, src)
         case VPSLLDQ(dst, src, count) => operandObs(s, 128, dst) + operandObs(s, 128, src)
         case MOVDQU(dst, src) => operandObs(s, 128, dst) + operandObs(s, 128, src)
-        case MOVD_xmm_rmm32(dst, src) => operandObs(s, 128, dst) + operandObs(s, 32, src)
+        case MOVD(dst, src) => operandObs(s, 128, dst) + operandObs(s, 32, src)
         case PCLMULQDQ(dst, src, imm8) => operandObs(s, 128, dst) + operandObs(s, 128, src)
         case VPCLMULQDQ(dst, src1, src2, imm8) => operandObs(s, 128, dst) + operandObs(s, 128, src1) + operandObs(s, 128, src2)
         case VMOVDQA(dst, src) => operandObs(s, 128, dst) + operandObs(s, 128, src)
@@ -910,9 +930,9 @@ predicate evalIns(ins:ins, s:state, r:state)
                                                                              select_word(s.xmms[src.r.xmm], byte_to_bits(eval_op32(s,permutation)).hi)
                                                                              ), r, obs)
             case VPSLLDQ(dst, src, count)  => evalUpdateXmmsAndHavocFlags(s, dst, Quadword(0, s.xmms[src.r.xmm].lo, s.xmms[src.r.xmm].mid_lo, s.xmms[src.r.xmm].mid_hi), r, obs)
-            case MOVDQU(dst, src)          => evalUpdate128AndHavocFlags(s, dst, Eval128BitOperand(s, src), r, obs)
+            case MOVDQU(dst, src)          => evalUpdate128AndMaintainFlags(s, dst, Eval128BitOperand(s, src), r, obs)
 // AES-GCM instructions
-            case MOVD_xmm_rmm32(dst, src)    => evalUpdate128AndHavocFlags(s, dst, Quadword(eval_op32(s, src), 0,0,0), r, obs)
+            case MOVD(dst, src)                    => evalUpdate128AndMaintainFlags(s, dst, Quadword(eval_op32(s, src) % 0x1_0000_0000,0,0,0), r, obs)
             case POR(dst, src)                     => evalUpdateXmmsAndHavocFlags(s, dst, QuadwordOr(s.xmms[dst.r.xmm], s.xmms[src.r.xmm]), r, obs)
             case MOVDQA(dst, src)                  => evalUpdateXmmsAndMaintainFlags(s, dst, Eval128BitOperand(s, src), r, obs)
             case VMOVDQA(dst, src)                 => evalUpdateXmmsAndMaintainFlags(s, dst, Eval128BitOperand(s, src), r, obs)

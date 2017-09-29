@@ -72,11 +72,11 @@ function GHASH(H:Quadword, X:seq<Quadword>) : Quadword
 }
 
 // 6.5 GCTR 
-// We count by 0 here instead of by 1 in the spec.
-
 function CB(i : nat, ICB : Quadword) : Quadword
 {
-    if i == 0 then ICB else inc32(CB(i-1, ICB))
+    if i == 0 then 
+      Quadword(1, ICB.mid_lo, ICB.mid_hi, ICB.hi)
+    else inc32(CB(i-1, ICB))
 }
 
 predicate KeyReq(key : seq<uint32>) {
@@ -124,11 +124,11 @@ datatype GCMSpec = GCMSpecCon(
                ghost oheap : heaplet_id,
 // The input counter block (ICB) is in the high 92 bits of ivaddr, 
 // ivsize is 16 bytes.
-               ghost ICB     : Quadword, 
+               ghost ICB     : Quadword,
                ghost ivaddr  : uint64,
                ghost ivsize  : nat,
                ghost ivheap  : heaplet_id
-               ) 
+               )
 
 // AESGCTR is in the style of CopyNSeq proofs, see regions64.vad writeup.
 // It's mapping its input memory directly into the desired output Quadword sequence.
@@ -137,6 +137,7 @@ function AESGCTR(mem : Heaplets, g : GCMSpec, i : nat) : Quadword
  requires ValidDstReg128(mem, g.iheap, g.iaddr, g.isize);
  requires 0 <= i < g.isize;
  requires |g.key| == Nk(AES_128);
+
 {
   QuadwordXor(mem[g.iheap].quads[(addr128(g.iaddr, i))].v, AES_Encrypt(g.key, CB(i, g.ICB), AES_128))
 }

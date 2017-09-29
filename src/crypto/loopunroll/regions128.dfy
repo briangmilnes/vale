@@ -196,28 +196,35 @@ predicate WritesReg128(mem : Heaplets, id : heaplet_id, base : nat, size : nat,
 
 // Loops with ValidXRegPtrsY require one deduction that Vale does not automatically prove for fixed n.
 
-lemma lemma_regdiff_loop_ge(endptr : nat, iptr : nat, bytes : nat)
-    requires  2 <= bytes <= 128;
+lemma {:timeLimitMultiplier 2} lemma_regdiff_loop_ge(endptr : nat, iptr : nat, bytes : nat)
+    requires  2 <= bytes <= 8 * 16;
     requires  endptr >= iptr;
     requires (endptr - iptr) % bytes == 0;
     ensures  (endptr - iptr) > 0 ==> (endptr - iptr) >= bytes;
-{
-}
+{}
 
 lemma lemma_regdiff_loop_ge_uint128(endptr : nat, iptr : nat, uint128s : nat)
-    requires  1 <= uint128s <= 4;
+    requires  1 <= uint128s <= 8;
     requires  endptr >= iptr;
     requires (endptr - iptr) % (uint128s * 16) == 0;
     ensures  (endptr - iptr) > 0 ==> (endptr - iptr) >= (uint128s * 16);
 {
   if (uint128s == 1) {
-    lemma_regdiff_loop_ge(endptr,iptr, 16);
+    lemma_regdiff_loop_ge(endptr, iptr, 16 * uint128s);
   } else if (uint128s == 2) {
-    lemma_regdiff_loop_ge(endptr,iptr, 32);
+    lemma_regdiff_loop_ge(endptr, iptr, 16 * uint128s);
   } else if (uint128s == 3) {
-    lemma_regdiff_loop_ge(endptr,iptr, 48);
+    lemma_regdiff_loop_ge(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 4) {
+    lemma_regdiff_loop_ge(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 5) {
+    lemma_regdiff_loop_ge(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 6) {
+    lemma_regdiff_loop_ge(endptr, iptr, 16 * uint128s);
+  } else if (uint128s == 7) {
+    lemma_regdiff_loop_ge(endptr, iptr, 16 * uint128s);
   } else {
-    lemma_regdiff_loop_ge(endptr,iptr, 64);
+    lemma_regdiff_loop_ge(endptr, iptr, 16 * uint128s);
   }
 }
 

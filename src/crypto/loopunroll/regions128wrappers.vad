@@ -27,9 +27,6 @@ procedure{:refined}{:bridge} LoadArray128(out operand dst:Quadword, operand src:
     inline taint:taint, ghost id:heaplet_id)
     reads mem;
     modifies efl;
-    requires{:refined false}
-        @dst is OReg;
-        @src is OReg;
     requires/ensures
         mem?[id];
         mem[id] is QuadwordHeaplet;
@@ -44,9 +41,6 @@ procedure{:refined}{:bridge} LoadArray128(out operand dst:Quadword, operand src:
 procedure{:refined}{:bridge} StoreArray128(operand dst:uint64, operand src:Quadword, inline i:int,
     inline taint:taint, ghost id:heaplet_id)
     modifies mem; efl;
-    requires{:refined false}
-        @dst is OReg;
-        @src is OReg;
     requires
         mem?[id];
         mem[id] is QuadwordHeaplet;
@@ -61,9 +55,6 @@ procedure{:refined}{:bridge} LoadArrayPtr128(out operand dst:Quadword, operand s
     inline taint:taint, ghost id:heaplet_id)
     reads mem;
     modifies efl;
-    requires{:refined false}
-        @dst is OReg;
-        @src is OReg;
     requires/ensures
         mem?[id];
         mem[id] is QuadwordHeaplet;
@@ -79,9 +70,6 @@ procedure{:refined}{:bridge} StoreArrayPtr128(operand dst:uint64, operand src:Qu
     inline taint:taint, ghost id:heaplet_id)
         
     modifies mem; efl;
-    requires{:refined false}
-        @dst is OReg;
-        @src is OReg;
     requires
         mem?[id];
         mem[id] is QuadwordHeaplet;

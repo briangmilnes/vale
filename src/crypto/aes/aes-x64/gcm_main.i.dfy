@@ -52,15 +52,17 @@ method {:main} Main(ghost env:HostEnvironment)
          0, 8,
         asm_choice, platform_choice);
 
+/*
     printProcPlatform("AES128GCTREncryptStdcall",
         va_code_AES128GCTREncryptStdcall(),
         10, 2, asm_choice, platform_choice);
+*/
 
-/*
     printProcPlatform("AES128GCTREncryptStdcall1",
         va_code_AES128GCTREncryptStdcall1(),
         10, 2, asm_choice, platform_choice);
 
+/*
     printProcPlatform("AES128GCTREncryptStdcall2",
         va_code_AES128GCTREncryptStdcall2(),
         20, 2, asm_choice, platform_choice);

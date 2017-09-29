@@ -247,7 +247,7 @@ method printIns(ins:ins)
         case VPSLLDQ(dst, src, count) => print ("  vpslldq "); printOprnd(dst); print(", "); printOprnd(src); print(", "); printOprnd(count); print("\n");
 
         case MOVDQU(dst, src) => print ("  movdqu "); printXmmOprnd(dst); print(", "); printXmmOprnd(src); print("\n");
-        case MOVD_xmm_rmm32(dst, src) => print ("  movd "); printXmmOprnd(dst); print(", "); printOprnd(src); print("\n");
+        case MOVD(dst, src) => print ("  movd "); printXmmOprnd(dst); print(", "); printOprnd(src); print("\n");
         case PCLMULQDQ(dst, src, imm8) => print ("  pclmulqdq "); print(", "); printOprnd(dst); print(", "); printOprnd(src); print(","); printOprnd(imm8); print("\n");
         case VPCLMULQDQ(dst, src1, src2, imm8)  => print ("  vpclmulqdq "); printOprnd(dst); print(", "); printOprnd(src1); print(", "); printOprnd(src2); print(", "); printOprnd(imm8); print("\n");
         case VMOVDQA(dst, src)        => print ("  vmovdqa "); printXmmOprnd(dst); print(", "); printOprnd(src); print("\n");          

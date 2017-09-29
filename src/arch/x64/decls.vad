@@ -105,7 +105,6 @@ lemma lemma_lowerUpper64trans(i:uint64)
 
 #endverbatim
 
-
 procedure {:refined} {:instruction Ins(Mov32(dst, MakeHeapOp(src, offset, taint))) } 
           Load(out operand dst:uint32, operand src:uint64, inline offset:int, 
                inline taint:taint, ghost id:heaplet_id)
