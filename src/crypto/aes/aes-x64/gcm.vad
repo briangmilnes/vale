@@ -37,6 +37,7 @@ import opened CalleeSaveRestore
 #endverbatim
 
 
+/*
 procedure BUG(inout operand tmp    : Quadword,
               inout operand addtmp : uint32)
    modifies efl;
@@ -55,8 +56,60 @@ procedure CallBUG()
   BUG(xmm0, eax);
   assert 0 <= eax < 0x1_0000_0000;
 } 
+*/
 
-/*
+procedure {:timeLimitMultiplier 4} AESGCTR1(
+          ghost g : GCMSpec, 
+          operand exp_key_ptr : uint64,
+          operand iptr : uint64,
+          operand iendptr : uint64,
+          operand optr : uint64,
+          operand ivptr : uint64,
+          operand ctr : uint32,
+          ghost    off    : uint32,
+          inline   add    : uint8,
+          inout operand addtmp : uint32,   // Where we add the ctr.
+          inout operand tmpctr : Quadword, // Where we build the ICB||CTR.
+          inout operand tmp    : Quadword  // A tmp for AES plus where we put the plain text.
+          )
+   modifies mem; efl; 
+   requires
+    GCMRegUnique(@exp_key_ptr, @iptr, @iendptr, @optr, @ivptr, @ctr, @addtmp);
+    add <= 8;
+    @tmp != @tmpctr;
+    0 <= ctr + add < 0x1_0000_0000;
+
+   requires/ensures 
+    GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, mem);
+    off + add < g.isize;
+    ValidSrcRegPtrs128(mem, g.iheap,  g.iaddr,  g.isize,  Secret, iptr, off, add);
+    ValidDstRegPtrs128(mem, g.oheap,  g.oaddr,  g.osize,          optr, off, add);
+// Working on MOVD possible bug.
+//    WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add, Public, AESGCTRSeq(mem, g, g.isize));
+    op32(this, @addtmp); // You've got to show that did not touch the high bits.
+    op32(this, @ctr);
+
+   ensures 
+    OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
+    OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
+//    WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + add + 1, Public, AESGCTRSeq(mem, g, g.isize));
+{
+   lemma_BitwiseAdd32();
+   Mov32(addtmp, ctr);                               // Put the counter into a tmp.
+   AddN32(addtmp, add);                              // Add our offset to it: 0, 1, ...
+   MOVD_xmm_rmm32(tmp, addtmp);                      // Put low 32 bits into an xmm tmp.
+   Load128'(tmpctr, ivptr, 0, Secret, g.ivheap);     // Get the IV+32 0s from memory.
+   lemma_QuadwordXorZeros(tmpctr, tmp);
+   Pxor(tmpctr, tmp);                                // ICB (96 bits) || ctr for this offset.
+//   assert tmpctr == Quadword(ctr + add, g.ICB.mid_lo, g.ICB.mid_hi, g.ICB.hi); // Just for readers.
+   lemma_CBAt_fixed(off + add, g.ICB);
+//   assert tmpctr == CB(off + add, g.ICB);            // Just for readers.
+   AES128EncryptOneBlockOp(g.key, tmpctr, g.exp_key, Secret, tmpctr, tmp, exp_key_ptr, g.exp_key_heap); // Encrypt the counter back into tmpctr;
+   LoadArray128(tmp, iptr, add, Secret, g.iheap);    // Load the plaintext into tmp.
+   Pxor(tmp, tmpctr);                                // Xor the encrypted counter with the plaintext.
+   StoreArray128(optr, tmp, add, Public, g.oheap);   // Write it back to the output.
+}
+
 // We can't use operands into here due to the inability to timely prove their inequalty with registers.
 procedure {:recursive} {:timeLimitMultiplier 4} AESGCTRUnrolled
          (ghost g: GCMSpec,
@@ -117,15 +170,14 @@ procedure {:recursive} {:timeLimitMultiplier 4} AESGCTRUnrolled
        AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_2, xmm0, xmm1);
    }
 }  
-*/
-
 
 /*
+
 procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
           (ghost g : GCMSpec,
            inline n : uint8nonzero)
     lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= eax;
-    lets tmp32_1 @=rbx; tmp32_2 @=r9; tmp32_3 @=r10; tmp32_4 @=r11; tmp32_5 @=r12; tmp32_6 @=r13; tmp32_7 @=r14; tmp32_8 @=r15;
+    lets tmp32_1 @=ebx; tmp32_2 @=r9d; tmp32_3 @=r10d; tmp32_4 @=r11d; tmp32_5 @=r12d; tmp32_6 @=r13d; tmp32_7 @=r14d; tmp32_8 @=r15d;
 
     reads    exp_key_ptr; ivptr; 
     modifies iptr; iendptr; optr; ctr;
@@ -187,7 +239,9 @@ procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
   assert g.isize == index; 
   assert iendptr - iptr == 0;
 }
+*/
 
+/*
 // Encrypt, gctr only with the stack saved and the arguments in the expected place.
 procedure AES128GCTREncrypt1(ghost g : GCMSpec)
     lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= eax;
