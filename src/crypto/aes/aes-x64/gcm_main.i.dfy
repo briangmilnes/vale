@@ -47,10 +47,18 @@ method {:main} Main(ghost env:HostEnvironment)
     var win := (platform_choice == Win);
 
     // Allow C to call the key expansion.
-    printProcPlatform("aes_main_i_KeyExpansionStdcall",
+
+     printProcPlatform("aes_main_i_KeyExpansionStdcall",
          va_code_KeyExpansionStdcall(Secret, win),
          0, 8,
         asm_choice, platform_choice);
+
+/*
+    printProcPlatform("Test",
+         va_code_Test(),
+         0, 0,
+        asm_choice, platform_choice);
+*/
 
 /*
     printProcPlatform("AES128GCTREncryptStdcall",
@@ -60,7 +68,16 @@ method {:main} Main(ghost env:HostEnvironment)
 
     printProcPlatform("AES128GCTREncryptStdcall1",
         va_code_AES128GCTREncryptStdcall1(),
-        10, 2, asm_choice, platform_choice);
+        10, 0, asm_choice, platform_choice);
+
+    printProcPlatform("AES128GCTRDecryptStdcall1",
+        va_code_AES128GCTREncryptStdcall1(),
+        20, 0, asm_choice, platform_choice);
+
+
+//    printProcPlatform("AES128EncryptOneBlockOp",
+//        va_code_AES128EncryptOneBlockOp(Secret, xmm0, xmm1, exp_key_ptr),
+//        90, 4, asm_choice, platform_choice);
 
 /*
     printProcPlatform("AES128GCTREncryptStdcall2",
@@ -91,11 +108,11 @@ method {:main} Main(ghost env:HostEnvironment)
         va_code_AES128GCTREncryptStdcall8(),
         80, 2, asm_choice, platform_choice);
 */
-
+/*
     printProcPlatform("AES128GCTRDecryptStdcall",
         va_code_AES128GCTRDecryptStdcall(),
         100, 2, asm_choice, platform_choice);
-
+*/
  	  printFooter(asm_choice);
  }
 

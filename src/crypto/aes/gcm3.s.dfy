@@ -14,11 +14,11 @@ import opened regions128
 
 
 // 6.2 
-// This is specified big endian, thank gosh.
+// The ctr is amazingly byte swapped and in the high bits.
 function inc32(iv96ctr32 : Quadword) : Quadword
 {
   reveal_BitwiseAdd32();
-  iv96ctr32.(lo := BitwiseAdd32(iv96ctr32.lo,1))
+  iv96ctr32.(hi := bswap32(BitwiseAdd32(bswap32(iv96ctr32.hi),1)))
 }
 
 // 6.3 block multiply 
@@ -75,7 +75,7 @@ function GHASH(H:Quadword, X:seq<Quadword>) : Quadword
 function CB(i : nat, ICB : Quadword) : Quadword
 {
     if i == 0 then 
-      Quadword(1, ICB.mid_lo, ICB.mid_hi, ICB.hi)
+      Quadword(ICB.lo, ICB.mid_lo, ICB.mid_hi, bswap32(2))
     else inc32(CB(i-1, ICB))
 }
 
@@ -117,6 +117,7 @@ datatype GCMSpec = GCMSpecCon(
                ghost iaddr : uint64,
                ghost iendaddr : uint64,
                ghost iheap : heaplet_id,
+// How many 128 bit things to encrypt.
                ghost isize : nat, 
 // The output is here of this size in this heap.
                ghost oaddr : uint64,
@@ -181,9 +182,12 @@ function AESGCTRSeq(mem : Heaplets, g : GCMSpec, count : nat) : seq<Quadword>
 //Although GCM is defined on bit strings, the bit lengths of the
 //plaintext, the AAD, and the IV shall all be multiples of 8, so that
 //these values are byte strings
+//
+// But these don't work for our case as we have a fixed IV of 96 bits and a 32 bit counter.
+//
 
 predicate LenReq(PorC : seq<Quadword>, A : seq<Quadword>, IV : Quadword) {
-  (|PorC| * 128 <  0x8_000_000_000 - 256) &&  
+  (|PorC| * 128 <  0x1_0000_0000 - 1) && 
   (|A|    * 128 < 0x1_0000_0000_0000_0000 - 1)
 }
 

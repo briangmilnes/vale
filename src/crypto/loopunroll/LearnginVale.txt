@@ -200,3 +200,35 @@ procedure CallWithR32()
 } 
 
   Its like they lose their Reg32ishness because they can be written as 64 bit values.
+
+ Building Loops
+
+  Loops are difficult to prove in general and Vale will not guarantee that it is
+  checking your assertions in any particular order. Timeouts provide no guarantee
+  that any of your specifications are correct. Failure to prove an assertion may
+  not clearly state that it is timing out either.
+
+  There is a nice copy loop proven in regions*.vad. When you build your loops its
+  a good template to start with, setting time limit to 1. Comment out all of your
+  other conditions and then ensure that it proves. Ensure no contradictions with
+  ensures false and then assert false at the end of the routine.
+
+  If your loop calls a procedure, you might make a dummy without the final write
+  specification and assume it's post conditions. Careful, sometimes assume seems
+  to not prove as one might expect and I have no idea why.
+
+  Then one section at a time add back in your additional specifications and instructions
+  until you can get the final write specification.
+
+  In a loop, old(reg) still means the value of the register at the start of the procedure,
+  not the loop. 
+
+  The addition of specifications in the loop may cause other invarients to fail without
+   timeout.
+
+  As you add in specifications and get timeouts, you'll be able to see which ones are
+  requiring more time. Adding lemmas to keep the time down really helps both development
+  time and the stability of your proof.
+
+  Moving previously proved procedures into other files will help the proof time and
+   the stability of proof. Although newer versions of Vale+Dafny are more stable.

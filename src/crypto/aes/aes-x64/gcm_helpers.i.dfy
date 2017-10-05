@@ -29,17 +29,59 @@ lemma lemma_BitwiseAdd32()
     reveal_BitwiseAdd32();
 }
 
+lemma lemma_bswap32_bswap32_inv_fixed(x : uint32)
+  ensures bswap32(bswap32(x)) == x;  
+{
+  calc {
+    bswap32(bswap32(x));
+    BytesToWord(WordToBytes(bswap32(x))[3],
+                WordToBytes(bswap32(x))[2], 
+                WordToBytes(bswap32(x))[1], 
+                WordToBytes(bswap32(x))[0]); 
+
+    BytesToWord(WordToBytes(BytesToWord(WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]))[3],
+                WordToBytes(BytesToWord(WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]))[2], 
+                WordToBytes(BytesToWord(WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]))[1], 
+                WordToBytes(BytesToWord(WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]))[0]); 
+
+    { lemma_BytesToWord_WordToBytes_inverses(WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]); }
+
+    BytesToWord([WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]][3],
+                [WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]][2],
+                [WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]][1],
+                [WordToBytes(x)[3], WordToBytes(x)[2], WordToBytes(x)[1], WordToBytes(x)[0]][0]);
+
+    BytesToWord(WordToBytes(x)[0],
+                WordToBytes(x)[1],
+                WordToBytes(x)[2],
+                WordToBytes(x)[3]);
+   { lemma_WordToBytes_BytesToWord_inverses(x); }
+
+    x;
+  }
+}
+
+lemma lemma_bswap32_bswap32_inv()
+  ensures forall x : uint32 :: bswap32(bswap32(x)) == x;  
+{
+  forall x : uint32
+   ensures bswap32(bswap32(x)) == x;  
+  {
+    lemma_bswap32_bswap32_inv_fixed(x);
+  }
+}
+
 lemma lemma_CBAt_fixed(i : uint32,  ICB : Quadword)
-  ensures CB(i, ICB) == Quadword(BitwiseAdd32(1,i), ICB.mid_lo, ICB.mid_hi, ICB.hi);
+  ensures CB(i, ICB) == Quadword(ICB.lo, ICB.mid_lo, ICB.mid_hi, bswap32(BitwiseAdd32(2,i)));
 {
   lemma_BitwiseAdd32();
+  lemma_bswap32_bswap32_inv();
   if (i == 0) {
-    assert CB(0,ICB) == Quadword(1, ICB.mid_lo, ICB.mid_hi, ICB.hi);
+    assert CB(0,ICB) == Quadword(ICB.lo, ICB.mid_lo, ICB.mid_hi, bswap32(BitwiseAdd32(2,i)));
   } else {
     lemma_CBAt_fixed(i-1, ICB);
   }
 }
-
 
 lemma lemma_BitXorWithZeroLeft(x:bv32)
     ensures BitXor(0,x) == x;
@@ -342,11 +384,13 @@ predicate GCMIVSpecStat(g : GCMSpec)
 
 predicate GCMInputSpecStat(g : GCMSpec) {
   g.iaddr <= g.iendaddr && 
-  (g.iendaddr - g.iaddr) / 16 == g.isize
+  g.isize == (g.iendaddr - g.iaddr) / 16 && 
+  g.isize < 0x1_0000_0000 - 1 &&
+  g.iaddr != g.oaddr 
 }
 
 predicate GCMOutputSpecStat(g : GCMSpec) {
-  g.osize == g.isize
+  g.osize == g.isize 
 }
 
 predicate GCMHeapSpecStat(g : GCMSpec) {
@@ -386,26 +430,22 @@ predicate GCMIVSpecDyn(g : GCMSpec, ivptr : uint64, mem : Heaplets) {
 
 predicate GCMInputSpecDyn(g : GCMSpec, iptr : uint64, iendptr : uint64, mem : Heaplets) {
  ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret) 
- // iendptr >= iptr - hard to prove the equality.
- // TODO do I want to specify that iptr is in range?
 }
 
 predicate GCMOutputSpecDyn(g : GCMSpec, iptr : uint64, iendptr : uint64, optr : uint64, mem : Heaplets) {
- ValidSrcReg128(mem, g.oheap, g.oaddr, g.osize, Public)
- // TODO do I want to specify that opr is in range?
+ ValidDstReg128(mem, g.oheap, g.oaddr, g.osize)
 }
 
 // How do our ptrs change with offset into the calculation? 
 predicate GCMPtrSpecDyn(g : GCMSpec, 
-   iptr : uint64, iendptr : uint64, optr : uint64,  ctr: uint32, off : nat, 
+   iptr : uint64, iendptr : uint64, optr : uint64,  ctr: uint64, off : nat, 
    mem : Heaplets) {
-    off == (iptr - g.iaddr) / 12 && 
-    ctr == off + 1 && // When we write the zeroth addr we are at ctr 1.
-    optr == g.oaddr + off
+// TODO put back the right requirements.
+  ctr == 1 + off
 }
 
 predicate GCMSpecDyn(g : GCMSpec, 
-  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint32,
+  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint64,
   off : nat, 
   mem : Heaplets) {
 // All of the static specs.
@@ -418,28 +458,47 @@ predicate GCMSpecDyn(g : GCMSpec,
   GCMPtrSpecDyn(g, iptr, iendptr, optr, ctr, off, mem)
 }
 
-
 // When we start off what do we have?
 predicate GCMSpecDynInit(g : GCMSpec, 
-  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint32,
+  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint64,
   off : nat, 
   mem : Heaplets) {
   GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, mem) && 
   iptr    == g.iaddr &&
   iendptr == g.iendaddr &&
   optr    == g.oaddr &&
-  iendptr >= iptr
+  iendptr >= iptr &&
+  ctr == 1
 }
 
 // And when we need operands, we need to know they are distinct.
 // Even if tmp is a 32 bit register it is part of a 64 bit register.
-predicate GCMRegUnique(exp_key_ptr : operand, iptr : operand, iendptr : operand, optr : operand, ivptr : operand, ctr: operand, tmp : operand) {
+predicate GCMRegUniqueWTmp(exp_key_ptr : operand, iptr : operand, iendptr : operand, optr : operand, ivptr : operand, ctr: operand, tmp : operand) {
   exp_key_ptr != iptr && exp_key_ptr != iendptr && exp_key_ptr != optr && exp_key_ptr != ivptr && exp_key_ptr != ctr && exp_key_ptr != tmp &&
   iptr != iendptr && iptr != optr && iptr != ivptr && iptr != ctr && iptr != tmp &&
   iendptr != optr && iendptr != ivptr && iendptr != ctr && iendptr != tmp &&
   optr != ivptr && optr != tmp && ctr != tmp && 
   ivptr != tmp && ivptr != ctr &&
   ctr != tmp
+}
+
+predicate GCMRegUnique(exp_key_ptr : operand, iptr : operand, iendptr : operand, optr : operand, ivptr : operand, ctr: operand) {
+  exp_key_ptr != iptr && exp_key_ptr != iendptr && exp_key_ptr != optr && exp_key_ptr != ivptr && exp_key_ptr != ctr &&
+  iptr != iendptr && iptr != optr && iptr != ivptr && iptr != ctr && 
+  iendptr != optr && iendptr != ivptr && iendptr != ctr &&
+  optr != ivptr && 
+  ivptr != ctr
+}
+
+predicate Regs32(r1 : uint64, r2 : uint64, r3 : uint64, r4 : uint64, r5 : uint64, r6 : uint64, r7 : uint64, r8 : uint64) {
+    0 <= r1 < 0x1_0000_0000 && 
+    0 <= r2 < 0x1_0000_0000 &&
+    0 <= r3 < 0x1_0000_0000 &&
+    0 <= r4 < 0x1_0000_0000 &&
+    0 <= r5 < 0x1_0000_0000 && 
+    0 <= r6 < 0x1_0000_0000 &&
+    0 <= r7 < 0x1_0000_0000 && 
+    0 <= r8 < 0x1_0000_0000
 }
 
 // Works nicely to get rid of some lemma issues on va_code.
