@@ -1,24 +1,93 @@
 include "../../../lib/util/types.s.dfy"
 include "../../../lib/util/operations.s.dfy"
 include "../../../lib/util/words_and_bytes.s.dfy"
+include "../../../lib/util/operations.i.dfy"
 include "../../../lib/collections/Seqs.s.dfy"
 include "../../../arch/x64/vale.i.dfy"
 include "../../../lib/util/dafny_wrappers.i.dfy"
 
 include "../gcm3.s.dfy"
-
-include "../aes.s.dfy"
 include "../aes_helpers.i.dfy"
 
 module GCMHelpers {
 
 import opened x64_vale_i
-import opened x64_def_s
 import opened types_s
 import opened dafny_wrappers_i
+import opened operations_i
 import opened AESModule
 import opened AESHelpersModule
 import opened GCMModule
+
+// Some OR math.
+
+lemma lemma_BitOrWithZeroLeft(x:bv32)
+    ensures BitOr(0,x) == x;
+{
+    reveal_BitOr();
+}
+
+lemma lemma_BitwiseOrWithZeroLeft(x:uint32)
+    ensures BitwiseOr(0, x) == x;
+{
+    reveal_WordToBits();
+    reveal_BitsToWord();
+    calc {
+        BitwiseOr(0,x);
+        BitsToWord(BitOr(WordToBits(0), WordToBits(x)));
+           { lemma_WordToBitsPreservesZeroness(0); assert WordToBits(0) == 0; }
+        BitsToWord(BitOr(0, WordToBits(x)));
+          { lemma_BitOrWithZeroLeft(WordToBits(x)); assert BitOr(0, WordToBits(x)) == WordToBits(x);}
+        BitsToWord(WordToBits(x));
+          { lemma_WordToBitsToWord(x); assert BitsToWord(WordToBits(x)) == x; } 
+        x;
+    }
+}   
+
+lemma lemma_BitOrWithZero(x:bv32)
+    ensures BitOr(x, 0) == x;
+{
+    reveal_BitOr();
+}
+
+lemma lemma_BitwiseOrWithZero(x:uint32)
+    ensures BitwiseOr(x, 0) == x;
+{
+    calc {
+        BitwiseOr(x, 0);
+        BitsToWord(BitOr(WordToBits(x), WordToBits(0)));
+            { lemma_WordToBitsPreservesZeroness(0); assert WordToBits(0) == 0; }
+        BitsToWord(BitOr(WordToBits(x), 0));
+            { lemma_BitOrWithZero(WordToBits(x)); }
+        BitsToWord(WordToBits(x));
+            { lemma_WordToBitsToWord(x); }
+        x;
+    }
+}
+
+
+lemma lemma_QuadwordOrZeros(x:Quadword, y : Quadword)
+    ensures y.lo     == 0 ==> QuadwordOr(x, y).lo     == x.lo;
+    ensures y.mid_lo == 0 ==> QuadwordOr(x, y).mid_lo == x.mid_lo;
+    ensures y.mid_hi == 0 ==> QuadwordOr(x, y).mid_hi == x.mid_hi;
+    ensures y.hi     == 0 ==> QuadwordOr(x, y).hi     == x.hi;
+
+    ensures x.lo     == 0 ==> QuadwordOr(x, y).lo     == y.lo;
+    ensures x.mid_lo == 0 ==> QuadwordOr(x, y).mid_lo == y.mid_lo;
+    ensures x.mid_hi == 0 ==> QuadwordOr(x, y).mid_hi == y.mid_hi;
+    ensures x.hi     == 0 ==> QuadwordOr(x, y).hi     == y.hi;
+{
+ lemma_BitwiseOrWithZero(x.lo);
+ lemma_BitwiseOrWithZero(x.mid_lo);
+ lemma_BitwiseOrWithZero(x.mid_hi);
+ lemma_BitwiseOrWithZero(x.hi);
+
+ lemma_BitwiseOrWithZeroLeft(y.lo);
+ lemma_BitwiseOrWithZeroLeft(y.mid_lo);
+ lemma_BitwiseOrWithZeroLeft(y.mid_hi);
+ lemma_BitwiseOrWithZeroLeft(y.hi);
+}
+
 
 // Some bitmath.
 lemma lemma_BitwiseAdd32()
@@ -379,7 +448,7 @@ predicate GCMExpKeySpecStat(g : GCMSpec)
 predicate GCMIVSpecStat(g : GCMSpec)
 {
   g.ivsize == 128 && 
-  g.ICB.lo == 0
+  g.ICB.hi == 0
 }
 
 predicate GCMInputSpecStat(g : GCMSpec) {
@@ -428,48 +497,44 @@ predicate GCMIVSpecDyn(g : GCMSpec, ivptr : uint64, mem : Heaplets) {
   mem[g.ivheap].quads[g.ivaddr] == QuadwordHeapletEntry(g.ICB, Secret)
 }
 
-predicate GCMInputSpecDyn(g : GCMSpec, iptr : uint64, iendptr : uint64, mem : Heaplets) {
- ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret) 
+predicate GCMInputSpecDyn(g : GCMSpec, mem : Heaplets) {
+ ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret) &&
+ g.iendaddr >= g.iaddr
 }
 
-predicate GCMOutputSpecDyn(g : GCMSpec, iptr : uint64, iendptr : uint64, optr : uint64, mem : Heaplets) {
+predicate GCMOutputSpecDyn(g : GCMSpec, mem : Heaplets) {
  ValidDstReg128(mem, g.oheap, g.oaddr, g.osize)
 }
 
 // How do our ptrs change with offset into the calculation? 
-predicate GCMPtrSpecDyn(g : GCMSpec, 
-   iptr : uint64, iendptr : uint64, optr : uint64,  ctr: uint64, off : nat, 
-   mem : Heaplets) {
-// TODO put back the right requirements.
-  ctr == 1 + off
-}
+//predicate GCMPtrSpecDyn(g : GCMSpec, 
+//   iptr : uint64, iendptr : uint64, optr : uint64,  ctr: uint64, off : nat, 
+//   mem : Heaplets) {
+//  ctr == 2 + off
+//}
 
-predicate GCMSpecDyn(g : GCMSpec, 
-  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint64,
-  off : nat, 
-  mem : Heaplets) {
+predicate GCMSpecDyn(g : GCMSpec,  exp_key_ptr : uint64, ivptr : uint64, mem : Heaplets) {
 // All of the static specs.
   GCMSpecStat(g) && 
 // All of the dynamic specs.
   GCMExpKeySpecDyn(g, exp_key_ptr, mem) && 
   GCMIVSpecDyn(g, ivptr, mem) &&
-  GCMInputSpecDyn(g, iptr, iendptr, mem) &&
-  GCMOutputSpecDyn(g, iptr, iendptr, optr, mem) &&
-  GCMPtrSpecDyn(g, iptr, iendptr, optr, ctr, off, mem)
+  GCMInputSpecDyn(g, mem) &&
+  GCMOutputSpecDyn(g, mem)
 }
 
 // When we start off what do we have?
-predicate GCMSpecDynInit(g : GCMSpec, 
-  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint64,
-  off : nat, 
-  mem : Heaplets) {
-  GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, mem) && 
-  iptr    == g.iaddr &&
-  iendptr == g.iendaddr &&
-  optr    == g.oaddr &&
-  iendptr >= iptr &&
-  ctr == 1
-}
+//predicate GCMSpecDynInit(g : GCMSpec, 
+//  exp_key_ptr : uint64, iptr : uint64, iendptr : uint64, optr : uint64, ivptr : uint64, ctr: uint64,
+//  off : nat, 
+//  mem : Heaplets) {
+//  GCMSpecDyn(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, mem) && 
+//  iptr    == g.iaddr &&
+//  iendptr == g.iendaddr &&
+//  optr    == g.oaddr &&
+//  iendptr >= iptr &&
+//  ctr == 2
+//}
 
 // And when we need operands, we need to know they are distinct.
 // Even if tmp is a 32 bit register it is part of a 64 bit register.
@@ -502,7 +567,7 @@ predicate Regs32(r1 : uint64, r2 : uint64, r3 : uint64, r4 : uint64, r5 : uint64
 }
 
 // Works nicely to get rid of some lemma issues on va_code.
-type uint8nonzero   = i:int | 0 < i <= 0x100 witness 1 
+type uint8nonzero   = i:int | 0 < i < 0x100 witness 1 
 
 /*
 lemma Writes_AESGCTR_step(mem : Heaplets, g : GCMSpec, off : nat, add : nat) 

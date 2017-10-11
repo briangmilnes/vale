@@ -60,6 +60,17 @@ uint8_t *HexStringToUint8LE(char* hexstring) {
   return output;
 }
 
+void printUint8VectorHexLE(int size, const uint8_t v[16]) {
+  printf("{");
+  for (int i = 0; i < size; ++i) {
+    printf(" 0x%2x",v[i]);
+    if (i > 0 && (i + 1)% 16 == 0) {
+      printf("\n ");
+    }      
+  }
+  printf("}\n");
+}
+
 // Big endian.
 uint8_t *HexStringToUint8BE(char* hexstring) {
   uint8_t *output = malloc(16);
@@ -497,12 +508,54 @@ int test_ghash_decrypts(int num, CTEST c[]) {
   printf("\nEnding test test_ghash_decrypts\n");
 }
 
+uint8_t tail[9* 16] = 
+  {
+    0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92, 0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2, 0xfe, 0x78,
+    0xf7, 0x95, 0xaa, 0xab, 0x49, 0x4b, 0x59, 0x23, 0xf7, 0xfd, 0x89, 0xff, 0x94, 0x8b, 0xc1, 0xe0,
+    0x20, 0x02, 0x11, 0x21, 0x4e, 0x73, 0x94, 0xda, 0x20, 0x89, 0xb6, 0xac, 0xd0, 0x93, 0xab, 0xe0,
+    0xc9, 0x4d, 0xa2, 0x19, 0x11, 0x8e, 0x29, 0x7d, 0x7b, 0x7e, 0xbc, 0xbc, 0xc9, 0xc3, 0x88, 0xf2,
+    0x8a, 0xde, 0x7d, 0x85, 0xa8, 0xee, 0x35, 0x61, 0x6f, 0x71, 0x24, 0xa9, 0xd5, 0x27, 0x02, 0x91,
+    0x95, 0xb8, 0x4d, 0x1b, 0x96, 0xc6, 0x90, 0xff, 0x2f, 0x2d, 0xe3, 0x0b, 0xf2, 0xec, 0x89, 0xe0,
+    0x02, 0x53, 0x78, 0x6e, 0x12, 0x65, 0x04, 0xf0, 0xda, 0xb9, 0x0c, 0x48, 0xa3, 0x03, 0x21, 0xde,
+    0x33, 0x45, 0xe6, 0xb0, 0x46, 0x1e, 0x7c, 0x9e, 0x6c, 0x6b, 0x7a, 0xfe, 0xdd, 0xe8, 0x3f, 0x40,
+    0x58, 0xb2, 0x43, 0x1b, 0xc0, 0xbe, 0xde, 0x02, 0x55, 0x0f, 0x40, 0x23, 0x89, 0x69, 0xec, 0x78
+  };
+
+void __stdcall AES128GCTREncryptStdcall8Tail(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
+int test_ghash_tail() {
+  printf("\nStarting test of a loop with an input tail\n");
+  uint8_t  key[16];
+  memset(key, 0, 16);
+  uint8_t  exp_key_ptr[176];
+  uint8_t *optr = malloc(9 * 16);
+  memset(optr, 0, 9 * 16);
+  uint8_t  iv[16];
+  memset(iv, 0, 16);
+  uint8_t pt[9 * 16];
+  memset(pt, 0, 9 * 16);
+
+  // I devised this crypt text from the AES testing but I can compare a 1 with an 8 tail loop.
+  aes_main_i_KeyExpansionStdcall(key, exp_key_ptr);
+  AES128GCTREncryptStdcall8Tail(exp_key_ptr, pt, pt + 9 * 16, optr, iv);
+  printf("Tail loop encryption produces \n");
+  if (memcmp(optr, tail, 9 * 16) == 0) {
+    printf("SUCCEEDED\n"); 
+    return 1;
+  } else {
+    printf("FAILED\n");
+    printUint8VectorHexLE(9 * 16, optr);
+  }
+
+  printf("\nEnding test of a loop with an input tail\n");
+}
+
 int test_aesgctr() {
   printf("Starting AES128 GCTR tests \n");
   //  test_tests(&(ctests128[0])); // just during development.
+  //  test_ghash_encrypts(15, ctests128_encrypt);
+  //  test_ghash_decrypts(14, ctests128_decrypt);
+  test_ghash_tail();
   printf("Finished AES128 GCTR tests \n");
-  test_ghash_encrypts(15, ctests128_encrypt);
-  test_ghash_decrypts(14, ctests128_decrypt);
   return 0;
 }
 
@@ -510,7 +563,7 @@ void __stdcall aes_main_i_KeyExpansionStdcall(const void * key_ptr, void *exp_ke
 
 // Used for hand testing changes to the algorithm and getting the tests right.
 /*
-int __stdcall Test(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
+int Test(void* exp_key_ptr, const void* iptr, const void* iendptr, const void* optr, const void* ivptr);
 
 int testTest() {
   printf("\nStarting tests of low level test\n");

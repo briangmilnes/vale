@@ -1,167 +1,149 @@
-include "../../../arch/x64/decls.vad"
-include "../../../arch/x64/decls64.vad"
-include{:verbatim} "../../../arch/x64/print.s.dfy"
-include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
-include{:verbatim} "../../loopunroll/regions128.dfy"
-include "../../loopunroll/regions128wrappers.vad"
-include "aes.vad" 
-include{:verbatim} "gcm_helpers.i.dfy"
-include{:verbatim} "../gcm3.s.dfy" 
 include "gcm.gctr.vad"
-// for the instructions
-include{:verbatim} "../../../lib/util/words_and_bytes.i.dfy"
-include{:verbatim} "../../../lib/util/operations.i.dfy"
-include "../../loopunroll/calleesave.vad"
-include{:verbatim} "proof.dfy"  
 
 #verbatim
-module GCM {
-
-import opened x64_def_s
-import opened x64_vale_i
-import opened x64_print_s
-import opened dafny_wrappers_i
-import opened x64_decls_i
-import opened x64_decls64_i
-import opened regions128wrappers
-import opened GCMModule
-import opened GCMHelpers
-import opened GCMGCTR
-import opened proof
-import opened words_and_bytes_i
-import opened operations_i
-import opened aes_vale
-import opened CalleeSaveRestore
-
+module GCMModule2 {
+ import opened GCMGCTR
 #endverbatim
+
 /*
-// Encrypt, gctr only with the stack saved and the arguments in the expected place.
-procedure AES128GCTREncrypt1(ghost g : GCMSpec)
-    lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= rax;
-    lets tmp32_1 @=rbx; tmp32_2 @=r9; tmp32_3 @=r10; tmp32_4 @=r11; tmp32_5 @=r12; tmp32_6 @=r13; tmp32_7 @=r14; tmp32_8 @=r15;
+// This is generating trigger warnings on lots of stuff that gets triggers. It appears to be
+// module depth.
 
-    reads    exp_key_ptr; ivptr; 
-    modifies iptr; iendptr; optr; ctr;
-    modifies mem; efl; 
-             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; 
-             tmp32_1; tmp32_2;  tmp32_3;  tmp32_4;  tmp32_5;  tmp32_6;  tmp32_7;  tmp32_8; 
+// I'm going to have to restructure this into a Body with PRE/POST condition lemmas.
+// Then call that body from the loop to try and get proof time down.
 
-    requires
-      GCMSpecDynInit(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, 0, mem);
-      (iendptr - iptr) % (1 * 16) == 0;
-
-    requires/ensures
-       ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret);
-       ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
-
-    ensures
-       OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-       OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-       WritesReg128(mem, g.oheap, g.oaddr, g.isize, g.isize, Public,
-         AESGCTRSeq(old(mem), g, g.isize));
-{
-  AESGCTRLoopOverUnrolled(g,1);
-} 
-
-// Setup just the GCM CTR mode from a standard call.
-//
-// All MM registers are: rax, rbx, rcx, iendptr, rbp, rsi, rdi, rsp, r8, r9, r10, r11, r12, r13, r14, r15.
-// 
-// GCC is giving us:
-// exp_key      - rdi 
-// iptr         - rsi
-// iendptr      - iendptr
-// optr         - rcx
-// IV           - r8d
-// TO BE ADDED // AAD          - r9d 
-// TO BE ADDED // TAG          - r10d - the mac, called TAG by some of the tests. Will this be on the stack?
-//
-// callee save restore frees up everything for us but:
-// We need a 32 bit counter, which we'll put in rax.
-// As rsp is the stack pointer, and a frame pointer, rbp may be in use.
-// Leaving us: rax, rbx, r9, r10, r11, r12, r13, r14, r15.
-
-// As we'd like to be able to unroll up to 8 way and we need 1 32 bit tmp counter per
-// GCTR unfolding, we need up to 8 32 bit temporary registers: 
-//
-// We need a 96 bit IV in memory, 128 bit, zeros for the last 32, pointed to by r10;
-// Then each unrolling gets two xmm registers for an eight way unrolling.
-// The temporary registers will be supplied by name to all but final routine.
-//
-// Thus we own 100% of the 64 and 128 bit registers. 
-
-procedure {:timeLimitMultiplier 3} AES128GCTREncryptStdcall1(ghost g : GCMSpec)
-    lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= rax;
-    lets tmp32_1 @=rbx; tmp32_2 @=r9; tmp32_3 @=r10; tmp32_4 @=r11; tmp32_5 @=r12; tmp32_6 @=r13; tmp32_7 @=r14; tmp32_8 @=r15;
-
-    // We OWN the machine, note that rsp is stack in this model.
-    modifies mem; efl; 
-             rax; rbx; rcx; rdx; rbp; rsi; rdi; stack; r8; r9; r10; r11; r12; r13; r14; r15;
-             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15;
-
-    requires
-      GCMSpecDynInit(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, 0, mem);
-      (iendptr - iptr) % (1 * 16) == 0;
-      HasAtLeastFrames(stack, 1);
-
-    requires/ensures
-       ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret);
-       ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
-
-    ensures
-       OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-       OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-       WritesReg128(mem, g.oheap, g.oaddr, g.isize, g.isize, Public,
-         AESGCTRSeq(old(mem), g, g.isize));
-{
- CalleeSaveLinux();
- // Initialize CTR.
- // Y0 is 1, Y1 the first one E(K,Y1) xor'd with P1, no P0 in the spec.
- Mov32(rax,const(2));
- AES128GCTREncrypt1(g);
- CalleeRestoreLinux();
- EMMS(); // Intel says call this before a return if you are touching XMM.
-}
-
-procedure {:timeLimitMultiplier 3} AES128GCTRDecryptStdcall1(ghost g : GCMSpec)
-    lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= rax;
-    lets tmp32_1 @=rbx; tmp32_2 @=r9; tmp32_3 @=r10; tmp32_4 @=r11; tmp32_5 @=r12; tmp32_6 @=r13; tmp32_7 @=r14; tmp32_8 @=r15;
-
-    // We OWN the machine, note that rsp is stack in this model.
-    modifies mem; efl; 
-             rax; rbx; rcx; rdx; rbp; rsi; rdi; stack; r8; r9; r10; r11; r12; r13; r14; r15;
-             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15;
-
-    requires
-      GCMSpecDynInit(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, 0, mem);
-      (iendptr - iptr) % (1 * 16) == 0;
-      HasAtLeastFrames(stack, 1);
-
-    requires/ensures
-       ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret);
-       ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
-
-    ensures
-       OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-       OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-       WritesReg128(mem, g.oheap, g.oaddr, g.isize, g.isize, Public,
-         AESGCTRSeq(old(mem), g, g.isize));
-{
- CalleeSaveLinux();
- // Initialize CTR.
- // Y0 is 1, Y1 the first one E(K,Y1) xor'd with P1, no P0 in the spec.
- Mov32(rax,const(2));
- AES128GCTREncrypt1(g);
- CalleeRestoreLinux();
- EMMS(); // Intel says call this before a return if you are touching XMM.
- Mov32(rax, const(0)); // Send back success by default until GHASH is done.
-}
-
-// Dummies for testing the test code.
-//procedure {:timeLimitMultiplier 3} AES128GCTREncryptStdcall(ghost g : GCMSpec) {}  
-//procedure {:timeLimitMultiplier 3} AES128GCTRDecryptStdcall(ghost g : GCMSpec) {} 
 
 */
+
+/*
+procedure{:instruction Ins(Div64(src))} Div64'(operand src:uint64)
+   requires
+      @src is OReg;
+      src != 0;  
+    // OK, we are cheating a bit here by overconstraining DIV instead of using flags.
+    // The proofs are valid though.
+    modifies rax; rdx;
+    ensures
+        rax == old(BitwiseDiv128by64(rdx, rax, src)); // Will return 0 on 0 src.
+        rdx == old(BitwiseMod128by64(rdx, rax, src)); // Will return 0 on 0 src.
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal BitwiseDiv128by64;
+    reveal BitwiseMod128by64;
+    this := this.(heaplets := old(this).heaplets);
+    this := MaybeUpdateOk(old(this), this);
+}   
+
+procedure{:instruction Ins(IMul64(dst, src))} IMul64Wrap'(inout operand dst:uint64, operand src:uint64)
+    modifies
+        efl;
+    ensures
+        dst == old(BitwiseMul64(dst, src));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    reveal BitwiseMul64;
+    reveal BitwiseMul64hi;
+    this := MaybeUpdateOk(old(this), this);
+    this := this.(heaplets := old(this).heaplets);
+}
+
+procedure {:instruction Ins(Xor64(dst, src))} Xor64'(inout operand dst:uint64, operand src:uint64)
+  requires op64(this, @dst); op64(this, @src);
+  ensures  op64(this, @dst);
+  modifies efl;
+  ensures
+    dst == xor64(old(dst), old(src));
+{
+    reveal evalCodeOpaque;
+    reveal x86_ValidState;
+    this := MaybeUpdateOk(old(this), this);
+    this := this.(heaplets := old(this).heaplets);
+}
+
+procedure {:timeLimitMultiplier 3} AES128GCTREncryptStdcall(ghost g : GCMSpec, inline n : uint8nonzero)
+    lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= rax;
+    lets tmp32_1 @=rbx; tmp32_2 @=r9; tmp32_3 @=r10; tmp32_4 @=r11; tmp32_5 @=r12; tmp32_6 @=r13; tmp32_7 @=r14; tmp32_8 @=r15;
+
+    // We OWN the machine, note that rsp is stack in this model.
+    modifies mem; efl; 
+             rax; rbx; rcx; rdx; rbp; rsi; rdi; stack; r8; r9; r10; r11; r12; r13; r14; r15;
+             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15;
+
+    requires
+      GCMSpecDynInit(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, 0, mem);
+      (iendptr - iptr) % (1 * 16) == 0;
+      HasAtLeastFrames(stack, 1);
+
+    requires/ensures
+       ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret);
+       ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
+
+    ensures
+       OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
+       OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
+       WritesReg128(mem, g.oheap, g.oaddr, g.isize, g.isize, Public,
+         AESGCTRSeq(old(mem), g, g.isize));
+{
+/*
+ CalleeSaveLinux();
+
+ // Example math:
+ // n       = 8;
+ // iptr    = 0;
+ // iendptr = 9 * 16 = 144.
+ let items   := (old(iendptr) - old(iptr)) / 16;
+ let batches := (old(iendptr) - old(iptr)) / (n * 16);
+ PUSH        (iendptr);                 // Save the end pointer.
+ Sub64       (iendptr, iptr);           // Bytes of input.                             // 144
+ Mov64       (rax, iendptr);            // iendptr is rdx which is used by DIV.
+ Xor64'      (rdx,rdx);                 // Zero the high bytes of the divisee.
+ Mov64       (tmp32_1, const(n * 16));  
+ Div64'      (tmp32_1);                 // Now the number of items in 8                // 144 / 128 = 1.
+ Mov64       (iendptr, rax);            // Put the divior back into the iendptr.
+ IMul64Wrap' (iendptr, const(n * 16));  // Byte of input in n batch units.             // 1 * 128 = 128;
+ Add64       (iendptr, iptr);           // Pointer to the end of the batchable input.  // iendptr = 128;
+ assert iendptr == iptr + ((iendptr - iptr) / (n * 16)) * (n * 16);
+ // Initialize CTR.
+ // Y0 is 1, Y1 the first one E(K,Y1) xor'd with P1, no P0 in the spec.
+ Mov32(rax,const(2));
+ AESGCTRLoopOverUnrolled(g, n);         // Do the N way batches in a loop.
+ assert ctr == batches * n + 1;
+ POP(iendptr);                          // Restore the old end pointer, iptr is the adjusted end ptr.
+ AESGCTRLoopOverUnrolled(g, 1);         // BUG here.
+ CalleeRestoreLinux();
+ EMMS(); // Intel says call this before a return if you are touching XMM.
+*/
+}
+
+procedure {:timeLimitMultiplier 3} AES128GCTREncryptStdcall8Tail(ghost g : GCMSpec)
+    lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= rax;
+    lets tmp32_1 @=rbx; tmp32_2 @=r9; tmp32_3 @=r10; tmp32_4 @=r11; tmp32_5 @=r12; tmp32_6 @=r13; tmp32_7 @=r14; tmp32_8 @=r15;
+
+    modifies mem; efl; 
+             rax; rbx; rcx; rdx; rbp; rsi; rdi; stack; r8; r9; r10; r11; r12; r13; r14; r15;
+             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15;
+
+    requires
+      GCMSpecDynInit(g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, 0, mem);
+      (iendptr - iptr) % (1 * 16) == 0;
+      HasAtLeastFrames(stack, 1);
+
+    requires/ensures
+       ValidSrcReg128(mem, g.iheap, g.iaddr, g.isize, Secret);
+       ValidDstReg128(mem, g.oheap, g.oaddr, g.isize);
+
+    ensures
+       OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
+       OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
+       WritesReg128(mem, g.oheap, g.oaddr, g.isize, g.isize, Public,
+         AESGCTRSeq(old(mem), g, g.isize));
+{
+  AES128GCTREncryptStdcall(g, 8);
+} 
+*/
+
 #verbatim
 } // end module CGM
 #endverbatim

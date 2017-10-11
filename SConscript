@@ -41,6 +41,7 @@ verify_options = {
   'obj/crypto/loopunroll/memcpy.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30'+ ' /noNLarith' + ' /errorLimit:3'), # + ' /traceverify' + ' /z3opt:TRACE=true' ' /trace' + ' /traceTimes' + ' /tracePOs'),
   'obj/crypto/loopunroll/chrismem.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3'),
   'obj/crypto/loopunroll/calleesave.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3 ' + ' /noNLarith'),
+  'obj/crypto/loopunroll/fivelemmaloops.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3 ' + ' /noNLarith'),
   'obj/crypto/loopunroll/returnvalue.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3 ' + ' /noNLarith'),
   'obj/crypto/loopunroll/catchingcontradictions.gen.dfy': BuildOptions(dafny_default_args_nlarith + ' /timeLimit:30 ' + ' /errorLimit:3 ' + ' /noNLarith'),
   # .dfy files default to this set of options
@@ -164,6 +165,19 @@ if env['TARGET_ARCH']=='amd64':
   env.BuildTest(['src/crypto/loopunroll/testcalleesave.c', calleesave_asm[0]], '', 'testcalleesave')
 else:
   print('Not building Callee Save for this target architecture')  
+
+#
+# build fivelemmaloopssave-exe
+#
+if env['TARGET_ARCH']=='amd64':  
+  fivelemmaloopssave_asm = env.ExtractValeCode(
+    ['src/crypto/loopunroll/fivelemmaloopssave.vad'], # Vale source
+     'src/crypto/loopunroll/fivelemmaloopssave_main.i.dfy',
+     'fivelemmaloopssave'
+    )
+  env.BuildTest(['src/crypto/loopunroll/testfivelemmaloopssave.c', fivelemmaloopssave_asm[0]], '', 'testfivelemmaloopssave')
+else:
+  print('Not building Fivelemmaloops Save for this target architecture')  
 
 #
 # build returnvalue-exe

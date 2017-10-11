@@ -64,8 +64,8 @@ procedure{:refined} {:bridge} {:instruction Ins(PUSH(src))} PUSH(operand src: ui
     stack == old(SeqPrepend(make64BitFrame(src), stack));
     inFrame(stack[0], 0);
     inFrame(stack[0], 1);
-    stack[0][0] == lower64trans(old(src));
-    stack[0][1] == upper64trans(old(src));
+    stack[0][0] == lower64(old(src));
+    stack[0][1] == upper64(old(src));
 {
     reveal evalCodeOpaque;
     reveal x86_ValidState;
@@ -88,12 +88,14 @@ procedure {:refined} {:bridge} {:instruction Ins(POP(dst))} POP(inout operand ds
   ensures
     let slen := SeqLength(old(stack));
     SeqLength(stack) == slen - 1;
-    dst == old(lowerUpper64trans(stack[0][0],stack[0][1])); 
+    dst == old(lowerUpper64(stack[0][0],stack[0][1])); 
     stack == old(SeqTail(stack,1));
 {
     reveal evalCodeOpaque;
     reveal x86_ValidState;
     reveal lowerUpper64;
+    reveal lower64;
+    reveal upper64;
     this := this.(heaplets := old(this).heaplets);
     this := MaybeUpdateOk(old(this), this);
 }   

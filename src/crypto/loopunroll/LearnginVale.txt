@@ -130,6 +130,11 @@ Compiling and Proving
  will output the C and the assembly in a readable form. This really helps you select instructions and to make
  sure you are calling your Vale correctly from C even with our optimize C code.
 
+ If you touch an instruction or def.s.dfy you should try --jobs 3 to Scons. You may get just an
+ error message from a file compilation, then check its obj/.../file...tmp to see what went wrong.
+ It might be a new timeout from the lack of CPU/Memory access, it might be lack of memory.
+ I run a top simultaneously to watch for this.
+
  Adding an instruction
 
   Find the most similar instruction in delcs64.vad and modify it. But you may have added an
@@ -232,3 +237,10 @@ procedure CallWithR32()
 
   Moving previously proved procedures into other files will help the proof time and
    the stability of proof. Although newer versions of Vale+Dafny are more stable.
+
+ Trigger Warnings
+
+  I've made the mistake of leaving a trigger warning in some code. This can also
+  cause Z3 performance problems. A false trigger on {:trigger foo(.. all args) } can
+  be used to suppress this.
+

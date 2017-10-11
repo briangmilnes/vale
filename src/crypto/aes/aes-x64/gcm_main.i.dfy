@@ -74,6 +74,9 @@ method {:main} Main(ghost env:HostEnvironment)
         va_code_AES128GCTREncryptStdcall1(),
         20, 0, asm_choice, platform_choice);
 
+    printProcPlatform("AES128GCTREncryptStdcall8Tail",
+        va_code_AES128GCTREncryptStdcall8Tail(),
+        30, 0, asm_choice, platform_choice);
 
 //    printProcPlatform("AES128EncryptOneBlockOp",
 //        va_code_AES128EncryptOneBlockOp(Secret, xmm0, xmm1, exp_key_ptr),

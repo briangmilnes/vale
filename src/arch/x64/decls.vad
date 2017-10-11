@@ -98,11 +98,6 @@ lemma lemma_lowerUpper64(i:uint64)
     reveal_lowerUpper64();
 }
 
-lemma lemma_lowerUpper64trans(i:uint64)
-    ensures lowerUpper64trans(lower64trans(i), upper64trans(i)) == i
-{
-}
-
 #endverbatim
 
 procedure {:refined} {:instruction Ins(Mov32(dst, MakeHeapOp(src, offset, taint))) } 

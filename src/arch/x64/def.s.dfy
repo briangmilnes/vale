@@ -356,47 +356,32 @@ function{:opaque} lower64(i:uint64):uint32 { i % 0x1_0000_0000 }
 function{:opaque} upper64(i:uint64):uint32 { i / 0x1_0000_0000 }
 function{:opaque} lowerUpper64(l:uint32, u:uint32):uint64 { l + 0x1_0000_0000 * u }
 
-function lower64trans(i:uint64):uint32 { i % 0x1_0000_0000 }
-function upper64trans(i:uint64):uint32 { i / 0x1_0000_0000 }
-function lowerUpper64trans(l:uint32, u:uint32):uint64 { l + 0x1_0000_0000 * u }
-
-// Bryan, for some amazing reason POP won't prove on lowerUpper64trans but will with
-// lowerUpper64.
-lemma lemma_lower_upper_trans()
-   ensures forall l : uint32 :: forall u : uint32 :: lowerUpper64(l,u) == lowerUpper64trans(l,u);
-   ensures forall v : uint64 :: v == lowerUpper64(lower64(v), upper64(v));
-   ensures forall v : uint64 :: v == lowerUpper64trans(lower64trans(v), upper64trans(v));
-{ 
- reveal_lowerUpper64();
- reveal_lower64();
- reveal_upper64();
-} 
-
 // Ugly to have to do this typing but Dafny seems to treat the
 // uint32s in the map display expression as ints.
 function make64BitFrame(v : uint64) : Frame
     ensures 0 in make64BitFrame(v);
     ensures 1 in make64BitFrame(v);
-    ensures make64BitFrame(v)[0] == lower64trans(v);
-    ensures make64BitFrame(v)[1] == upper64trans(v);
-    ensures v == lowerUpper64trans(lower64trans(v), upper64trans(v));
+    ensures make64BitFrame(v)[0] == lower64(v); 
+    ensures make64BitFrame(v)[1] == upper64(v); 
     ensures v == lowerUpper64(lower64(v), upper64(v));
 {
-  lemma_lower_upper_trans();
-  var low  : uint32  := lower64trans(v);
-  var high : uint32  := upper64trans(v);
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
+  var low  : uint32  := lower64(v); 
+  var high : uint32  := upper64(v); 
   var m    : map<int,uint32> := map[];
   m[0 := low][1 := high]
 }
 
-// TODO see about restricting this to a register, although the instruction procedure does.
 predicate evalPop(s : state, dst : operand, r:state, obs:seq<observation>)
   requires Valid64BitDestinationOperand(s, dst);
   requires HasAtLeastN64BitFrames(s.stack, 1);
   requires |s.stack| > 1;
 {
+  reveal lowerUpper64();
   match dst
-    case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64trans(s.stack[0][0],s.stack[0][1])],
+    case OReg(reg)    => r == s.(regs := s.regs[reg := lowerUpper64(s.stack[0][0],s.stack[0][1])],
                                 stack := s.stack[1..],
                                 trace := s.trace + obs)
     case OStack(slot)       => r == s.(ok := false) // Will never be supported.

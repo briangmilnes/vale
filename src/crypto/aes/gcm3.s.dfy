@@ -1,5 +1,4 @@
 include "aes.s.dfy"
-include "../../arch/x64/def.s.dfy"
 include "../loopunroll/regions128.dfy" // TODO where should this really go?
 
 // Derived from NIST Special Publication 800-38D
@@ -7,7 +6,6 @@ include "../loopunroll/regions128.dfy" // TODO where should this really go?
 
 module GCMModule {
 
-import opened x64_def_s
 import opened AESModule
 import opened x64_vale_i
 import opened regions128
@@ -89,7 +87,7 @@ predicate KeyReq(key : seq<uint32>) {
 
 // This version is easier to prove but a bit farther from the spec.
 // With an index and a head list recursion, as this looks more like the spec. 
-function AES_GCTR(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>) : seq<Quadword>
+function {:timeLimitMultiplier 6} AES_GCTR(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>) : seq<Quadword>
     decreases |X|;
     requires  0 <= n + |X| < 0x1_0000_0000 - 1;
     requires KeyReq(key);
@@ -97,6 +95,9 @@ function AES_GCTR(n : nat, key : seq<uint32>, ICB : Quadword, X : seq<Quadword>)
     ensures forall i : nat :: i < |X| ==> 
       AES_GCTR(n, key, ICB, X)[i] == QuadwordXor(X[i], AES_Encrypt(key, CB(n + i, ICB), AES_128));
 {
+  reveal_lowerUpper64();
+  reveal_lower64();
+  reveal_upper64();
   if |X| == 0 then
     []
    else 
@@ -138,7 +139,6 @@ function AESGCTR(mem : Heaplets, g : GCMSpec, i : nat) : Quadword
  requires ValidDstReg128(mem, g.iheap, g.iaddr, g.isize);
  requires 0 <= i < g.isize;
  requires |g.key| == Nk(AES_128);
-
 {
   QuadwordXor(mem[g.iheap].quads[(addr128(g.iaddr, i))].v, AES_Encrypt(g.key, CB(i, g.ICB), AES_128))
 }

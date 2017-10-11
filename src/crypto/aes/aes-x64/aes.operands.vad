@@ -1,3 +1,5 @@
+// Temporarily out of compilation sequence debugging some trigger issues.
+
 include{:verbatim} "../aes_lemmas.i.dfy"
 include{:verbatim} "../../../lib/util/dafny_wrappers.i.dfy"
 include{:verbatim} "../../../arch/x64/vale.i.dfy"
