@@ -1,126 +1,11 @@
-include "gcm.gctr.aesgctr1.vad"
+include "gcm.gctr.proven.vad"
 
 #verbatim
-module GCMGCTR {
- import opened GCMGCTRAESGCTR1
+module GCM_GCTR {
+ import opened GCM_GCTR_PROVEN
 #endverbatim
-/*
-// DUMMY
-procedure {:recursive} {:timeLimitMultiplier 10} AESGCTRUnrolled'
-         (ghost old_mem : Heaplets, 
-          ghost g: GCMSpec,
-          ghost off : uint64, 
-          inline step : uint32)
 
-    lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= rax;
-    // Use uint64s which are truncated in instructions as uint32s cause problems.
-//    lets tmp32_1 @=rbx; tmp32_2 @=r9; tmp32_3 @=r10; tmp32_4 @=r11; tmp32_5 @=r12; tmp32_6 @=r13; tmp32_7 @=r14; tmp32_8 @=r15;
-
-    reads    exp_key_ptr; iptr; iendptr; optr; ivptr; ctr;
-    modifies mem; efl; 
-//             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; 
-//             tmp32_1; tmp32_2;  tmp32_3;  tmp32_4;  tmp32_5;  tmp32_6;  tmp32_7;  tmp32_8; 
-
-    requires
-       step < (iendptr - iptr) / 16;
-       0 <= step < 8; 
-       0 <= ctr + step < 0x1_0000_0000;
-       ValidDstReg128(old_mem, g.iheap, g.iaddr, g.isize);
-
-    requires/ensures 
-        GCMSpecDyn(g, exp_key_ptr, ivptr, mem);
-        ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, g.isize, Secret, iptr, off, step);
-        ValidDstRegPtrs128(mem, g.oheap, g.oaddr, g.isize,         optr, off, step);
-        WritesReg128(mem, g.oheap, g.oaddr, g.isize, off,         Public, AESGCTRSeq(old_mem, g, g.isize));
-
-    ensures
-         OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-         OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-         // This means I wrote off + step + 1 of the output in total.
-         WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + step + 1, Public, AESGCTRSeq(old_mem, g, g.isize));
-         ctr == old(ctr);
-         iptr == old(iptr);
-         iendptr == old(iendptr);
-         optr == old(optr);
-{
-  assume OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-  assume OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-  assume WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + step + 1, Public, AESGCTRSeq(old_mem, g, g.isize));
-  assume ctr == old(ctr);
-  assume iptr == old(iptr);
-  assume iendptr == old(iendptr);
-  assume optr == old(optr);
-} 
-*/
-
-// We can't use operands into here due to the inability to timely prove their inequalty with registers.
-procedure {:recursive} {:timeLimitMultiplier 10} AESGCTRUnrolled
-         (ghost g: GCMSpec,
-          ghost off : uint64, 
-          inline step : uint32)
-
-    lets exp_key_ptr @= rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= rax;
-    // Use uint64s which are truncated in instructions as uint32s cause problems.
-    lets tmp32_1 @=rbx; tmp32_2 @=r9; tmp32_3 @=r10; tmp32_4 @=r11; tmp32_5 @=r12; tmp32_6 @=r13; tmp32_7 @=r14; tmp32_8 @=r15;
-
-    reads    exp_key_ptr; iptr; iendptr; optr; ivptr; ctr;
-    modifies mem; efl; 
-             xmm0; xmm1; xmm2; xmm3; xmm4; xmm5; xmm6; xmm7; xmm8; xmm9; xmm10; xmm11; xmm12; xmm13; xmm14; xmm15; 
-             tmp32_1; tmp32_2;  tmp32_3;  tmp32_4;  tmp32_5;  tmp32_6;  tmp32_7;  tmp32_8; 
-
-    requires
-       step < (iendptr - iptr) / 16;
-       0 <= step < 8; 
-       0 <= ctr + step < 0x1_0000_0000;
-       ValidDstReg128(mem, g.iheap, g.iaddr, g.isize);
-
-    requires/ensures 
-        GCMSpecDyn(g, exp_key_ptr, ivptr, mem);
-        ctr == 2 + off;
-        ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, g.isize, Secret, iptr, off, step);
-        ValidDstRegPtrs128(mem, g.oheap, g.oaddr, g.isize,         optr, off, step);
-        WritesReg128(mem, g.oheap, g.oaddr, g.isize, off,         Public, AESGCTRSeq(old(mem), g, g.isize));
-
-
-    ensures
-         OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
-         OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-         // This means I wrote off + step + 1 of the output in total.
-         WritesReg128(mem, g.oheap, g.oaddr, g.isize, off + step + 1, Public, AESGCTRSeq(old(mem), g, g.isize));
-         ctr == old(ctr);
-         iptr == old(iptr);
-         iendptr == old(iendptr);
-         optr == old(optr);
-{
-  inline if (step == 7) {
-       AESGCTRUnrolled(g, off, step - 1);
-       AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_8, xmm13, xmm14);
-  } else if (step == 6) {
-       AESGCTRUnrolled(g, off, step - 1);
-       AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_7, xmm12, xmm13);
-  } else if (step == 5) {
-       AESGCTRUnrolled(g, off, step - 1);
-       AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_6, xmm10, xmm11);
-  }  else if (step == 4) {
-       AESGCTRUnrolled(g, off, step - 1);
-       AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_5, xmm8, xmm9);
-  } else if (step == 3) {
-       AESGCTRUnrolled(g, off, step - 1);
-       AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_4, xmm6, xmm7); 
-  } else if (step == 2) {
-       AESGCTRUnrolled(g, off, step - 1);
-       AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_3, xmm4, xmm5);
-  } else if (step == 1) {
-       assert 0 <= ctr + step < 0x1_0000_0000;
-       AESGCTRUnrolled(g, off, step - 1);
-       assert 0 <= ctr + step < 0x1_0000_0000;
-       AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_1, xmm2, xmm3);
-   } else  if (step == 0) {                                    
-       AESGCTR1       (g, exp_key_ptr, iptr, iendptr, optr, ivptr, ctr, off, step, tmp32_2, xmm0, xmm1);
-   }
-}  
-
-procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
+procedure {:timeLimitMultiplier 10} AESGCTRLoopOverUnrolled
           (ghost g : GCMSpec,
            inline n : uint8nonzero)
     lets exp_key_ptr @=rdi; iptr @= rsi; iendptr @= rdx; optr @= rcx; ivptr @= r8; ctr @= rax;
@@ -178,31 +63,24 @@ procedure {:timeLimitMultiplier 3} AESGCTRLoopOverUnrolled
             optr == g.oaddr + 16 * off;
             ctr == 2 + off;
 
-            (iptr < iendptr) ==> n <= items;
-            (iptr < iendptr) ==> items >= 1; // Interesting that it can't prove this on entry wo ==>.
-            (iptr < iendptr) ==> (iendptr - iptr) % (n * 16) == 0;
-            (iptr < iendptr) ==> (iendptr - iptr) >= (n * 16); // lemma above
-
-            (iptr < iendptr) ==> 0 <= off + n - 1 < items;
-            (iptr < iendptr) ==> 0 <= n - 1 < (iendptr - iptr) / 16;
-            (iptr < iendptr) ==> ctr + n       < 0x1_0000_0000_0000_0000;
-            (iptr < iendptr) ==> optr + n * 16 < 0x1_0000_0000_0000_0000;
-            (iptr < iendptr) ==> iptr + n * 16 < 0x1_0000_0000_0000_0000;
+            (iptr < iendptr) ==> // no improvement on a single guard.
+             (n <= items &&
+             items >= 1 && // Interesting that it can't prove this on entry wo ==>.
+             (iendptr - iptr) % (n * 16) == 0 &&
+             (iendptr - iptr) >= (n * 16) && // lemma above
+             0 <= off + n - 1 < items &&
+             0 <= n - 1 < (iendptr - iptr) / 16 &&
+             ctr + n       < 0x1_0000_0000_0000_0000 &&
+             optr + n * 16 < 0x1_0000_0000_0000_0000 &&
+             iptr + n * 16 < 0x1_0000_0000_0000_0000);
 
             (off < items) ==> ValidSrcRegPtrs128(mem, g.iheap, g.iaddr, items, Secret, iptr, off, n - 1);
             (off < items) ==> ValidDstRegPtrs128(mem, g.oheap, g.oaddr, items,         optr, off, n - 1);
             OnlyQuadwordHeapletChanged(old(mem), mem, g.oheap);
             OnlyWritesReg128(old(mem), mem, g.oheap, g.oaddr, g.isize);
-// Proves wo writes @3, so the time is going into the AESGCTR call or the writes.
-// Bug was not old(mem) in AESGCTRSeq, perhaps I should pass it in?
             WritesReg128(mem, g.oheap, g.oaddr, g.isize, off, Public, AESGCTRSeq(old(mem), g, g.isize));
-// Bryan does not use a real one.
-//            decreases (iptr - iptr);
           decreases (iendptr - iptr);
     {
-//        assume 0 <= ctr + n - 1 < 0x1_0000_0000;
-        ghost var mem1 := mem;
-        ghost var old_off := off;
         AESGCTRUnrolled(g, off, n - 1);
         ghost var old_iptr := iptr;
         Add(iptr, const(n * 16));        
